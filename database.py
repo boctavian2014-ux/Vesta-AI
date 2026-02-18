@@ -1,0 +1,77 @@
+import os
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+# Railway: DATABASE_URL (postgres://...). SQLAlchemy 2 preferă postgresql://
+_raw_url = os.getenv("DATABASE_URL", "").strip()
+if _raw_url:
+    if _raw_url.startswith("postgres://"):
+        _raw_url = _raw_url.replace("postgres://", "postgresql://", 1)
+    SQLALCHEMY_DATABASE_URL = _raw_url
+    _connect_args = {}
+else:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./imobiliare.db"
+    _connect_args = {"check_same_thread": False}
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=_connect_args)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+# --- MODELE ---
+
+class Property(Base):
+    __tablename__ = "properties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ref_catastral = Column(String, unique=True, index=True)
+    address = Column(String, nullable=True)
+    lat = Column(Float)
+    lon = Column(Float)
+    year_built = Column(Integer, nullable=True)
+    sq_meters = Column(Float, nullable=True)
+    scor_oportunitate = Column(Integer, nullable=True)  # 0–100, pentru culoare pe hartă
+    stare_piscina = Column(String, nullable=True)  # OK | CRITIC (din analiza satelit)
+    last_updated = Column(DateTime, default=datetime.utcnow)
+
+
+class SearchHistory(Base):
+    __tablename__ = "search_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String)  # Placeholder până implementăm sistemul de useri
+    prop_id = Column(Integer, ForeignKey("properties.id"))
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    phone = Column(String, nullable=True)  # Pentru notificări SMS/WhatsApp
+    is_active = Column(Boolean, default=True)
+
+
+class DetailedReport(Base):
+    __tablename__ = "detailed_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    status = Column(String, default="pending")  # pending, processing, completed, failed
+    external_request_id = Column(String, index=True)  # ID de la API-ul intermediar
+    stripe_session_id = Column(String, unique=True, index=True, nullable=True)  # idempotență webhook
+    pdf_url = Column(String, nullable=True)
+    extracted_owner = Column(String, nullable=True)
+    cargas_resumen = Column(String, nullable=True)  # rezumat Cargas din OCR (ex. "Embargo 2023, Hipoteca...")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# Creăm tabelele la import
+Base.metadata.create_all(bind=engine)

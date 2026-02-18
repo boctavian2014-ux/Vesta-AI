@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Vesta",
+    "slug": "vesta-mobile",
+    "version": "1.0.0",
+    "scheme": "vesta",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#ffffff" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.vesta.ai" },
+    "android": { "package": "com.vesta.ai" }
+  }
+}
