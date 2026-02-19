@@ -49,7 +49,7 @@ def setup_ssl_bundle():
 
 setup_ssl_bundle()
 
-# URL-ul corect pentru serviciul de coordonate (fără cratimă: ovc.catastro, nu ovc.-catastro)
+# Folosește exact acest URL – fără spații sau caractere lipsă
 CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
 
 from database import DetailedReport, Property, SessionLocal, User
@@ -292,17 +292,28 @@ def get_catastro_data(lat: float, lon: float):
     """
     Apelează Catastro, parsează XML cu namespace-ul oficial și returnează
     un dicționar pe care aplicația îl recunoaște (JSON curat, fără XML).
-    Ordinea: Coordenada_X = longitudine (lon), Coordenada_Y = latitudine (lat).
+    Catastro cere X (Longitudine) și Y (Latitudine).
     """
     params = {
         "SRS": "EPSG:4326",
-        "Coordenada_X": str(lon),  # Longitudinea este X
-        "Coordenada_Y": str(lat),   # Latitudinea este Y
+        "Coordenada_X": str(lon),
+        "Coordenada_Y": str(lat),
     }
-    response = requests.get(CATASTRO_URL, params=params, verify=False, timeout=15)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/xml",
+    }
+    response = requests.get(
+        CATASTRO_URL,
+        params=params,
+        headers=headers,
+        verify=False,
+        timeout=15,
+    )
 
-    print(f"DEBUG: Apel URL: {response.url}")
-    print(f"DEBUG: Status: {response.status_code}")
+    # DEBUG: important în Railway Logs
+    print(f"URL Apelat: {response.url}")
+    print(f"Status Catastro: {response.status_code}")
 
     if response.status_code != 200:
         return {"status": "error", "message": f"Catastro a returnat {response.status_code}"}
@@ -360,7 +371,11 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         }
 
     # 2. Apelăm Catastro (namespace corect, returnare JSON curat)
-    result = get_catastro_data(location.lat, location.lon)
+    try:
+        result = get_catastro_data(location.lat, location.lon)
+    except Exception as e:
+        return {"eroare": f"Catastro a răspuns cu eroare: {str(e)}"}
+
     if result["status"] == "error":
         raise HTTPException(status_code=422, detail=result.get("message", "Catastro: eroare"))
 
