@@ -410,12 +410,15 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
 
     if existing_prop:
         analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
+        data = property_to_dict(existing_prop)
         return {
             "source": "baza_de_date",
             "status": "succes",
             "referinta": existing_prop.ref_catastral,
-            "data": property_to_dict(existing_prop),
+            "referinta_cadastrala": existing_prop.ref_catastral,
+            "data": data,
             "analiza_ai": analiza_ai,
+            "scor": data.get("scor_oportunitate"),
         }
 
     # 2. Apelăm Catastro (namespace corect, returnare JSON curat)
@@ -433,12 +436,15 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     existing_by_ref = db.query(Property).filter(Property.ref_catastral == referinta_cadastrala).first()
     if existing_by_ref:
         analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
+        data = property_to_dict(existing_by_ref)
         return {
             "source": "baza_de_date",
             "status": "succes",
             "referinta": referinta_cadastrala,
-            "data": property_to_dict(existing_by_ref),
+            "referinta_cadastrala": referinta_cadastrala,
+            "data": data,
             "analiza_ai": analiza_ai,
+            "scor": data.get("scor_oportunitate"),
         }
 
     scor_initial = calculeaza_scor_oportunitate({"year_built": None}, None)
@@ -456,12 +462,15 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     db.refresh(noua_proprietate)
 
     analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
+    data = property_to_dict(noua_proprietate)
     return {
         "source": "catastro_api",
         "status": "succes",
         "referinta": referinta_cadastrala,
-        "data": property_to_dict(noua_proprietate),
+        "referinta_cadastrala": referinta_cadastrala,
+        "data": data,
         "analiza_ai": analiza_ai,
+        "scor": data.get("scor_oportunitate"),
     }
 
 
