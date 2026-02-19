@@ -1,26 +1,7 @@
-import os
 import requests
 import xml.etree.ElementTree as ET
 
-# Cale către certificatul rădăcină FNMT (opțional). Folosim getcwd() ca Railway să găsească fnmt_root.pem din rădăcina deploy.
-_CATASTRO_CA_PEM = os.environ.get(
-    "CATASTRO_CA_BUNDLE",
-    os.path.join(os.getcwd(), "fnmt_root.pem"),
-)
-
-
-def _get_catastro_verify():
-    """Folosește fnmt_root.pem dacă există (securizat); altfel verify=False cu avertisment."""
-    if os.path.isfile(_CATASTRO_CA_PEM):
-        return _CATASTRO_CA_PEM
-    import warnings
-    warnings.warn(
-        "fnmt_root.pem lipsește: verificare SSL Catastro dezactivată (risc MITM). "
-        "Descarcă AC Raíz FNMT-RCM de la https://www.sede.fnmt.gob.es/descargas/certificados-raiz-de-la-fnmt și salvează ca fnmt_root.pem.",
-        UserWarning,
-        stacklevel=2,
-    )
-    return False
+from catastro_ssl import get_catastro_session
 
 
 def coordonate_la_referinta(lat, lon, srs="EPSG:4326"):
@@ -35,9 +16,13 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4326"):
         "Coordenada_X": lon,  # longitudine
         "Coordenada_Y": lat,  # latitudine
     }
+    session = get_catastro_session()
 
     try:
-        response = requests.get(url, params=params, timeout=15, verify=_get_catastro_verify())
+        if session is False:
+            response = requests.get(url, params=params, timeout=15, verify=False)
+        else:
+            response = session.get(url, params=params, timeout=15)
         response.raise_for_status()
         root = ET.fromstring(response.content)
 

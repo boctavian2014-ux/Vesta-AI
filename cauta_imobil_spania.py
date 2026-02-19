@@ -1,19 +1,8 @@
-import os
+import requests
 import zeep
 from zeep.transports import Transport
-import requests
 
-# Același mecanism ca în coordonate_la_referinta: fnmt_root.pem în rădăcină (getcwd) sau CATASTRO_CA_BUNDLE
-_CATASTRO_CA_PEM = os.environ.get(
-    "CATASTRO_CA_BUNDLE",
-    os.path.join(os.getcwd(), "fnmt_root.pem"),
-)
-
-
-def _catastro_verify():
-    if os.path.isfile(_CATASTRO_CA_PEM):
-        return _CATASTRO_CA_PEM
-    return False
+from catastro_ssl import get_catastro_session
 
 
 def cauta_imobil_spania(provincie, municipiu, strada, numar):
@@ -21,8 +10,10 @@ def cauta_imobil_spania(provincie, municipiu, strada, numar):
     wsdl_url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
 
     try:
-        session = requests.Session()
-        session.verify = _catastro_verify() or False
+        session = get_catastro_session()
+        if session is False:
+            session = requests.Session()
+            session.verify = False
         transport = Transport(session=session)
         client = zeep.Client(wsdl=wsdl_url, transport=transport)
 

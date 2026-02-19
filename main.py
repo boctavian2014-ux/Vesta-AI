@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 import zeep  # pentru căutare după adresă (ConsultaNumero) - de folosit ulterior
 
+from catastro_ssl import get_catastro_session
 from coordonate_la_referinta import coordonate_la_referinta
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
@@ -45,20 +46,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Verificare SSL Catastro: aplicația folosește fnmt_root.pem din rădăcină, nu „în aer”
-cert_path = os.path.join(os.getcwd(), "fnmt_root.pem")
-try:
-    url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_CPMRC"
-    r = requests.get(
-        url,
-        params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
-        timeout=10,
-        verify=cert_path,
-    )
-    r.raise_for_status()
-    print("Succes SSL Catastro (fnmt_root.pem)")
-except Exception as e:
-    print(f"Eroare verificare SSL Catastro: {e}")
+# Verificare SSL Catastro: context mergat (sistem + fnmt_root.pem) pentru lanțul complet
+_catastro_session = get_catastro_session()
+if _catastro_session is not False:
+    try:
+        url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_CPMRC"
+        r = _catastro_session.get(
+            url,
+            params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
+            timeout=10,
+        )
+        r.raise_for_status()
+        print("Succes SSL Catastro (fnmt_root.pem)")
+    except Exception as e:
+        print(f"Eroare verificare SSL Catastro: {e}")
 
 # Model pentru cererea de la user (coordonate de pe hartă)
 class ClickLocation(BaseModel):
