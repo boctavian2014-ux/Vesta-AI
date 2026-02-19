@@ -49,8 +49,9 @@ def setup_ssl_bundle():
 
 setup_ssl_bundle()
 
-# URL actualizat și verificat pentru 2026 – path stabil pentru coordonate (OVCServWeb)
-CATASTRO_URL = "https://ovc.catastro.minhap.es/OVCServWeb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
+# Rută folosită de portalul Sede Electrónica; la 404 încercăm varianta fără .asmx
+CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
+CATASTRO_URL_ALT = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas/Consulta_RCCOOR"
 
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
@@ -290,17 +291,17 @@ COORD_TOLERANCE = 0.0001
 
 def get_catastro_data(lat: float, lon: float):
     """
-    Apelează Catastro (URL stabil 2026), parsează XML și returnează dict (success/error).
-    Catastro cere X = Longitudine (lon), Y = Latitudine (lat).
-    User-Agent de tip browser ca să nu fie cererea blocată.
+    Apelează Catastro (rută Sede Electrónica). La 404 încercăm URL fără .asmx.
+    Returnează dict (success/error) pentru JSON curat către app.
     """
     params = {
         "SRS": "EPSG:4326",
-        "Coordenada_X": str(lon),  # Longitudinea (X)
-        "Coordenada_Y": str(lat),   # Latitudinea (Y)
+        "Coordenada_X": "{:.10f}".format(lon),
+        "Coordenada_Y": "{:.10f}".format(lat),
     }
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/xml",
     }
 
     try:
@@ -311,12 +312,18 @@ def get_catastro_data(lat: float, lon: float):
             verify=False,
             timeout=10,
         )
+        if response.status_code == 404:
+            response = requests.get(
+                CATASTRO_URL_ALT,
+                params=params,
+                headers=headers,
+                verify=False,
+                timeout=10,
+            )
+        print(f"📡 Status: {response.status_code} | URL: {response.url}")
     except Exception as e:
-        print(f"❌ Eroare rețea: {e}")
+        print(f"❌ Crash rețea: {e}")
         return {"status": "error", "message": f"Eroare rețea: {str(e)}"}
-
-    print(f"📡 Cerere trimisă: {response.url}")
-    print(f"Status Catastro: {response.status_code}")
 
     if response.status_code != 200:
         return {"status": "error", "message": f"Catastro a returnat {response.status_code}"}
