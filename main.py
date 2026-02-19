@@ -1,5 +1,6 @@
 import os
 import uuid
+import xml.etree.ElementTree as ET
 from email.mime.text import MIMEText
 from typing import Optional
 
@@ -15,7 +16,6 @@ from sqlalchemy.orm import Session
 import zeep  # pentru căutare după adresă (ConsultaNumero) - de folosit ulterior
 
 from catastro_ssl import get_catastro_session
-from coordonate_la_referinta import coordonate_la_referinta
 
 # COPIAZĂ EXACT – fără cratimă sau punct în plus (nu ovc.-catastro)
 CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
@@ -258,9 +258,73 @@ async def analizeaza_satelit_property(property_id: int, db: Session = Depends(ge
 COORD_TOLERANCE = 0.0001
 
 
+def get_catastro_data(lat: float, lon: float):
+    """
+    Apelează Catastro, parsează XML cu namespace-ul oficial și returnează
+    un dicționar pe care aplicația îl recunoaște (JSON curat, fără XML).
+    """
+    verify = CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else False
+    if verify is False:
+        session = get_catastro_session()
+        if session is not False:
+            response = session.get(
+                CATASTRO_URL,
+                params={"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat},
+                timeout=15,
+            )
+        else:
+            response = requests.get(
+                CATASTRO_URL,
+                params={"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat},
+                timeout=15,
+                verify=False,
+            )
+    else:
+        response = requests.get(
+            CATASTRO_URL,
+            params={"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat},
+            timeout=15,
+            verify=verify,
+        )
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Eroare conexiune Catastro")
+
+    try:
+        root = ET.fromstring(response.content)
+        ns = {"cat": "http://www.catastro.minhap.es/"}
+
+        pc1 = root.find(".//cat:pc1", ns)
+        pc2 = root.find(".//cat:pc2", ns)
+        if pc1 is None or pc2 is None:
+            pc1 = root.find(".//{http://www.catastro.meh.es/}pc1")
+            pc2 = root.find(".//{http://www.catastro.meh.es/}pc2")
+        if pc1 is not None and pc2 is not None and (pc1.text or pc2.text):
+            referinta = (pc1.text or "") + (pc2.text or "")
+            referinta = referinta.strip()
+            if referinta:
+                return {
+                    "status": "success",
+                    "data": {
+                        "ref_catastral": referinta,
+                        "address": None,
+                    },
+                }
+
+        des_error = root.find(".//cat:des", ns) or root.find(".//{http://www.catastro.meh.es/}des")
+        error_msg = (des_error.text or "").strip() if des_error is not None else "Locație fără referință"
+        if not error_msg:
+            error_msg = "Locație fără referință"
+        return {"status": "error", "message": error_msg}
+    except ET.ParseError as e:
+        return {"status": "error", "message": "Eroare parsare XML"}
+    except Exception as e:
+        return {"status": "error", "message": "Eroare internă server la procesare"}
+
+
 @app.post("/identifica-imobil/")
 async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_db)):
-    # 1. Verificăm dacă avem deja imobilul la aceste coordonate (cache)
+    # 1. Cache: avem deja imobilul la aceste coordonate?
     existing_prop = (
         db.query(Property)
         .filter(
@@ -278,15 +342,12 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
             "data": property_to_dict(existing_prop),
         }
 
-    # 2. Nu există în DB → apelăm Catastro (răspuns XML; parsăm cu ET.fromstring, nu .json())
-    referinta_cadastrala, eroare = coordonate_la_referinta(
-        location.lat, location.lon,
-        catastro_url=CATASTRO_URL,
-        cert_path=CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else None,
-    )
+    # 2. Apelăm Catastro (namespace corect, returnare JSON curat)
+    result = get_catastro_data(location.lat, location.lon)
+    if result["status"] == "error":
+        raise HTTPException(status_code=422, detail=result.get("message", "Catastro: eroare"))
 
-    if eroare:
-        raise HTTPException(status_code=422, detail=f"Catastro: {eroare}")
+    referinta_cadastrala = result["data"]["ref_catastral"]
 
     # 3. Salvăm în baza de date (evităm duplicate după ref_catastral)
     existing_by_ref = db.query(Property).filter(Property.ref_catastral == referinta_cadastrala).first()
@@ -303,7 +364,7 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         ref_catastral=referinta_cadastrala,
         lat=location.lat,
         lon=location.lon,
-        address=None,
+        address=result["data"].get("address"),
         year_built=None,
         sq_meters=None,
         scor_oportunitate=scor_initial,
@@ -312,7 +373,6 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     db.commit()
     db.refresh(noua_proprietate)
 
-    # Mereu returnăm un dicționar (FastAPI îl transformă în JSON pentru telefon)
     return {
         "source": "catastro_api",
         "status": "succes",

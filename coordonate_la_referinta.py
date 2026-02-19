@@ -33,40 +33,63 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_p
     try:
         response.raise_for_status()
         # Catastro returnează XML, nu JSON – nu folosi response.json()
-        root = ET.fromstring(response.content)
+        return _proceseaza_raspuns_catastro(response.content)
+    except requests.RequestException as e:
+        return None, f"Eroare rețea: {e}"
 
-        # Verificăm eroare (lerr/err/des)
-        err = root.find(".//{http://www.catastro.meh.es/}des") or root.find(".//des")
-        if err is not None and err.text:
-            return None, err.text.strip()
 
-        # Referința cadastrală: pc1 (7 caractere) + pc2 (7 caractere)
-        pc1_el = root.find(".//{http://www.catastro.meh.es/}pc1") or root.find(".//pc1")
-        pc2_el = root.find(".//{http://www.catastro.meh.es/}pc2") or root.find(".//pc2")
+def _proceseaza_raspuns_catastro(xml_content):
+    """
+    Procesează XML-ul de la Catastro. Folosește namespace-ul oficial – fără el,
+    root.find nu găsește tag-urile pc1/pc2 și returnează None.
+    Returnează (referinta_completa, None) sau (None, mesaj_eroare).
+    """
+    try:
+        root = ET.fromstring(xml_content)
+        # Namespace oficial Catastro (obligatoriu pentru căutare)
+        ns = {"cat": "http://www.catastro.minhap.es/"}
 
-        if pc1_el is not None and pc2_el is not None and (pc1_el.text or pc2_el.text):
-            ref_catastral = ((pc1_el.text or "") + (pc2_el.text or "")).strip()
-            if ref_catastral:
-                return ref_catastral, None
+        # Mesaj de eroare de la Catastro (ex. punct în afara Spaniei)
+        error_el = root.find(".//cat:des", ns)
+        if error_el is not None and error_el.text and error_el.text.strip():
+            return None, error_el.text.strip()
 
-        # Fallback: căutăm orice element pc1/pc2 (cu sau fără namespace)
+        # Referința cadastrală: pc1 + pc2
+        pc1_el = root.find(".//cat:pc1", ns)
+        pc2_el = root.find(".//cat:pc2", ns)
+        if pc1_el is not None and pc2_el is not None:
+            ref = (pc1_el.text or "") + (pc2_el.text or "")
+            ref = ref.strip()
+            if ref:
+                return ref, None
+
+        # Fallback: namespace în acolade (unele răspunsuri)
+        pc1_el = root.find(".//{http://www.catastro.meh.es/}pc1")
+        pc2_el = root.find(".//{http://www.catastro.meh.es/}pc2")
+        if pc1_el is not None and pc2_el is not None:
+            ref = (pc1_el.text or "") + (pc2_el.text or "")
+            ref = ref.strip()
+            if ref:
+                return ref, None
+
+        # Fallback: iterare fără namespace
         pc1, pc2 = "", ""
         for elem in root.iter():
-            tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+            tag = elem.tag.split("}")[-1] if elem.tag and "}" in elem.tag else (elem.tag or "")
             if tag == "pc1":
                 pc1 = elem.text or ""
             elif tag == "pc2":
                 pc2 = elem.text or ""
-                ref_catastral = (pc1 + pc2).strip()
-                if ref_catastral:
-                    return ref_catastral, None
+                ref = (pc1 + pc2).strip()
+                if ref:
+                    return ref, None
                 break
 
-        return None, "Referința cadastrală nu a fost găsită în răspuns."
-    except requests.RequestException as e:
-        return None, f"Eroare rețea: {e}"
+        return None, "Referință negăsită în XML"
     except ET.ParseError as e:
         return None, f"Eroare parsare XML: {e}"
+    except Exception as e:
+        return None, f"Eroare procesare date: {e}"
 
 
 if __name__ == "__main__":
