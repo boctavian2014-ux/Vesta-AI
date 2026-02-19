@@ -19,8 +19,9 @@ from catastro_ssl import get_catastro_session
 
 # COPIAZĂ EXACT – fără cratimă sau punct în plus (nu ovc.-catastro)
 CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
-# Calea către certificatul FNMT pe Railway / local
-CATASTRO_CERT_PATH = os.path.join(os.getcwd(), "fnmt_root.pem")
+# Cale absolută către fnmt_root.pem (Railway: __file__ e în container, nu getcwd())
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CATASTRO_CERT_PATH = os.path.join(BASE_DIR, "fnmt_root.pem")
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
@@ -280,6 +281,7 @@ def get_catastro_data(lat: float, lon: float):
                 verify=False,
             )
     else:
+        # verify = CATASTRO_CERT_PATH (cale absolută din BASE_DIR) – Trust Store: folosește ACEST fișier
         response = requests.get(
             CATASTRO_URL,
             params={"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat},
