@@ -49,8 +49,8 @@ def setup_ssl_bundle():
 
 setup_ssl_bundle()
 
-# Endpoint REST mai stabil (ovccoco.ashx) – handler modern pentru coordonate
-CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/ovcswlocalizacionrc/ovccoco.ashx"
+# Serviciu oficial documentat: ovc.catastro.meh.es (GET Consulta_RCCOOR)
+CATASTRO_URL = "https://ovc.catastro.meh.es/ovcservweb/ovcswlocalizacionrc/ovccoordenadas.asmx/Consulta_RCCOOR"
 
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
@@ -96,7 +96,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 try:
     r = requests.get(
         CATASTRO_URL,
-        params={"srs": "EPSG:4326", "x": -4.4, "y": 36.7},
+        params={"SRS": "EPSG:4326", "Coordenada_X": -3.70, "Coordenada_Y": 40.42},
         timeout=10,
         verify=False,
     )
@@ -290,13 +290,13 @@ COORD_TOLERANCE = 0.0001
 
 def get_catastro_data(lat: float, lon: float):
     """
-    Apelează Catastro (endpoint ovccoco.ashx). Headers ca pe iPhone ca să evite 404/403.
-    Returnează dict (success/error) pentru JSON curat către app.
+    Apelează Catastro pe domeniul oficial meh.es (documentație Sede Electrónica).
+    GET Consulta_RCCOOR: SRS, Coordenada_X (lon), Coordenada_Y (lat). Headers iPhone + es-ES.
     """
     params = {
-        "srs": "EPSG:4326",
-        "x": f"{lon:.8f}",   # Longitudinea (X)
-        "y": f"{lat:.8f}",   # Latitudinea (Y)
+        "SRS": "EPSG:4326",
+        "Coordenada_X": f"{lon:.8f}",   # Longitudinea (X)
+        "Coordenada_Y": f"{lat:.8f}",   # Latitudinea (Y)
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
