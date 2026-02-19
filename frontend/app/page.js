@@ -47,7 +47,11 @@ export default function HomePage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "Eroare la identificare");
-        setSelectedProp(data.data);
+        setSelectedProp({
+          ...data.data,
+          analiza_ai: data.analiza_ai,
+          scor: data.scor,
+        });
       } catch (err) {
         setError(err.message);
         setSelectedProp(null);
@@ -213,6 +217,14 @@ export default function HomePage() {
                   {selectedProp.stare_piscina === "CRITIC" ? "Piscină abandonată" : "Întreținut"}
                 </span>
               </p>
+            )}
+            {selectedProp.analiza_ai != null && selectedProp.analiza_ai !== "" && (
+              <div style={{ marginBottom: 16 }}>
+                <strong style={{ display: "block", marginBottom: 6 }}>Analiză AI (oportunitate renovare)</strong>
+                <p style={{ fontSize: 14, color: "#374151", whiteSpace: "pre-wrap", margin: 0 }}>
+                  {selectedProp.analiza_ai}
+                </p>
+              </div>
             )}
 
             <label style={{ display: "block", fontSize: 14, marginBottom: 6 }}>

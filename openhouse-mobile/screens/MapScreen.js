@@ -19,7 +19,11 @@ export default function MapScreen({ navigation }) {
       setSelectedProp(null);
       try {
         const res = await identificaImobil(latitude, longitude);
-        setSelectedProp(res.data);
+        setSelectedProp({
+          ...res.data,
+          analiza_ai: res.analiza_ai,
+          scor: res.scor,
+        });
       } catch (err) {
         const msg = err.message || "Nu s-a putut identifica imobilul.";
         const isNetwork =

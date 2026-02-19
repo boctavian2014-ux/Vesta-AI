@@ -83,6 +83,12 @@ export default function PropertyScreen({ route, navigation }) {
             </Text>
           </>
         )}
+        {property.analiza_ai != null && property.analiza_ai !== "" && (
+          <>
+            <Text style={styles.label}>Analiză AI (oportunitate renovare)</Text>
+            <Text style={[styles.value, styles.analizaBlock]}>{property.analiza_ai}</Text>
+          </>
+        )}
         <Text style={styles.label}>Email (pentru raport)</Text>
         <TextInput
           style={styles.input}
@@ -123,6 +129,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "700", marginBottom: spacing.lg, color: colors.text },
   label: { fontSize: 12, color: colors.textMuted, marginTop: spacing.md },
   value: { fontSize: 16, marginBottom: 4, color: colors.text },
+  analizaBlock: { marginBottom: spacing.md },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
