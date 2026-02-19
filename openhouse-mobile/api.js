@@ -67,3 +67,16 @@ export async function getCartaOferta(reportId) {
     url: `${API_BASE_URL}/raport/${reportId}/carta-oferta`,
   });
 }
+
+/** POST /creeaza-plata/ – returnează { clientSecret }; tip=standard|premium, optional email, property_id. */
+export async function creeazaPlata(body = {}) {
+  return json({
+    url: `${API_BASE_URL}/creeaza-plata/`,
+    method: "POST",
+    body: {
+      tip: body.tip ?? "standard",
+      email: body.email ?? undefined,
+      property_id: body.property_id ?? undefined,
+    },
+  });
+}

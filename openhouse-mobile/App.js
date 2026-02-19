@@ -3,12 +3,14 @@ import { TouchableOpacity, Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { StripeProvider } from "@stripe/stripe-react-native";
 import MapScreen from "./screens/MapScreen";
 import PropertyScreen from "./screens/PropertyScreen";
 import SuccessScreen from "./screens/SuccessScreen";
 import StatusScreen from "./screens/StatusScreen";
 import { colors } from "./theme";
 
+const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 const Stack = createNativeStackNavigator();
 
 const linking = {
@@ -24,8 +26,9 @@ const linking = {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <NavigationContainer linking={linking}>
+    <StripeProvider publishableKey={publishableKey}>
+      <SafeAreaProvider>
+        <NavigationContainer linking={linking}>
         <Stack.Navigator screenOptions={{ headerTitle: "Vesta" }}>
         <Stack.Screen
           name="Map"
@@ -45,7 +48,8 @@ export default function App() {
         <Stack.Screen name="Success" component={SuccessScreen} options={{ headerTitle: "Plată reușită" }} />
         <Stack.Screen name="Status" component={StatusScreen} options={{ headerTitle: "Status raport" }} />
         </Stack.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </StripeProvider>
   );
 }

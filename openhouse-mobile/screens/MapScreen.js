@@ -78,7 +78,7 @@ export default function MapScreen({ navigation }) {
             style={styles.fab}
             onPress={() => navigation.navigate("Property", { property: selectedProp })}
           >
-            <Text style={styles.fabText}>Detalii & Raport 19€</Text>
+            <Text style={styles.fabText}>Detalii & Raport (19€ / 50€)</Text>
           </TouchableOpacity>
         )}
       </View>

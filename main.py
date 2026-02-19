@@ -127,6 +127,13 @@ class GuestEmail(BaseModel):
     email: str
 
 
+# Body pentru PaymentIntent (Payment Sheet) – metadata pentru webhook
+class CreeazaPlataRequest(BaseModel):
+    email: Optional[str] = None
+    property_id: Optional[int] = None
+    tip: Optional[str] = "standard"  # "standard" 19€ | "premium" 50€
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -539,6 +546,111 @@ async def create_checkout_session(
         return {"checkout_url": session.url, "session_id": session.id}
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/creeaza-plata/")
+async def creeaza_plata(request: Request):
+    """Creează un PaymentIntent Stripe: 19€ (standard) sau 50€ (premium); tip + email + property_id în metadata."""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe nu este configurat (STRIPE_SECRET_KEY lipsește).",
+        )
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if data is None:
+        data = {}
+
+    tip = data.get("tip", "standard")
+    suma = 5000 if tip == "premium" else 1900
+    email = data.get("email", "necunoscut@email.com")
+    ref = data.get("property_id", "fara_ref")
+
+    try:
+        intent = stripe.PaymentIntent.create(
+            amount=suma,
+            currency="eur",
+            automatic_payment_methods={"enabled": True},
+            metadata={
+                "tip_raport": tip,
+                "email": str(email).strip().lower(),
+                "property_id": str(ref),
+            },
+        )
+        return {"clientSecret": intent.client_secret}
+    except Exception as e:
+        print(f"Eroare Stripe: {e}")
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+@app.post("/stripe-webhook/")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Ascultă când Stripe confirmă plata (PaymentIntent – Payment Sheet).
+    Din metadata (email, property_id) creează raport și declanșează cererea la Registru.
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+    if not endpoint_secret:
+        return JSONResponse(status_code=503, content={"error": "STRIPE_WEBHOOK_SECRET lipsește"})
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+    if event["type"] == "payment_intent.succeeded":
+        payment_intent = event["data"]["object"]
+        amount = payment_intent.get("amount", 0) / 100
+        print(f"💰 Plată confirmată pentru: {amount} EUR")
+        meta = payment_intent.get("metadata") or {}
+        email = (meta.get("email") or "").strip().lower()
+        try:
+            property_id = int(meta.get("property_id", 0))
+        except (TypeError, ValueError):
+            property_id = 0
+
+        if email and property_id:
+            # Idempotență: evităm duplicate la retrimitere Stripe
+            pi_id = payment_intent.get("id", "")
+            existing = (
+                db.query(DetailedReport)
+                .filter(DetailedReport.stripe_session_id == pi_id)
+                .first()
+            )
+            if existing:
+                return JSONResponse(content={"status": "success", "report_id": existing.id, "duplicate": True})
+
+            user = db.query(User).filter(User.email == email).first()
+            if not user:
+                user = User(email=email, is_active=True)
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+            prop = db.query(Property).filter(Property.id == property_id).first()
+            if not prop:
+                return JSONResponse(content={"error": "Proprietate negăsită"}, status_code=404)
+            external_request_id = f"req_{uuid.uuid4().hex[:16]}"
+            report = DetailedReport(
+                property_id=property_id,
+                user_id=user.id,
+                status="processing",
+                external_request_id=external_request_id,
+                stripe_session_id=pi_id,
+            )
+            db.add(report)
+            db.commit()
+            db.refresh(report)
+            solicita_raport_registru(db, report.id, property_id, external_request_id, prop.ref_catastral)
+            print(f"📄 Raport creat: report_id={report.id}, request_id={external_request_id}")
+        elif email:
+            print(f"📧 Plată de la {email} (fără property_id în metadata – nu se creează raport)")
+
+    return JSONResponse(content={"status": "success"})
 
 
 @app.post("/webhook/stripe")
