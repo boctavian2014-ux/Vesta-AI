@@ -22,6 +22,12 @@ CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OV
 # Cale absolută către fnmt_root.pem (Railway: __file__ e în container, nu getcwd())
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CATASTRO_CERT_PATH = os.path.join(BASE_DIR, "fnmt_root.pem")
+
+if not os.path.exists(CATASTRO_CERT_PATH):
+    print(f"❌ ALERTA: Certificatul lipsește la calea: {CATASTRO_CERT_PATH}")
+else:
+    print(f"✅ Certificatul FNMT a fost găsit la: {CATASTRO_CERT_PATH}")
+
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
