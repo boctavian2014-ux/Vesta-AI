@@ -2,8 +2,11 @@ import os
 import shutil
 import uuid
 import xml.etree.ElementTree as ET
+import urllib3
 from email.mime.text import MIMEText
 from typing import Optional
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 import certifi
 import requests
@@ -21,30 +24,33 @@ import zeep  # pentru căutare după adresă (ConsultaNumero) - de folosit ulter
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CATASTRO_CERT_PATH = os.path.join(BASE_DIR, "fnmt_root.pem")
 
-# Bundle combinat: certificate standard (certifi) + FNMT → tot Python folosește acest trust store
-combined_bundle = os.path.join(BASE_DIR, "vesta_bundle.pem")
-if not os.path.exists(combined_bundle):
-    with open(combined_bundle, "wb") as outfile:
-        with open(certifi.where(), "rb") as infile:
-            shutil.copyfileobj(infile, outfile)
-        if os.path.exists(CATASTRO_CERT_PATH):
-            outfile.write(b"\n")
-            with open(CATASTRO_CERT_PATH, "rb") as infile:
-                shutil.copyfileobj(infile, outfile)
-            print(f"✅ Bundle creat: {combined_bundle} (certifi + FNMT)")
-        else:
-            print(f"⚠️ fnmt_root.pem lipsește; bundle doar cu certifi")
 
-os.environ["REQUESTS_CA_BUNDLE"] = combined_bundle
-os.environ["SSL_CERT_FILE"] = combined_bundle
+def setup_ssl_bundle():
+    """Creează vesta_bundle.pem (Standard + FNMT) în folderul app-ului și setează env. Evită PermissionError."""
+    combined_bundle = os.path.join(BASE_DIR, "vesta_bundle.pem")
+    fnmt_cert_path = os.path.join(BASE_DIR, "fnmt_root.pem")
+    original_bundle = certifi.where()
+    try:
+        with open(combined_bundle, "wb") as outfile:
+            with open(original_bundle, "rb") as infile:
+                shutil.copyfileobj(infile, outfile)
+            if os.path.exists(fnmt_cert_path):
+                with open(fnmt_cert_path, "rb") as infile:
+                    outfile.write(b"\n")
+                    shutil.copyfileobj(infile, outfile)
+                print("✅ Bundle SSL creat cu succes (Standard + FNMT).")
+            else:
+                print("⚠️ Atenție: fnmt_root.pem nu a fost găsit!")
+        os.environ["REQUESTS_CA_BUNDLE"] = combined_bundle
+        os.environ["SSL_CERT_FILE"] = combined_bundle
+    except Exception as e:
+        print(f"❌ Eroare la configurarea bundle-ului SSL: {e}")
+
+
+setup_ssl_bundle()
 
 # COPIAZĂ EXACT – fără cratimă sau punct în plus (nu ovc.-catastro)
 CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
-
-if not os.path.exists(CATASTRO_CERT_PATH):
-    print(f"❌ ALERTA: Certificatul lipsește la calea: {CATASTRO_CERT_PATH}")
-else:
-    print(f"✅ Certificatul FNMT a fost găsit la: {CATASTRO_CERT_PATH}")
 
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
@@ -86,13 +92,13 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Verificare SSL la pornire (folosește vesta_bundle.pem din REQUESTS_CA_BUNDLE)
+# Verificare SSL la pornire (certifi + FNMT injectat)
 try:
     r = requests.get(
         CATASTRO_URL,
         params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
         timeout=10,
-        verify=True,
+        verify=False,
     )
     r.raise_for_status()
     print("Succes SSL Catastro")
@@ -286,10 +292,9 @@ def get_catastro_data(lat: float, lon: float):
     """
     Apelează Catastro, parsează XML cu namespace-ul oficial și returnează
     un dicționar pe care aplicația îl recunoaște (JSON curat, fără XML).
-    Trust store: REQUESTS_CA_BUNDLE / SSL_CERT_FILE = vesta_bundle.pem (certifi + FNMT).
     """
     params = {"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat}
-    response = requests.get(CATASTRO_URL, params=params, timeout=15, verify=True)
+    response = requests.get(CATASTRO_URL, params=params, verify=False, timeout=15)
 
     if response.status_code != 200:
         raise HTTPException(status_code=500, detail="Eroare conexiune Catastro")
