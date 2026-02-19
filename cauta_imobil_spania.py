@@ -2,12 +2,11 @@ import requests
 import zeep
 from zeep.transports import Transport
 
-from catastro_ssl import get_catastro_session
+from catastro_ssl import CATASTRO_HOST, get_catastro_session
 
 
 def cauta_imobil_spania(provincie, municipiu, strada, numar):
-    # URL-ul oficial al serviciului web Catastro (fără punct după 'ovc')
-    wsdl_url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
+    wsdl_url = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
 
     try:
         session = get_catastro_session()

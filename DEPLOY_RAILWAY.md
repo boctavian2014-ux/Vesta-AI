@@ -54,3 +54,31 @@ La primul deploy, tabelele se creează automat la pornirea aplicației (`databas
 - [ ] **PORT**: Nu seta manual `PORT`; Railway îl injectează. Procfile folosește `$PORT`.
 - [ ] **Test**: După deploy, deschide în browser **URL-ul serviciului** (ex. `https://nume-serviciu.up.railway.app/`). Ar trebui să vezi: `{"message":"Serverul imobiliar este activ!"}`. Dacă vezi 404 sau pagină de eroare, verifică Root Directory și că build-ul a reușit (Deployments → ultimul deploy → View logs).
 - [ ] **Docs API**: `https://<url-ul-tau>/docs` – ar trebui să se deschidă Swagger UI.
+
+---
+
+## 8. Testare la distanță (fără rulare locală)
+
+URL-ul API: **https://web-production-34c2a5.up.railway.app** (dacă ai alt domeniu Railway, înlocuiești în comenzile de mai jos).
+
+### În browser
+- **Health**: https://web-production-34c2a5.up.railway.app/ → ar trebui `{"message":"Serverul imobiliar este activ!"}`.
+- **Swagger**: https://web-production-34c2a5.up.railway.app/docs → poți testa toate endpoint-urile din interfață.
+
+### Test identificare imobil (Catastro) din terminal
+
+**PowerShell:**
+```powershell
+$url = "https://web-production-34c2a5.up.railway.app/identifica-imobil/"
+$body = '{"lat":36.7,"lon":-4.4}'
+Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json"
+```
+
+**curl (bash / Git Bash / WSL):**
+```bash
+curl -X POST "https://web-production-34c2a5.up.railway.app/identifica-imobil/" \
+  -H "Content-Type: application/json" \
+  -d '{"lat":36.7,"lon":-4.4}'
+```
+
+Dacă totul e OK, răspunsul conține `"status":"succes"` și `"data"` cu referința cadastrală (sau imobilul din cache). Dacă Catastro e indisponibil sau SSL eșuează, vei primi 422 cu detaliu în `detail`.

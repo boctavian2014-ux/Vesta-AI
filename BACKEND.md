@@ -42,8 +42,21 @@ Copiază `.env.example` în `.env` și ajustează doar ce folosești:
 | `STRIPE_SECRET_KEY` | Doar pentru plată | Cheie Stripe pentru checkout 19€ |
 | `STRIPE_WEBHOOK_SECRET` | Doar pentru plată | Secret webhook Stripe |
 | `GOOGLE_MAPS_API_KEY` | Nu | Pentru analiza satelit (piscină) |
+| `CATASTRO_CA_BUNDLE` | Nu | Cale către `fnmt_root.pem` pentru verificare SSL Catastro (recomandat în producție) |
 
 **Pentru doar „identificare imobil” pe hartă** nu e nevoie de Stripe sau Google; baza de date se creează automat (SQLite) la prima rulare.
+
+### Verificare SSL Catastro (FNMT)
+
+API-ul Catastro (Spania) este semnat cu certificate FNMT care nu sunt în trust store-ul standard. Pentru **verificare SSL activă** (fără risc MITM):
+
+1. Descarcă certificatul rădăcină: [Certificados raíz de la FNMT](https://www.sede.fnmt.gob.es/descargas/certificados-raiz-de-la-fnmt) → **AC Raíz FNMT-RCM** → [AC_Raiz_FNMT-RCM_SHA256.cer](https://www.sede.fnmt.gob.es/documents/10445900/10526749/AC_Raiz_FNMT-RCM_SHA256.cer).
+2. Convertește din DER în PEM (dacă e cazul):  
+   `openssl x509 -inform DER -in AC_Raiz_FNMT-RCM_SHA256.cer -out fnmt_root.pem`
+3. Salvează `fnmt_root.pem` în **rădăcina proiectului** (acolo unde e `main.py`). Backend-ul îl folosește automat la cererile către Catastro.
+4. Opțional: setează `CATASTRO_CA_BUNDLE=/cale/absolută/fnmt_root.pem` dacă fișierul e în alt loc.
+
+Dacă `fnmt_root.pem` lipsește, verificarea SSL este dezactivată pentru Catastro și în consolă apare un avertisment.
 
 ---
 

@@ -1,28 +1,36 @@
+import os
 import requests
 import xml.etree.ElementTree as ET
 
 from catastro_ssl import get_catastro_session
 
+# URL implicit (același string ca în main.py – fără cratimă)
+_DEFAULT_CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
 
-def coordonate_la_referinta(lat, lon, srs="EPSG:4326"):
+
+def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală folosind API-ul Catastro.
     Pentru EPSG:4326 (WGS84): X = longitudine, Y = latitudine.
+    Poți pasa catastro_url și cert_path din main.py (CATASTRO_URL, CATASTRO_CERT_PATH) pentru URL verificat 100%.
     """
-    # Consulta_RCCOOR = coordonate -> referință cadastrală (CPMRC = invers: ref -> coordonate). Fără punct după 'ovc'.
-    url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
+    url = catastro_url or _DEFAULT_CATASTRO_URL
     params = {
         "SRS": srs,
         "Coordenada_X": lon,  # longitudine
         "Coordenada_Y": lat,  # latitudine
     }
-    session = get_catastro_session()
+    # Preferă verify=cert_path când main trimite CATASTRO_URL + CATASTRO_CERT_PATH (fără verify=False)
+    if cert_path and os.path.isfile(cert_path):
+        response = requests.get(url, params=params, timeout=15, verify=cert_path)
+    else:
+        session = get_catastro_session()
+        if session is not False:
+            response = session.get(url, params=params, timeout=15)
+        else:
+            response = requests.get(url, params=params, timeout=15, verify=False)
 
     try:
-        if session is False:
-            response = requests.get(url, params=params, timeout=15, verify=False)
-        else:
-            response = session.get(url, params=params, timeout=15)
         response.raise_for_status()
         root = ET.fromstring(response.content)
 

@@ -16,6 +16,11 @@ import zeep  # pentru căutare după adresă (ConsultaNumero) - de folosit ulter
 
 from catastro_ssl import get_catastro_session
 from coordonate_la_referinta import coordonate_la_referinta
+
+# COPIAZĂ EXACT – fără cratimă sau punct în plus (nu ovc.-catastro)
+CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
+# Calea către certificatul FNMT pe Railway / local
+CATASTRO_CERT_PATH = os.path.join(os.getcwd(), "fnmt_root.pem")
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
@@ -46,15 +51,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Verificare SSL Catastro: context mergat (sistem + fnmt_root.pem) pentru lanțul complet
-_catastro_session = get_catastro_session()
-if _catastro_session is not False:
+# Verificare SSL la pornire: folosim CATASTRO_URL și certificatul .pem (fără verify=False)
+if os.path.isfile(CATASTRO_CERT_PATH):
     try:
-        url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_CPMRC"
-        r = _catastro_session.get(
-            url,
+        r = requests.get(
+            CATASTRO_URL,
             params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
             timeout=10,
+            verify=CATASTRO_CERT_PATH,
         )
         r.raise_for_status()
         print("Succes SSL Catastro (fnmt_root.pem)")
@@ -264,7 +268,11 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         }
 
     # 2. Nu există în DB → apelăm Catastro
-    referinta_cadastrala, eroare = coordonate_la_referinta(location.lat, location.lon)
+    referinta_cadastrala, eroare = coordonate_la_referinta(
+        location.lat, location.lon,
+        catastro_url=CATASTRO_URL,
+        cert_path=CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else None,
+    )
 
     if eroare:
         raise HTTPException(status_code=422, detail=f"Catastro: {eroare}")
