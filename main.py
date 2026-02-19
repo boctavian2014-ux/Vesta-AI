@@ -51,6 +51,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Asigură că orice eroare neprinsă returnează JSON (nu HTML/text), ca app-ul mobil să nu primească XML sau „Unexpected character”."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Eroare internă server", "error": str(exc)},
+    )
+
+
 # Verificare SSL la pornire: folosim CATASTRO_URL și certificatul .pem (fără verify=False)
 if os.path.isfile(CATASTRO_CERT_PATH):
     try:
@@ -264,10 +274,11 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         return {
             "source": "baza_de_date",
             "status": "succes",
+            "referinta": existing_prop.ref_catastral,
             "data": property_to_dict(existing_prop),
         }
 
-    # 2. Nu există în DB → apelăm Catastro
+    # 2. Nu există în DB → apelăm Catastro (răspuns XML; parsăm cu ET.fromstring, nu .json())
     referinta_cadastrala, eroare = coordonate_la_referinta(
         location.lat, location.lon,
         catastro_url=CATASTRO_URL,
@@ -283,6 +294,7 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         return {
             "source": "baza_de_date",
             "status": "succes",
+            "referinta": referinta_cadastrala,
             "data": property_to_dict(existing_by_ref),
         }
 
@@ -291,7 +303,7 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         ref_catastral=referinta_cadastrala,
         lat=location.lat,
         lon=location.lon,
-        address=None,  # poți extrage din răspunsul XML Catastro ulterior
+        address=None,
         year_built=None,
         sq_meters=None,
         scor_oportunitate=scor_initial,
@@ -300,9 +312,11 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     db.commit()
     db.refresh(noua_proprietate)
 
+    # Mereu returnăm un dicționar (FastAPI îl transformă în JSON pentru telefon)
     return {
         "source": "catastro_api",
         "status": "succes",
+        "referinta": referinta_cadastrala,
         "data": property_to_dict(noua_proprietate),
     }
 

@@ -5,19 +5,25 @@ const json = (body) =>
     method: body.method || "GET",
     headers: { "Content-Type": "application/json", ...body.headers },
     ...(body.body && { body: JSON.stringify(body.body) }),
-  }).then((r) => {
+  }).then(async (r) => {
+    const status = r.status;
+    const text = await r.text();
     if (!r.ok) {
-      const status = r.status;
-      return r
-        .json()
-        .then((d) => {
-          let detail = d.detail ?? d.error ?? r.statusText ?? "Eroare server";
-          if (Array.isArray(detail) && detail.length) detail = detail[0].msg || detail[0].message || String(detail[0]);
-          return Promise.reject(new Error(detail));
-        })
-        .catch((e) => Promise.reject(new Error(e.message || r.statusText || `Eroare server (${status})`)));
+      let detail = r.statusText || "Eroare server";
+      try {
+        const d = JSON.parse(text);
+        detail = d.detail ?? d.error ?? detail;
+        if (Array.isArray(detail) && detail.length) detail = detail[0].msg || detail[0].message || String(detail[0]);
+      } catch (_) {
+        if (text) detail = text.slice(0, 200);
+      }
+      return Promise.reject(new Error(detail));
     }
-    return r.json();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return Promise.reject(new Error("Răspuns invalid de la server (nu e JSON)."));
+    }
   });
 
 export async function identificaImobil(lat, lon) {

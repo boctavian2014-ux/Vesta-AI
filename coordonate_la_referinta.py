@@ -32,6 +32,7 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_p
 
     try:
         response.raise_for_status()
+        # Catastro returnează XML, nu JSON – nu folosi response.json()
         root = ET.fromstring(response.content)
 
         # Verificăm eroare (lerr/err/des)
