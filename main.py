@@ -3,9 +3,7 @@ import uuid
 from email.mime.text import MIMEText
 from typing import Optional
 
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
+import requests
 import smtplib
 import stripe
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -46,6 +44,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Verificare SSL Catastro: aplicația folosește fnmt_root.pem din rădăcină, nu „în aer”
+cert_path = os.path.join(os.getcwd(), "fnmt_root.pem")
+try:
+    url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_CPMRC"
+    r = requests.get(
+        url,
+        params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
+        timeout=10,
+        verify=cert_path,
+    )
+    r.raise_for_status()
+    print("Succes SSL Catastro (fnmt_root.pem)")
+except Exception as e:
+    print(f"Eroare verificare SSL Catastro: {e}")
 
 # Model pentru cererea de la user (coordonate de pe hartă)
 class ClickLocation(BaseModel):
