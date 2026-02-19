@@ -5,18 +5,31 @@ from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, St
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Railway: DATABASE_URL (postgres://...). SQLAlchemy 2 preferă postgresql://
+# Railway / Supabase: DATABASE_URL (postgres://...). SQLAlchemy 2 preferă postgresql://
 _raw_url = os.getenv("DATABASE_URL", "").strip()
 if _raw_url:
     if _raw_url.startswith("postgres://"):
         _raw_url = _raw_url.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_DATABASE_URL = _raw_url
     _connect_args = {}
+    _poolclass = None
+    if "supabase" in _raw_url.lower():
+        if "sslmode=" not in _raw_url:
+            _raw_url += "?sslmode=require" if "?" not in _raw_url else "&sslmode=require"
+        SQLALCHEMY_DATABASE_URL = _raw_url
+        # Supabase pooler (port 6543) recomandă NullPool pentru serverless / auto-scale
+        from sqlalchemy.pool import NullPool
+        _poolclass = NullPool
 else:
     SQLALCHEMY_DATABASE_URL = "sqlite:///./imobiliare.db"
     _connect_args = {"check_same_thread": False}
+    _poolclass = None
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=_connect_args)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args=_connect_args,
+    **(dict(poolclass=_poolclass) if _poolclass else {}),
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

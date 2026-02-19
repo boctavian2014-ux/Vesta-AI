@@ -1,13 +1,18 @@
 import zeep
+from zeep.transports import Transport
+import requests
 
 
 def cauta_imobil_spania(provincie, municipiu, strada, numar):
-    # URL-ul oficial al serviciului web Catastro
+    # URL-ul oficial al serviciului web Catastro (fără punct după 'ovc')
     wsdl_url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
 
     try:
-        # Creăm clientul SOAP
-        client = zeep.Client(wsdl=wsdl_url)
+        # Certificate FNMT: verificare SSL dezactivată la nivel de sesiune (Railway / producție)
+        session = requests.Session()
+        session.verify = False
+        transport = Transport(session=session)
+        client = zeep.Client(wsdl=wsdl_url, transport=transport)
 
         # Apelăm funcția care caută Referința Catastrală după adresă
         # Parametrii: Provincia, Municipiul, Tip Stradă (gol pt căutare generală), Nume Stradă, Număr

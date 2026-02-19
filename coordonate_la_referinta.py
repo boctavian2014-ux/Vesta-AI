@@ -7,11 +7,8 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4326"):
     Convertește coordonate (lat, lon) în referință cadastrală folosind API-ul Catastro.
     Pentru EPSG:4326 (WGS84): X = longitudine, Y = latitudine.
     """
-    # Endpoint corect: Consulta_RCCOOR (coordonate -> referință), nu Consulta_CPMRC
-    url = (
-        "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/"
-        "Consulta_RCCOOR"
-    )
+    # Consulta_RCCOOR = coordonate -> referință cadastrală (CPMRC = invers: ref -> coordonate). Fără punct după 'ovc'.
+    url = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
     params = {
         "SRS": srs,
         "Coordenada_X": lon,  # longitudine
@@ -19,7 +16,8 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4326"):
     }
 
     try:
-        response = requests.get(url, params=params, timeout=15)
+        # Certificate FNMT (autorități locale ES) nu sunt în trust store-ul Python; verify=False pentru Catastro public
+        response = requests.get(url, params=params, timeout=15, verify=False)
         response.raise_for_status()
         root = ET.fromstring(response.content)
 

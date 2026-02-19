@@ -3,6 +3,9 @@ import uuid
 from email.mime.text import MIMEText
 from typing import Optional
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 import smtplib
 import stripe
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -30,15 +33,16 @@ if STRIPE_SECRET_KEY:
 
 app = FastAPI(title="OpenHouse Spain API")
 
-# CORS: localhost pentru dev; producție din CORS_ORIGINS (ex. https://openhouse.vercel.app)
-_cors_origins = os.getenv("CORS_ORIGINS", "").strip().split(",") if os.getenv("CORS_ORIGINS") else []
-_cors_origins = [o.strip() for o in _cors_origins if o.strip()]
+# CORS: setează CORS_ORIGINS pentru producție (ex. https://openhouse.vercel.app). Pentru dev + app mobil lasă nesetat (= permitem orice origin).
+_cors_origins_raw = os.getenv("CORS_ORIGINS", "").strip()
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
 if not _cors_origins:
-    _cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    _cors_origins = ["*"]
+_allow_credentials = bool(_cors_origins_raw)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -449,6 +453,22 @@ async def get_carta_oferta(report_id: int, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/request-id-by-session/{session_id}")
+async def request_id_by_session(session_id: str, db: Session = Depends(get_db)):
+    """
+    Returnează external_request_id pentru o sesiune Stripe Checkout.
+    Folosit de app mobil după redirect success pentru a afișa request_id fără tastare.
+    """
+    report = (
+        db.query(DetailedReport)
+        .filter(DetailedReport.stripe_session_id == session_id)
+        .first()
+    )
+    if not report:
+        return {"request_id": None, "status": "pending"}
+    return {"request_id": report.external_request_id, "status": report.status}
+
+
 @app.get("/status-raport/{request_id}")
 async def verifica_raport(request_id: str, db: Session = Depends(get_db)):
     """Verifică statusul raportului (pending / processing / completed / failed)."""
@@ -459,12 +479,14 @@ async def verifica_raport(request_id: str, db: Session = Depends(get_db)):
     )
     if not report:
         raise HTTPException(status_code=404, detail="Raport negăsit")
-    return {
+    result = {
         "request_id": request_id,
         "status": report.status,
         "pdf_url": report.pdf_url,
         "extracted_owner": report.extracted_owner,
     }
+    result["report_id"] = report.id
+    return result
 
 
 @app.post("/webhook/registru-update")
