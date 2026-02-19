@@ -49,7 +49,7 @@ def setup_ssl_bundle():
 
 setup_ssl_bundle()
 
-# COPIAZĂ EXACT – fără cratimă sau punct în plus (nu ovc.-catastro)
+# URL-ul corect pentru serviciul de coordonate (fără cratimă: ovc.catastro, nu ovc.-catastro)
 CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
 
 from database import DetailedReport, Property, SessionLocal, User
@@ -292,12 +292,20 @@ def get_catastro_data(lat: float, lon: float):
     """
     Apelează Catastro, parsează XML cu namespace-ul oficial și returnează
     un dicționar pe care aplicația îl recunoaște (JSON curat, fără XML).
+    Ordinea: Coordenada_X = longitudine (lon), Coordenada_Y = latitudine (lat).
     """
-    params = {"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat}
+    params = {
+        "SRS": "EPSG:4326",
+        "Coordenada_X": str(lon),  # Longitudinea este X
+        "Coordenada_Y": str(lat),   # Latitudinea este Y
+    }
     response = requests.get(CATASTRO_URL, params=params, verify=False, timeout=15)
 
+    print(f"DEBUG: Apel URL: {response.url}")
+    print(f"DEBUG: Status: {response.status_code}")
+
     if response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Eroare conexiune Catastro")
+        return {"status": "error", "message": f"Catastro a returnat {response.status_code}"}
 
     try:
         root = ET.fromstring(response.content)
