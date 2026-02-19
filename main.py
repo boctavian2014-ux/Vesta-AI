@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 import zeep  # pentru căutare după adresă (ConsultaNumero) - de folosit ulterior
+from openai import OpenAI
 
 # Cale absolută (Railway: __file__ e în container)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +62,8 @@ from carta_oferta import genera_carta_oferta
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # pentru imagini satelit (analiză piscină)
+MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN", "")   # pentru analiza AI (satelit Mapbox)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 PRET_RAPORT_EUR = 19  # 19€ per Nota Simple
 
 if STRIPE_SECRET_KEY:
@@ -288,6 +291,46 @@ async def analizeaza_satelit_property(property_id: int, db: Session = Depends(ge
 COORD_TOLERANCE = 0.0001
 
 
+def obtine_analiza_oportunitate(lat: float, lon: float) -> Optional[str]:
+    """
+    Analiză AI (GPT-4o + imagine Mapbox satelit) pentru investitor: piscină, curte, panouri solare,
+    scor oportunitate renovare 1–10. Returnează textul sau None dacă lipsesc chei/eroare.
+    """
+    if not OPENAI_API_KEY or not MAPBOX_ACCESS_TOKEN:
+        return None
+    image_url = (
+        f"https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},18,0/600x600"
+        f"?access_token={MAPBOX_ACCESS_TOKEN}"
+    )
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Analizează această proprietate din Spania pentru un investitor imobiliar. "
+                                "1. Identifică dacă există o piscină. Dacă da, este apa curată (albastră) sau murdară/abandonată (verde/maro)? "
+                                "2. Starea curții: este îngrijită sau plină de vegetație uscată/buruieni? "
+                                "3. Există panouri solare? "
+                                "4. Dă un scor de 'Oportunitate de Renovare' de la 1 la 10 (unde 10 înseamnă casă clar abandonată cu potențial mare)."
+                            ),
+                        },
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                }
+            ],
+            max_tokens=500,
+        )
+        return response.choices[0].message.content or None
+    except Exception as e:
+        return f"Eroare AI: {str(e)}"
+
+
 def get_catastro_data(lat: float, lon: float):
     """
     Apelează Catastro pe domeniul oficial meh.es (documentație Sede Electrónica).
@@ -366,11 +409,13 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     )
 
     if existing_prop:
+        analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
         return {
             "source": "baza_de_date",
             "status": "succes",
             "referinta": existing_prop.ref_catastral,
             "data": property_to_dict(existing_prop),
+            "analiza_ai": analiza_ai,
         }
 
     # 2. Apelăm Catastro (namespace corect, returnare JSON curat)
@@ -387,11 +432,13 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     # 3. Salvăm în baza de date (evităm duplicate după ref_catastral)
     existing_by_ref = db.query(Property).filter(Property.ref_catastral == referinta_cadastrala).first()
     if existing_by_ref:
+        analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
         return {
             "source": "baza_de_date",
             "status": "succes",
             "referinta": referinta_cadastrala,
             "data": property_to_dict(existing_by_ref),
+            "analiza_ai": analiza_ai,
         }
 
     scor_initial = calculeaza_scor_oportunitate({"year_built": None}, None)
@@ -408,11 +455,13 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     db.commit()
     db.refresh(noua_proprietate)
 
+    analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
     return {
         "source": "catastro_api",
         "status": "succes",
         "referinta": referinta_cadastrala,
         "data": property_to_dict(noua_proprietate),
+        "analiza_ai": analiza_ai,
     }
 
 
