@@ -49,9 +49,8 @@ def setup_ssl_bundle():
 
 setup_ssl_bundle()
 
-# Rută folosită de portalul Sede Electrónica; la 404 încercăm varianta fără .asmx
-CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
-CATASTRO_URL_ALT = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas/Consulta_RCCOOR"
+# Endpoint REST mai stabil (ovccoco.ashx) – handler modern pentru coordonate
+CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/ovcswlocalizacionrc/ovccoco.ashx"
 
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
@@ -97,7 +96,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 try:
     r = requests.get(
         CATASTRO_URL,
-        params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
+        params={"srs": "EPSG:4326", "x": -4.4, "y": 36.7},
         timeout=10,
         verify=False,
     )
@@ -291,17 +290,18 @@ COORD_TOLERANCE = 0.0001
 
 def get_catastro_data(lat: float, lon: float):
     """
-    Apelează Catastro (rută Sede Electrónica). La 404 încercăm URL fără .asmx.
+    Apelează Catastro (endpoint ovccoco.ashx). Headers ca pe iPhone ca să evite 404/403.
     Returnează dict (success/error) pentru JSON curat către app.
     """
     params = {
-        "SRS": "EPSG:4326",
-        "Coordenada_X": "{:.10f}".format(lon),
-        "Coordenada_Y": "{:.10f}".format(lat),
+        "srs": "EPSG:4326",
+        "x": f"{lon:.8f}",   # Longitudinea (X)
+        "y": f"{lat:.8f}",   # Latitudinea (Y)
     }
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/xml",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9",
     }
 
     try:
@@ -312,17 +312,10 @@ def get_catastro_data(lat: float, lon: float):
             verify=False,
             timeout=10,
         )
-        if response.status_code == 404:
-            response = requests.get(
-                CATASTRO_URL_ALT,
-                params=params,
-                headers=headers,
-                verify=False,
-                timeout=10,
-            )
-        print(f"📡 Status: {response.status_code} | URL: {response.url}")
+        print(f"📡 Status final: {response.status_code}")
+        print(f"📡 URL apelat: {response.url}")
     except Exception as e:
-        print(f"❌ Crash rețea: {e}")
+        print(f"❌ Eroare apel: {e}")
         return {"status": "error", "message": f"Eroare rețea: {str(e)}"}
 
     if response.status_code != 200:
