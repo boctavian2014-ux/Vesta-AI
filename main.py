@@ -1,9 +1,11 @@
 import os
+import shutil
 import uuid
 import xml.etree.ElementTree as ET
 from email.mime.text import MIMEText
 from typing import Optional
 
+import certifi
 import requests
 import smtplib
 import stripe
@@ -15,13 +17,29 @@ from sqlalchemy.orm import Session
 
 import zeep  # pentru căutare după adresă (ConsultaNumero) - de folosit ulterior
 
-from catastro_ssl import get_catastro_session
+# Cale absolută (Railway: __file__ e în container)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CATASTRO_CERT_PATH = os.path.join(BASE_DIR, "fnmt_root.pem")
+
+# Bundle combinat: certificate standard (certifi) + FNMT → tot Python folosește acest trust store
+combined_bundle = os.path.join(BASE_DIR, "vesta_bundle.pem")
+if not os.path.exists(combined_bundle):
+    with open(combined_bundle, "wb") as outfile:
+        with open(certifi.where(), "rb") as infile:
+            shutil.copyfileobj(infile, outfile)
+        if os.path.exists(CATASTRO_CERT_PATH):
+            outfile.write(b"\n")
+            with open(CATASTRO_CERT_PATH, "rb") as infile:
+                shutil.copyfileobj(infile, outfile)
+            print(f"✅ Bundle creat: {combined_bundle} (certifi + FNMT)")
+        else:
+            print(f"⚠️ fnmt_root.pem lipsește; bundle doar cu certifi")
+
+os.environ["REQUESTS_CA_BUNDLE"] = combined_bundle
+os.environ["SSL_CERT_FILE"] = combined_bundle
 
 # COPIAZĂ EXACT – fără cratimă sau punct în plus (nu ovc.-catastro)
 CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
-# Cale absolută către fnmt_root.pem (Railway: __file__ e în container, nu getcwd())
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CATASTRO_CERT_PATH = os.path.join(BASE_DIR, "fnmt_root.pem")
 
 if not os.path.exists(CATASTRO_CERT_PATH):
     print(f"❌ ALERTA: Certificatul lipsește la calea: {CATASTRO_CERT_PATH}")
@@ -68,19 +86,18 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Verificare SSL la pornire: folosim CATASTRO_URL și certificatul .pem (fără verify=False)
-if os.path.isfile(CATASTRO_CERT_PATH):
-    try:
-        r = requests.get(
-            CATASTRO_URL,
-            params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
-            timeout=10,
-            verify=CATASTRO_CERT_PATH,
-        )
-        r.raise_for_status()
-        print("Succes SSL Catastro (fnmt_root.pem)")
-    except Exception as e:
-        print(f"Eroare verificare SSL Catastro: {e}")
+# Verificare SSL la pornire (folosește vesta_bundle.pem din REQUESTS_CA_BUNDLE)
+try:
+    r = requests.get(
+        CATASTRO_URL,
+        params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
+        timeout=10,
+        verify=True,
+    )
+    r.raise_for_status()
+    print("Succes SSL Catastro")
+except Exception as e:
+    print(f"Eroare verificare SSL Catastro: {e}")
 
 # Model pentru cererea de la user (coordonate de pe hartă)
 class ClickLocation(BaseModel):
@@ -269,31 +286,10 @@ def get_catastro_data(lat: float, lon: float):
     """
     Apelează Catastro, parsează XML cu namespace-ul oficial și returnează
     un dicționar pe care aplicația îl recunoaște (JSON curat, fără XML).
+    Trust store: REQUESTS_CA_BUNDLE / SSL_CERT_FILE = vesta_bundle.pem (certifi + FNMT).
     """
-    verify = CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else False
-    if verify is False:
-        session = get_catastro_session()
-        if session is not False:
-            response = session.get(
-                CATASTRO_URL,
-                params={"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat},
-                timeout=15,
-            )
-        else:
-            response = requests.get(
-                CATASTRO_URL,
-                params={"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat},
-                timeout=15,
-                verify=False,
-            )
-    else:
-        # verify = CATASTRO_CERT_PATH (cale absolută din BASE_DIR) – Trust Store: folosește ACEST fișier
-        response = requests.get(
-            CATASTRO_URL,
-            params={"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat},
-            timeout=15,
-            verify=verify,
-        )
+    params = {"SRS": "EPSG:4326", "Coordenada_X": lon, "Coordenada_Y": lat}
+    response = requests.get(CATASTRO_URL, params=params, timeout=15, verify=True)
 
     if response.status_code != 200:
         raise HTTPException(status_code=500, detail="Eroare conexiune Catastro")

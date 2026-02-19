@@ -6,6 +6,7 @@ venv/
 .env
 *.db
 flux_test_result.txt
+vesta_bundle.pem
 
 # Node / Next / Expo
 node_modules/
