@@ -10,8 +10,8 @@ import warnings
 import requests
 from requests.adapters import HTTPAdapter
 
-# Host oficial – fără cratimă după punct (nu ovc.-catastro, altfel SSL hostname mismatch)
-CATASTRO_HOST = "ovc.catastro.minhap.es"
+# Host oficial – domeniul nou cu certificate SSL la zi (migrare de la ovc.catastro.minhap.es)
+CATASTRO_HOST = "www1.sedecatastro.gob.es"
 
 _FNMT_PEM = os.environ.get(
     "CATASTRO_CA_BUNDLE",

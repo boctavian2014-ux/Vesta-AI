@@ -97,24 +97,32 @@ from coordonate_la_referinta import coordonate_la_referinta, _proceseaza_raspuns
 
 def _coordonate_la_referinta_cu_buffer(lat: float, lon: float, catastro_url: str = None, cert_path: str = None):
     """
-    Apelează Catastro la (lat, lon). Dacă nu găsește referință, reîncearcă cu un buffer de ~3 m
-    (4 puncte: ±lat, ±lon) – click-ul pe centrul clădirii poate să nu cadă exact pe punctul cadastral.
+    Apelează Catastro la (lat, lon). Dacă nu găsește referință, reîncearcă la 8 direcții
+    (4 cardinale N/S/E/V + 4 intercardinale NE/NV/SE/SV) la ~8 m – acoperă colțuri de clădiri și trotuar.
     Returnează (data, err) ca coordonate_la_referinta.
     """
-    points = [
-        (lat, lon),
-        (lat + CATASTRO_BUFFER_DEG, lon),
-        (lat - CATASTRO_BUFFER_DEG, lon),
-        (lat, lon + CATASTRO_BUFFER_DEG),
-        (lat, lon - CATASTRO_BUFFER_DEG),
+    b = CATASTRO_BUFFER_DEG
+    offsets = [
+        (0, 0),
+        (b, 0),
+        (-b, 0),
+        (0, b),
+        (0, -b),
+        (b, b),
+        (b, -b),
+        (-b, b),
+        (-b, -b),
     ]
     last_err = None
-    for la, lo in points:
+    for d_lat, d_lon in offsets:
+        la, lo = lat + d_lat, lon + d_lon
         data, err = coordonate_la_referinta(la, lo, srs="EPSG:4326", catastro_url=catastro_url, cert_path=cert_path)
         if err is None and data and (data.get("ref_catastral") or "").strip():
+            if d_lat != 0 or d_lon != 0:
+                print(f"✅ Imobil găsit cu buffer la offset: d_lat={d_lat}, d_lon={d_lon}")
             return data, None
         last_err = err
-    return None, last_err or "Referință negăsită în raza de căutare (buffer ~3 m)"
+    return None, last_err or "Referință negăsită în raza de căutare (buffer ~8 m)"
 
 # Fallback identificare: când Catastro (coordonate) eșuează, folosim adresa poștală + ConsultaNumero
 try:
@@ -391,8 +399,8 @@ async def analizeaza_satelit_property(property_id: int, db: Session = Depends(ge
 
 # Toleranță pentru „aceeași” locație (aprox. ~10 m la ecuator)
 COORD_TOLERANCE = 0.0001
-# Buffer pentru reîncercare Catastro: ~3 m (click pe centrul clădirii poate să nu cadă exact pe punctul cadastral)
-CATASTRO_BUFFER_DEG = 0.000027
+# Buffer pentru reîncercare Catastro: ~8 m (trotuar/zonă publică poate fi >5 m; ex. Plaza de España Madrid)
+CATASTRO_BUFFER_DEG = 0.00008
 
 # Fallback: adresă poștală din Nominatim (gratuit) pentru când Catastro pe coordonate eșuează
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"

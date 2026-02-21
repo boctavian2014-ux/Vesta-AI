@@ -35,7 +35,26 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 
 **Timeout-uri:** Sunt setate 15s pentru Consulta_RCCOOR (coordonate) și 10s pentru Consulta_DNPRC (date detaliate). Acestea sunt valori potrivite pentru API-urile guvernamentale spaniole, care pot răspunde lent în orele de vârf.
 
-**De ce dispare „Hostname mismatch”:** `get_catastro_session()` (din `catastro_ssl.py`) injectează contextul SSL corect (sistem + fnmt_root.pem), astfel că certificatul emis de FNMT pentru domeniul Catastro este recunoscut. În producție nu se folosește `verify=False`; toate cererile trec prin sesiunea securizată.
+**De ce dispare „Hostname mismatch”:** Toate apelurile Catastro trec prin `get_catastro_http_client()` (main.py), care folosește sesiunea din `catastro_ssl.py` (context SSL: sistem + fnmt_root.pem). Noul host `www1.sedecatastro.gob.es` are certificatele SSL la zi. În producție nu se folosește `verify=False`.
+
+**De ce 422 Unprocessable Entity:** Dacă un apel către Catastro eșuează cu SSLCertVerificationError (ex. host vechi `ovc.catastro.minhap.es`), excepția întrerupe handler-ul înainte să returneze JSON; FastAPI returnează 422. **Fix:** Folosește peste tot `www1.sedecatastro.gob.es` și asigură-te că fnmt_root.pem este prezent în Railway (CATASTRO_CA_BUNDLE).
+
+### Validare finală a arhitecturii
+
+| Componentă | Stare | Impact |
+|------------|--------|--------|
+| Domeniu (Host) | `www1.sedecatastro.gob.es` | Certificatul SSL se potrivește cu URL-ul apelat. |
+| SSL Trust Store | fnmt_root.pem injectat (catastro_ssl.py) | Rezolvă „unable to get local issuer certificate” (FNMT root). |
+| Health Check | Aliniat la noul host + get_catastro_http_client() | Monitorizarea nu mai raportează alerte false SSL. |
+| Namespace XML | Conservate (catastro.minhap.es / meh.es) | Corect: identificatori de structură în răspuns, nu URL-uri de rețea. |
+
+**Notă de siguranță înainte de push:** Rulează local `python tests_e2e.py` înainte de push-ul final pe Railway. Testul verifică că `CATASTRO_URL` folosește `www1.sedecatastro.gob.es` și că nu a rămas nicio referință activă către host-ul vechi în codul de testare.
+
+### Ce să observi după deploy (Railway)
+
+- **Logs la pornire:** În consola Railway ar trebui să apară **Succes SSL Catastro** (testul din main.py la startup). Dacă vezi erori aici, verifică imediat prezența `fnmt_root.pem` și `CATASTRO_CA_BUNDLE`.
+- **Identificare imobil:** La un click în Madrid/Málaga, log-urile **nu** trebuie să conțină `SSLCertVerificationError`. În loc de 422 Unprocessable Entity: **200 OK** (cu date imobil) sau răspuns JSON de eroare controlată (ex. „Referință negăsită”).
+- **Buffer 8 m:** Dacă utilizatorul dă click ușor pe lângă clădire, în log-uri apare **✅ Imobil găsit cu buffer la offset: ...**, confirmând că mecanismul de buffer a salvat cererea.
 
 ---
 
@@ -59,7 +78,7 @@ python tests_e2e.py
 
 Verificări:
 - Importuri (main, coordonate_la_referinta, catastro_ssl)
-- `CATASTRO_URL` fără cratimă greșită (ovc.catastro, nu ovc.-catastro)
+- `CATASTRO_URL` folosește noul host `www1.sedecatastro.gob.es` (certificate SSL la zi)
 - Parsare XML cu `ET.fromstring` (nu `.json()`)
 - Răspuns JSON cu `referinta` și `data`
 - Handler global de excepții (returnează JSON)
@@ -76,6 +95,23 @@ python test_catastro_local.py
 ```
 
 Verifică SSL + `coordonate_la_referinta` pentru coordonate din Málaga.
+
+**Test cu coordonate Madrid (Plaza de España):**  
+Dacă click-ul cade pe stradă/trotuar, Catastro poate returna XML fără referință. Backend-ul reîncearcă automat la **8 direcții** (4 cardinale N/S/E/V + 4 intercardinale NE/NV/SE/SV) la **~8 m** (`CATASTRO_BUFFER_DEG = 0.00008`), astfel că se acoperă și colțurile clădirilor. Pentru a testa cu coordonatele exacte din app (ex. screenshot):
+
+```powershell
+$env:API_URL = "http://127.0.0.1:8000"
+# Pornește uvicorn main:app --port 8000, apoi:
+Invoke-RestMethod -Uri "$env:API_URL/identifica-imobil/" -Method Post -Body '{"lat":40.42056879131868,"lon":-3.705847207404546}' -ContentType "application/json"
+```
+
+În consola serverului vor apărea `[Catastro] URL complet`, `[Catastro] Răspuns XML (brut)` și, dacă s-a găsit imobilul la un punct din buffer, `✅ Imobil găsit cu buffer la offset: ...`.
+
+**Dacă primești în continuare „Referință negăsită în raza de căutare”:**
+- **Mărire buffer:** Setează `CATASTRO_BUFFER_DEG = 0.0001` (~11 m) în `main.py` pentru trotuare/zone foarte largi.
+- Căutarea are deja 8 direcții (cardinale + diagonale), deci colțurile clădirilor sunt acoperite.
+
+**Sfat producție:** După deploy pe Railway, verifică log-urile. Dacă apar des mesaje `✅ Imobil găsit cu buffer la offset: ...`, mecanismul de buffer este cel care salvează experiența utilizatorului în majoritatea cazurilor.
 
 ### Rulează testele în mediul de producție (sau image identică)
 

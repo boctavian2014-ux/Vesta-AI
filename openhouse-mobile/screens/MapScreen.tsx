@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity, Text, ActivityIndicator, Alert } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Text, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import MapView, { Marker } from "react-native-maps";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -9,8 +9,7 @@ import type { CatastroProperty } from "./PropertyScreen";
 
 const MADRID = { latitude: 40.4167, longitude: -3.7037, latitudeDelta: 0.02, longitudeDelta: 0.02 };
 const FRIENDLY_ERROR =
-  "Informații indisponibile pentru acest punct. Încearcă să dai click pe centrul clădirii, nu pe stradă.";
-const OFFSET_RETRY_DEG = 0.00005; // ~5 m – mici deplasări pentru sensibilitate (stradă vs clădire)
+  "Informații indisponibile pentru acest punct. Apasă pe acoperișul clădirii (vedere satelit), nu pe stradă sau trotuar.";
 
 export type MapScreenParams = {
   Map: undefined;
@@ -51,36 +50,12 @@ export default function MapScreen({ navigation }: Props) {
 
   const onMapPress = useCallback(async (e: { nativeEvent: { coordinate: { latitude: number; longitude: number } } }) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
-    // Pentru comparare cu Google Maps: coordonate exacte la click (verificare decalaj/offset)
-    console.log("Click hartă — Lat:", latitude, "Lon:", longitude);
-    Alert.alert(
-      "Coordonate click",
-      `Lat: ${latitude}\nLon: ${longitude}\n\n(Compară cu Google Maps pentru a verifica decalajul.)`
-    );
     setIsLoadingProperty(true);
     setSelectedProp(null);
     setErrorProperty(null);
 
-    const tryIdentify = async (lat: number, lon: number) => {
-      const res = await identificaImobil(lat, lon);
-      console.log("Răspuns API (brut):", res);
-      const data = (res as { data?: Record<string, unknown> }).data ?? res as Record<string, unknown>;
-      const keys = Object.keys(data);
-      const wanted = ["ref_catastral", "address", "year_built", "id"];
-      const missing = wanted.filter((k) => data[k] == null || data[k] === "");
-      console.log("Chei în răspuns:", keys, "| Lipsesc:", missing);
-      return res;
-    };
-
     try {
-      let res: Awaited<ReturnType<typeof identificaImobil>>;
-      try {
-        res = await tryIdentify(latitude, longitude);
-      } catch (firstErr) {
-        const lat2 = latitude + OFFSET_RETRY_DEG;
-        const lon2 = longitude + OFFSET_RETRY_DEG;
-        res = await tryIdentify(lat2, lon2);
-      }
+      const res = await identificaImobil(latitude, longitude);
       const data = (res as { data?: Record<string, unknown> }).data;
       if (data && (data as { ref_catastral?: string }).ref_catastral) {
         setErrorProperty(null);
@@ -89,11 +64,13 @@ export default function MapScreen({ navigation }: Props) {
         navigation.navigate("Property", { property });
         return;
       }
-      const property = buildCatastroProperty(res, latitude, longitude);
-      setSelectedProp(property);
+      // Răspuns OK dar fără ref_catastral: nu afișăm proprietate invalidă
+      setSelectedProp(null);
+      setErrorProperty(FRIENDLY_ERROR);
     } catch (err: unknown) {
       const e = err as { body?: { data?: { ref_catastral?: string; id?: number }; ref_catastral?: string }; status?: number };
-      if (e?.body && (e.body.data?.ref_catastral || e.body.ref_catastral || e.body.data?.id != null)) {
+      const hasRef = e?.body && (e.body.data?.ref_catastral || e.body.ref_catastral);
+      if (hasRef) {
         const property = buildCatastroProperty(
           { ...e.body, data: e.body.data ?? e.body },
           latitude,
@@ -101,10 +78,9 @@ export default function MapScreen({ navigation }: Props) {
         );
         setSelectedProp(property);
         setErrorProperty(null);
-        if (property.ref_catastral) {
-          navigation.navigate("Property", { property });
-        }
+        navigation.navigate("Property", { property });
       } else {
+        setSelectedProp(null);
         setErrorProperty(FRIENDLY_ERROR);
       }
     } finally {
@@ -171,7 +147,9 @@ export default function MapScreen({ navigation }: Props) {
               </TouchableOpacity>
             </>
           ) : (
-            <Text style={styles.panelHint}>Dă click pe o clădire pe hartă.</Text>
+            <Text style={styles.panelHint}>
+              Apasă pe acoperișul clădirii (vedere satelit) pentru identificare.
+            </Text>
           )}
         </View>
       </View>

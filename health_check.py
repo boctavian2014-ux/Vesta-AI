@@ -104,7 +104,12 @@ def run_catastro_ssl_check() -> None:
     except ImportError:
         fail("Catastro SSL", "Modulul requests lipsește", "Rulează: pip install requests")
         return
-    url = "https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
+    try:
+        from main import get_catastro_http_client, CATASTRO_DNPRC_URL
+    except ImportError as e:
+        fail("Catastro SSL", str(e), "Rulează din rădăcina proiectului (lângă main.py).")
+        return
+    url = CATASTRO_DNPRC_URL
     params = {
         "CodigoProvincia": codigo_provincia,
         "CodigoMunicipio": codigo_municipio,
@@ -116,7 +121,8 @@ def run_catastro_ssl_check() -> None:
         "Accept": "application/xml, text/xml, */*",
     }
     try:
-        r = requests.get(url, params=params, headers=headers, verify=cert_path, timeout=10)
+        session = get_catastro_http_client()
+        r = session.get(url, params=params, headers=headers, timeout=10)
         # Orice răspuns de la server (200, 404, etc.) confirmă că SSL a fost validat
         ok("Catastro SSL", "VALIDATED")
     except requests.exceptions.SSLError as e:
@@ -129,7 +135,7 @@ def run_catastro_ssl_check() -> None:
         fail(
             "Catastro SSL",
             str(e),
-            "Verifică conexiunea la internet și că ovc.catastro.meh.es este accesibil.",
+            "Verifică conexiunea la internet și că www1.sedecatastro.gob.es este accesibil.",
         )
 
 
