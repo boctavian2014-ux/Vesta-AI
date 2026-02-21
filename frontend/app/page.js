@@ -37,6 +37,7 @@ export default function HomePage() {
   const handleMapClick = useCallback(
     async (event) => {
       const { lng, lat } = event.lngLat;
+      console.log("Click detectat la:", lat, lng);
       setError(null);
       setLoading(true);
       try {
@@ -46,12 +47,18 @@ export default function HomePage() {
           body: JSON.stringify({ lat, lon: lng }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || "Eroare la identificare");
-        setSelectedProp({
-          ...data.data,
-          analiza_ai: data.analiza_ai,
-          scor: data.scor,
-        });
+        if (!res.ok) throw new Error(data.detail || data.message || "Eroare la identificare");
+        const payload = data.data || {};
+        const selectedProperty = {
+          ...payload,
+          ref_catastral: payload.ref_catastral ?? data.ref_catastral ?? "",
+          address: payload.address ?? data.address ?? "",
+          year_built: payload.year_built ?? data.year_built,
+          lat: payload.lat ?? lat,
+          lon: payload.lon ?? lng,
+          scor: data.scor ?? payload.scor_oportunitate,
+        };
+        setSelectedProp(selectedProperty);
       } catch (err) {
         setError(err.message);
         setSelectedProp(null);
@@ -189,26 +196,55 @@ export default function HomePage() {
           </div>
         )}
 
-        {selectedProp ? (
+        {loading && !selectedProp ? (
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 12,
+              padding: 20,
+              marginBottom: 20,
+              color: "#64748b",
+              fontSize: 14,
+            }}
+          >
+            Încărcare date…
+          </div>
+        ) : selectedProp ? (
           <div>
-            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
-              Detalii proprietate
-            </h2>
-            <p style={{ marginBottom: 6 }}>
-              <strong>Ref. cadastrală:</strong>{" "}
-              <code style={{ fontSize: 13 }}>{selectedProp.ref_catastral}</code>
-            </p>
-            <p style={{ marginBottom: 6 }}>
-              <strong>Adresă:</strong>{" "}
-              {selectedProp.address || "—"}
-            </p>
-            <p style={{ marginBottom: 6 }}>
-              <strong>An construcție:</strong>{" "}
-              {selectedProp.year_built ?? "—"}
-            </p>
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 20,
+              }}
+            >
+              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
+                Date Catastro (Spania)
+              </h2>
+              <p style={{ marginBottom: 8 }}>
+                <strong>Adresă:</strong>{" "}
+                {selectedProp.address || "—"}
+              </p>
+              <p style={{ marginBottom: 8 }}>
+                <strong>An Construcție:</strong>{" "}
+                {selectedProp.year_built ?? "—"}
+                {selectedProp.year_built != null && selectedProp.year_built < 1970 && (
+                  <span style={{ display: "block", fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                    În Spania, clădirile dinainte de 1970 sunt adesea oportunități de renovare (eficiență energetică).
+                  </span>
+                )}
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                <strong>Referință:</strong>{" "}
+                <code style={{ fontSize: 13 }}>{selectedProp.ref_catastral || "—"}</code>
+              </p>
+            </div>
             <p style={{ marginBottom: 16 }}>
               <strong>Scor oportunitate:</strong>{" "}
-              {selectedProp.scor_oportunitate ?? "—"} — {labelScor(selectedProp.scor_oportunitate)}
+              {selectedProp.scor_oportunitate ?? selectedProp.scor ?? "—"} — {labelScor(selectedProp.scor_oportunitate ?? selectedProp.scor)}
             </p>
             {selectedProp.stare_piscina && (
               <p style={{ marginBottom: 16 }}>
@@ -217,14 +253,6 @@ export default function HomePage() {
                   {selectedProp.stare_piscina === "CRITIC" ? "Piscină abandonată" : "Întreținut"}
                 </span>
               </p>
-            )}
-            {selectedProp.analiza_ai != null && selectedProp.analiza_ai !== "" && (
-              <div style={{ marginBottom: 16 }}>
-                <strong style={{ display: "block", marginBottom: 6 }}>Analiză AI (oportunitate renovare)</strong>
-                <p style={{ fontSize: 14, color: "#374151", whiteSpace: "pre-wrap", margin: 0 }}>
-                  {selectedProp.analiza_ai}
-                </p>
-              </div>
             )}
 
             <label style={{ display: "block", fontSize: 14, marginBottom: 6 }}>

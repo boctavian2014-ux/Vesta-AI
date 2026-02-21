@@ -1,4 +1,4 @@
-import base64
+import logging
 import os
 import shutil
 import uuid
@@ -6,6 +6,8 @@ import xml.etree.ElementTree as ET
 import urllib3
 from email.mime.text import MIMEText
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -54,11 +56,16 @@ setup_ssl_bundle()
 
 # Serviciu oficial documentat: ovc.catastro.meh.es (GET Consulta_RCCOOR)
 CATASTRO_URL = "https://ovc.catastro.meh.es/ovcservweb/ovcswlocalizacionrc/ovccoordenadas.asmx/Consulta_RCCOOR"
+# Consulta date descriptive (antigüedad = an construcție) după referință cadastrală
+CATASTRO_DNPRC_URL = "https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
 
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
 from carta_oferta import genera_carta_oferta
+
+# Identificare: coordonate -> referință cadastrală (folosim modulul cu SSL)
+from coordonate_la_referinta import coordonate_la_referinta
 
 # Fallback identificare: când Catastro (coordonate) eșuează, folosim adresa poștală + ConsultaNumero
 try:
@@ -73,7 +80,6 @@ from pdf_generator import exporta_scrisoare_pdf
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # pentru imagini satelit (analiză piscină)
-MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN", "")   # pentru analiza AI (satelit Mapbox)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 PRET_RAPORT_EUR = 19  # 19€ per Nota Simple
 
@@ -182,6 +188,22 @@ def trimite_email_notificare(
     )
 
 
+def notifica_admin_plata_orfana(subject: str, detail: str) -> None:
+    """
+    Alertă administrator când o plată reușită nu poate fi legată de un raport (property_id lipsă/invalid).
+    MVP: logging.error + print. Opțional: setează ADMIN_EMAIL în .env și deblochează SMTP pentru email.
+    """
+    logger.error("%s | %s", subject, detail)
+    print(f"🚨 ADMIN ALERT: {subject} | {detail}")
+    admin_email = os.getenv("ADMIN_EMAIL", "").strip()
+    if admin_email:
+        # Producție: deblochează trimiterea efectivă (ex. SMTP / SendGrid)
+        # msg = MIMEText(detail, "plain", "utf-8")
+        # msg["Subject"] = f"[Vesta] {subject}"
+        # ... smtplib sau SendGrid ...
+        print(f"📧 [MVP] Ar fi trimis alertă către admin: {admin_email}")
+
+
 def solicita_raport_registru(
     db: Session,
     report_id: int,
@@ -239,6 +261,12 @@ def property_to_dict(prop: Property):
 @app.get("/")
 def home():
     return {"message": "Serverul imobiliar este activ!"}
+
+
+@app.get("/version")
+def version():
+    """Versiune API – fără analiză satelit; identificare doar din Catastro (+ fallback adresă)."""
+    return {"message": "OpenHouse Spain API", "identificare": "Catastro + fallback adresă"}
 
 
 @app.get("/proprietati")
@@ -388,54 +416,53 @@ def _identifica_imobil_fallback_adresa(lat: float, lon: float) -> Optional[dict]
     return {"status": "success", "data": {"ref_catastral": ref.strip(), "address": address_display}}
 
 
-def obtine_analiza_oportunitate(lat: float, lon: float) -> Optional[str]:
+def _consulta_dnprc_antiguedad(ref_catastral: str, cmun_ine: Optional[str] = None) -> Optional[int]:
     """
-    Analiză AI (GPT-4o + imagine Mapbox satelit) pentru investitor: piscină, curte, panouri solare,
-    scor oportunitate renovare 1–10. Returnează textul sau None dacă lipsesc chei/eroare.
-    Imaginea Mapbox este descărcată pe backend și trimisă ca base64 către OpenAI (evită invalid_image_url).
+    Cerere rapidă către Consulta_DNPRC_Codigos (Catastro) pentru a obține antigüedad (anul construcției).
+    ref_catastral: referința cadastrală (min 14 caractere). Din ea extragem CodigoProvincia (2) și CodigoMunicipio (3).
+    cmun_ine: cod INE municipiu dacă e disponibil din răspunsul Consulta_RCCOOR.
+    Returnează anul (int) sau None.
     """
-    if not OPENAI_API_KEY or not MAPBOX_ACCESS_TOKEN:
+    ref = (ref_catastral or "").strip()
+    if len(ref) < 14:
         return None
-    image_url = (
-        f"https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},18,0/600x600"
-        f"?access_token={MAPBOX_ACCESS_TOKEN}"
-    )
     try:
-        # Descărcăm imaginea pe server; OpenAI nu poate accesa direct URL-ul Mapbox (invalid_image_url)
-        img_resp = requests.get(image_url, timeout=15)
-        img_resp.raise_for_status()
-        img_bytes = img_resp.content
-        img_b64 = base64.standard_b64encode(img_bytes).decode("ascii")
-        data_url = f"data:image/jpeg;base64,{img_b64}"
-
-        client = OpenAI(api_key=OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "Analizează această proprietate din Spania pentru un investitor imobiliar. "
-                                "1. Identifică dacă există o piscină. Dacă da, este apa curată (albastră) sau murdară/abandonată (verde/maro)? "
-                                "2. Starea curții: este îngrijită sau plină de vegetație uscată/buruieni? "
-                                "3. Există panouri solare? "
-                                "4. Dă un scor de 'Oportunitate de Renovare' de la 1 la 10 (unde 10 înseamnă casă clar abandonată cu potențial mare)."
-                            ),
-                        },
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                }
-            ],
-            max_tokens=500,
+        codigo_provincia = ref[:2]
+        codigo_municipio = ref[2:5]
+        codigo_municipio_ine = (cmun_ine or codigo_municipio).strip()
+        params = {
+            "CodigoProvincia": codigo_provincia,
+            "CodigoMunicipio": codigo_municipio,
+            "CodigoMunicipioINE": codigo_municipio_ine,
+            "RC": ref,
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; OpenHouseSpain/1.0)",
+            "Accept": "application/xml, text/xml, */*",
+            "Accept-Language": "es-ES,es;q=0.9",
+        }
+        response = requests.get(
+            CATASTRO_DNPRC_URL,
+            params=params,
+            headers=headers,
+            verify=False,
+            timeout=8,
         )
-        return response.choices[0].message.content or None
-    except requests.RequestException as e:
-        return f"Eroare la descărcarea imaginii satelit: {str(e)}"
-    except Exception as e:
-        return f"Eroare AI: {str(e)}"
+        if response.status_code != 200:
+            return None
+        root = ET.fromstring(response.content)
+        # Căutăm antigüedad în XML (tag-uri posibile: ant, Antiguedad, etc.)
+        for elem in root.iter():
+            tag = elem.tag.split("}")[-1] if elem.tag and "}" in elem.tag else (elem.tag or "")
+            if tag.lower() in ("ant", "antiguedad"):
+                text = (elem.text or "").strip()
+                if text and text.isdigit():
+                    year = int(text)
+                    if 1800 <= year <= 2030:
+                        return year
+        return None
+    except Exception:
+        return None
 
 
 def get_catastro_data(lat: float, lon: float):
@@ -516,56 +543,103 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     )
 
     if existing_prop:
-        analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
         data = property_to_dict(existing_prop)
+        ref = existing_prop.ref_catastral or ""
+        addr = existing_prop.address or ""
         return {
+            "success": True,
+            "ref_catastral": ref,
+            "address": addr,
+            "year_built": getattr(existing_prop, "year_built", None),
             "source": "baza_de_date",
             "status": "succes",
-            "referinta": existing_prop.ref_catastral,
-            "referinta_cadastrala": existing_prop.ref_catastral,
+            "referinta": ref,
+            "referinta_cadastrala": ref,
             "data": data,
-            "analiza_ai": analiza_ai,
             "scor": data.get("scor_oportunitate"),
         }
 
-    # 2. Apelăm Catastro (coordonate -> referință cadastrală)
+    # 2. Apelăm coordonate_la_referinta (Catastro) – returnează dict cu ref_catastral, address, year_built, cmun_ine
+    result = None
     try:
-        result = get_catastro_data(location.lat, location.lon)
+        data_coord, err = coordonate_la_referinta(
+            location.lat, location.lon,
+            catastro_url=CATASTRO_URL,
+            cert_path=CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else None,
+        )
+        if err is None and data_coord and (data_coord.get("ref_catastral") or "").strip():
+            data_block = {
+                "ref_catastral": (data_coord.get("ref_catastral") or "").strip(),
+                "address": data_coord.get("address"),
+                "year_built": data_coord.get("year_built"),
+                "cmun_ine": data_coord.get("cmun_ine"),
+            }
+            # Dacă anul lipsește, a doua cerere rapidă: Consulta_DNPRC pentru antigüedad
+            if data_block.get("year_built") is None:
+                year_ant = _consulta_dnprc_antiguedad(
+                    data_block["ref_catastral"],
+                    data_block.get("cmun_ine"),
+                )
+                if year_ant is not None:
+                    data_block["year_built"] = year_ant
+            result = {"status": "success", "data": data_block}
     except Exception as e:
         result = {"status": "error", "message": str(e)}
 
-    # Fallback: dacă coordonate_la_referinta/Catastro eșuează, preluăm adresa din Nominatim și apelăm cauta_imobil_spania
-    if result["status"] == "error":
+    if result is None:
+        try:
+            result = get_catastro_data(location.lat, location.lon)
+            # Dacă avem doar ref (fără an), încercăm Consulta_DNPRC pentru antigüedad
+            if result.get("status") == "success" and result.get("data") and result["data"].get("year_built") is None:
+                ref = (result["data"].get("ref_catastral") or "").strip()
+                if ref:
+                    year_ant = _consulta_dnprc_antiguedad(ref, None)
+                    if year_ant is not None:
+                        result["data"]["year_built"] = year_ant
+        except Exception as e:
+            result = {"status": "error", "message": str(e)}
+
+    if result.get("status") != "success":
         fallback = _identifica_imobil_fallback_adresa(location.lat, location.lon)
         if fallback and fallback.get("status") == "success":
             result = fallback
         else:
-            raise HTTPException(status_code=422, detail=result.get("message", "Catastro: eroare"))
+            raise HTTPException(
+                status_code=422,
+                detail=result.get("message") or "Referință indisponibilă pe hartă, te rugăm să folosești opțiunea de căutare după adresă.",
+            )
 
-    referinta_cadastrala = result["data"]["ref_catastral"]
+    data_block = result.get("data")
+    if not data_block or not isinstance(data_block, dict):
+        raise HTTPException(status_code=502, detail="Răspuns invalid de la serviciul de identificare.")
+    referinta_cadastrala = (data_block.get("ref_catastral") or "").strip()
+    if not referinta_cadastrala:
+        raise HTTPException(status_code=422, detail="Referință cadastrală lipsă. Încercați căutarea după adresă.")
 
     # 3. Salvăm în baza de date (evităm duplicate după ref_catastral)
     existing_by_ref = db.query(Property).filter(Property.ref_catastral == referinta_cadastrala).first()
     if existing_by_ref:
-        analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
         data = property_to_dict(existing_by_ref)
         return {
+            "success": True,
+            "ref_catastral": referinta_cadastrala,
+            "address": data.get("address") or "",
+            "year_built": data.get("year_built"),
             "source": "baza_de_date",
             "status": "succes",
             "referinta": referinta_cadastrala,
             "referinta_cadastrala": referinta_cadastrala,
             "data": data,
-            "analiza_ai": analiza_ai,
             "scor": data.get("scor_oportunitate"),
         }
 
-    scor_initial = calculeaza_scor_oportunitate({"year_built": None}, None)
+    scor_initial = calculeaza_scor_oportunitate({"year_built": data_block.get("year_built")}, None)
     noua_proprietate = Property(
         ref_catastral=referinta_cadastrala,
         lat=location.lat,
         lon=location.lon,
-        address=result["data"].get("address"),
-        year_built=None,
+        address=data_block.get("address"),
+        year_built=data_block.get("year_built"),
         sq_meters=None,
         scor_oportunitate=scor_initial,
     )
@@ -573,15 +647,17 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     db.commit()
     db.refresh(noua_proprietate)
 
-    analiza_ai = obtine_analiza_oportunitate(location.lat, location.lon)
     data = property_to_dict(noua_proprietate)
     return {
+        "success": True,
+        "ref_catastral": referinta_cadastrala,
+        "address": data.get("address") or "",
+        "year_built": data.get("year_built"),
         "source": "catastro_api",
         "status": "succes",
         "referinta": referinta_cadastrala,
         "referinta_cadastrala": referinta_cadastrala,
         "data": data,
-        "analiza_ai": analiza_ai,
         "scor": data.get("scor_oportunitate"),
     }
 
@@ -654,24 +730,21 @@ async def create_checkout_session(
 
 
 @app.post("/creeaza-plata/")
-async def creeaza_plata(request: Request):
-    """Creează un PaymentIntent Stripe: 19€ (standard) sau 50€ (premium); tip + email + property_id în metadata."""
+async def creeaza_plata(body: CreeazaPlataRequest):
+    """
+    Creează un PaymentIntent Stripe: 19€ (standard) sau 50€ (premium).
+    Primește property_id și email; le pune în metadata pentru webhook (payment_intent.succeeded)
+    ca să creeze raportul cu status 'processing'.
+    """
     if not STRIPE_SECRET_KEY:
         raise HTTPException(
             status_code=503,
             detail="Stripe nu este configurat (STRIPE_SECRET_KEY lipsește).",
         )
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    if data is None:
-        data = {}
-
-    tip = data.get("tip", "standard")
+    tip = body.tip or "standard"
     suma = 5000 if tip == "premium" else 1900
-    email = data.get("email", "necunoscut@email.com")
-    ref = data.get("property_id", "fara_ref")
+    email = (body.email or "necunoscut@email.com").strip().lower()
+    property_id = body.property_id if body.property_id is not None else 0
 
     try:
         intent = stripe.PaymentIntent.create(
@@ -680,12 +753,12 @@ async def creeaza_plata(request: Request):
             automatic_payment_methods={"enabled": True},
             metadata={
                 "tip_raport": tip,
-                "email": str(email).strip().lower(),
-                "property_id": str(ref),
+                "email": email,
+                "property_id": str(property_id),
             },
         )
         return {"clientSecret": intent.client_secret}
-    except Exception as e:
+    except stripe.error.StripeError as e:
         print(f"Eroare Stripe: {e}")
         return JSONResponse(status_code=400, content={"error": str(e)})
 
@@ -710,6 +783,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     if event["type"] == "payment_intent.succeeded":
         payment_intent = event["data"]["object"]
+        pi_id = payment_intent.get("id", "")
         amount = payment_intent.get("amount", 0) / 100
         print(f"💰 Plată confirmată pentru: {amount} EUR")
         meta = payment_intent.get("metadata") or {}
@@ -719,9 +793,18 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         except (TypeError, ValueError):
             property_id = 0
 
+        # Logging critic: plată orfană (property_id lipsă sau 0)
+        if not property_id:
+            msg = (
+                f"ALERTA PLATA ORFANA: S-a incasat plata de la {email}, dar property_id lipseste! "
+                f"payment_intent_id={pi_id}"
+            )
+            logger.error(msg)
+            notifica_admin_plata_orfana("Plată orfană (property_id lipsă)", f"email={email}, payment_intent_id={pi_id}")
+            return JSONResponse(content={"status": "success", "warning": "property_id_missing"})
+
         if email and property_id:
             # Idempotență: evităm duplicate la retrimitere Stripe
-            pi_id = payment_intent.get("id", "")
             existing = (
                 db.query(DetailedReport)
                 .filter(DetailedReport.stripe_session_id == pi_id)
@@ -736,9 +819,18 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 db.add(user)
                 db.commit()
                 db.refresh(user)
+
+            # Validare: property_id trebuie să existe în DB; nu returnăm 500/404 ca să nu retrimită Stripe
             prop = db.query(Property).filter(Property.id == property_id).first()
             if not prop:
-                return JSONResponse(content={"error": "Proprietate negăsită"}, status_code=404)
+                msg = (
+                    f"ALERTA: Plată reușită dar proprietatea id={property_id} nu există în DB. "
+                    f"email={email}, payment_intent_id={pi_id}"
+                )
+                logger.error(msg)
+                notifica_admin_plata_orfana("Proprietate negăsită la plată", f"property_id={property_id}, email={email}, payment_intent_id={pi_id}")
+                return JSONResponse(content={"status": "success", "warning": "property_not_found"})
+
             external_request_id = f"req_{uuid.uuid4().hex[:16]}"
             report = DetailedReport(
                 property_id=property_id,
@@ -752,8 +844,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             db.refresh(report)
             solicita_raport_registru(db, report.id, property_id, external_request_id, prop.ref_catastral)
             print(f"📄 Raport creat: report_id={report.id}, request_id={external_request_id}")
-        elif email:
-            print(f"📧 Plată de la {email} (fără property_id în metadata – nu se creează raport)")
 
     return JSONResponse(content={"status": "success"})
 
@@ -792,21 +882,56 @@ async def webhook_stripe(request: Request, db: Session = Depends(get_db)):
     if existing:
         return JSONResponse(content={"received": True, "report_id": existing.id, "duplicate": True})
 
+    # property_id și user_id din metadata (setate la create-checkout-session) pentru raport cu status 'processing'
     metadata = session.get("metadata") or {}
-    property_id = int(metadata.get("property_id", 0))
-    user_id = int(metadata.get("user_id", 0))
-    if not property_id or not user_id:
-        return JSONResponse(
-            content={"error": "metadata incomplet"},
-            status_code=400,
-        )
+    try:
+        property_id = int(metadata.get("property_id", 0))
+    except (TypeError, ValueError):
+        property_id = 0
+    try:
+        user_id = int(metadata.get("user_id", 0))
+    except (TypeError, ValueError):
+        user_id = 0
 
+    # Logging critic: metadata incomplet – returnăm 200 ca Stripe să nu retrimită
+    if not property_id or not user_id:
+        msg = (
+            f"ALERTA PLATA ORFANA: checkout.session.completed fără property_id sau user_id în metadata! "
+            f"session_id={session_id}, metadata={metadata}"
+        )
+        logger.error(msg)
+        notifica_admin_plata_orfana(
+            "Plată orfană (metadata incomplet)",
+            f"session_id={session_id}, property_id={property_id}, user_id={user_id}",
+        )
+        return JSONResponse(content={"received": True, "warning": "metadata_incomplete"})
+
+    # Validare: proprietatea trebuie să existe în DB; nu returnăm 404/500 ca să nu retrimită Stripe
     prop = db.query(Property).filter(Property.id == property_id).first()
     if not prop:
-        return JSONResponse(
-            content={"error": "Proprietate negăsită"},
-            status_code=404,
+        msg = (
+            f"ALERTA: checkout.session.completed dar proprietatea id={property_id} nu există în DB. "
+            f"session_id={session_id}"
         )
+        logger.error(msg)
+        notifica_admin_plata_orfana(
+            "Proprietate negăsită la checkout",
+            f"property_id={property_id}, session_id={session_id}",
+        )
+        return JSONResponse(content={"received": True, "warning": "property_not_found"})
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        msg = (
+            f"ALERTA: checkout.session.completed dar user id={user_id} nu există în DB. "
+            f"session_id={session_id}"
+        )
+        logger.error(msg)
+        notifica_admin_plata_orfana(
+            "Utilizator negăsit la checkout",
+            f"user_id={user_id}, session_id={session_id}",
+        )
+        return JSONResponse(content={"received": True, "warning": "user_not_found"})
 
     external_request_id = f"req_{uuid.uuid4().hex[:16]}"
     report = DetailedReport(
@@ -894,14 +1019,19 @@ async def proceseaza_nota_simple(
             if prop and (prop.address or prop.ref_catastral):
                 direccion = prop.address or f"Ref. cadastral {prop.ref_catastral}"
 
-    asunto, cuerpo = genera_carta_oferta(titular or "Propietario/a", direccion, cargas_resumen)
+    embargo_caducado = extracted.get("embargo_caducado", False)
+    asunto, cuerpo = genera_carta_oferta(
+        titular or "Propietario/a", direccion, cargas_resumen, embargo_caducado=embargo_caducado
+    )
 
     return {
         "extracted": {
             "titular": titular,
             "descripcion": extracted.get("descripcion", ""),
             "cargas": cargas_resumen,
+            "caducidad_cargas": extracted.get("caducidad_cargas", ""),
             "direccion": direccion,
+            "embargo_caducado": embargo_caducado,
         },
         "report_id": report_id,
         "asunto": asunto,
@@ -957,7 +1087,10 @@ async def upload_nota_simple(
     if prop and (prop.address or prop.ref_catastral):
         direccion = prop.address or f"Ref. cadastral {prop.ref_catastral}"
 
-    asunto, cuerpo = genera_carta_oferta(titular or "Propietario/a", direccion, cargas_resumen)
+    embargo_caducado = extracted.get("embargo_caducado", False)
+    asunto, cuerpo = genera_carta_oferta(
+        titular or "Propietario/a", direccion, cargas_resumen, embargo_caducado=embargo_caducado
+    )
 
     filename_pdf = f"scrisoare_{report_id}_{uuid.uuid4().hex[:12]}.pdf"
     output_path = os.path.join(STATIC_LETTERS_DIR, filename_pdf)
@@ -980,7 +1113,9 @@ async def upload_nota_simple(
             "titular": titular,
             "descripcion": extracted.get("descripcion", ""),
             "cargas": cargas_resumen,
+            "caducidad_cargas": extracted.get("caducidad_cargas", ""),
             "direccion": direccion,
+            "embargo_caducado": embargo_caducado,
         },
         "report_id": report_id,
         "asunto": asunto,

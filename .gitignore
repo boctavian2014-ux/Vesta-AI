@@ -3,7 +3,11 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+# Nu comita chei secrete – backend-ul citește din .env la rulare
 .env
+.env.*
+.env.example
+.env.local
 *.db
 flux_test_result.txt
 vesta_bundle.pem

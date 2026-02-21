@@ -29,17 +29,23 @@ PARRAFO_CARGAS_DEFAULT = (
     "Hemos detectado anotaciones preventivas y cargas hipotecarias que podrían complicar su situación financiera."
 )
 
+PARRAFO_EMBARGO_CADUCADO = (
+    "Hemos observado un embargo que parece haber caducado, lo que nos permite cerrar la transacción mucho más rápido. "
+)
+
 
 def genera_carta_oferta(
     nombre_propietario: str,
     direccion: str,
     cargas_resumen: Optional[str] = None,
+    embargo_caducado: bool = False,
 ) -> tuple[str, str]:
     """
     Returnează (asunto, cuerpo) pentru scrisoarea de ofertă.
     nombre_propietario: ex. "Don FELIPE MORENO SÁNCHEZ"
     direccion: ex. "Calle Ejemplo, 12, Málaga"
-    cargas_resumen: opțional, ex. "Embargo 2023, Hipoteca Caixabank" – dacă lipsește se folosește text generic.
+    cargas_resumen: opțional, ex. "Embargo 2023, Hipoteca Caixabank"
+    embargo_caducado: dacă true, se adaugă paragraful despre embargo expirat.
     """
     nombre = (nombre_propietario or "Propietario/a").strip()
     direccion = (direccion or "Málaga").strip()
@@ -50,6 +56,9 @@ def genera_carta_oferta(
         )
     else:
         parrafo_cargas = PARRAFO_CARGAS_DEFAULT
+
+    if embargo_caducado:
+        parrafo_cargas = PARRAFO_EMBARGO_CADUCADO + parrafo_cargas
 
     asunto = PLANTILLA_ASUNTO.format(direccion=direccion)
     cuerpo = PLANTILLA_CUERPO.format(

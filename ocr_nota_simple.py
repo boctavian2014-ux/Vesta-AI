@@ -17,12 +17,15 @@ SYSTEM_PROMPT = """Eres un experto inmobiliario en España. Extrae de esta Nota 
 1. **Titular**: Nombre completo del propietario actual (titular o titulares).
 2. **Descripción**: Descripción breve del inmueble (tipo, referencia, superficie si aparece).
 3. **Cargas**: Resumen de las cargas (Hipoteca, Embargo, Afecciones Fiscales, anotaciones preventivas). Si no hay, escribe "Sin cargas".
-4. **Dirección**: Dirección completa del inmueble.
+4. **Caducidad de las cargas**: Busca de forma específica las fechas de caducidad (caducidad) de cada carga o embargo. Indica las fechas si aparecen en el documento (ej: "Embargo caducidad 15/03/2022", "Hipoteca sin fecha de caducidad").
+5. **Dirección**: Dirección completa del inmueble.
+6. **embargo_caducado**: Si hay algún embargo y su fecha de caducidad ya ha pasado (la fecha es anterior a hoy), pon true. Si no hay embargo o el embargo no ha caducado, pon false.
 
-Si el documento está borroso, escaneado con mala calidad, torcido o ilegible y no puedes extraer los datos con confianza, añade en tu respuesta JSON el campo "manual_check": true para avisar al usuario de que debe revisar manualmente. Si la imagen es clara y legible, no incluyas manual_check o pon "manual_check": false.
+Si el documento está borroso, escaneado con mala calidad, torcido o ilegible y no puedes extraer los datos con confianza, añade "manual_check": true. Si la imagen es clara y legible, "manual_check": false.
 
-Responde ÚNICAMENTE con un JSON válido, sin markdown ni texto extra. Claves obligatorias: titular, descripcion, cargas, direccion. Opcional: manual_check (true/false).
-Ejemplo: {"titular": "...", "descripcion": "...", "cargas": "...", "direccion": "...", "manual_check": false}
+Responde ÚNICAMENTE con un JSON válido, sin markdown ni texto extra.
+Claves: titular, descripcion, cargas, caducidad_cargas (texto con fechas de caducidad si aparecen), direccion, embargo_caducado (true/false), manual_check (opcional).
+Ejemplo: {"titular": "...", "descripcion": "...", "cargas": "...", "caducidad_cargas": "Embargo caducidad 12/01/2020", "direccion": "...", "embargo_caducado": true, "manual_check": false}
 """
 
 
@@ -66,15 +69,18 @@ def _parse_extraction(text: str) -> dict[str, str]:
             "titular": (obj.get("titular") or "").strip(),
             "descripcion": (obj.get("descripcion") or "").strip(),
             "cargas": (obj.get("cargas") or "").strip(),
+            "caducidad_cargas": (obj.get("caducidad_cargas") or "").strip(),
             "direccion": (obj.get("direccion") or "").strip(),
         }
         if "manual_check" in obj:
             out["manual_check"] = bool(obj.get("manual_check"))
+        if "embargo_caducado" in obj:
+            out["embargo_caducado"] = bool(obj.get("embargo_caducado"))
         return out
     except json.JSONDecodeError:
         pass
     # Fallback: regex pentru câmpuri
-    out = {"titular": "", "descripcion": "", "cargas": "", "direccion": ""}
+    out = {"titular": "", "descripcion": "", "cargas": "", "caducidad_cargas": "", "direccion": ""}
     for key in list(out.keys()):
         m = re.search(rf'"{key}"\s*:\s*"([^"]*)"', text, re.IGNORECASE)
         if m:
@@ -82,6 +88,9 @@ def _parse_extraction(text: str) -> dict[str, str]:
     m_manual = re.search(r'"manual_check"\s*:\s*(true|false)', text, re.IGNORECASE)
     if m_manual:
         out["manual_check"] = m_manual.group(1).lower() == "true"
+    m_embargo = re.search(r'"embargo_caducado"\s*:\s*(true|false)', text, re.IGNORECASE)
+    if m_embargo:
+        out["embargo_caducado"] = m_embargo.group(1).lower() == "true"
     return out
 
 

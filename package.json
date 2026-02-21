@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "cd openhouse-mobile && npm start",
-    "mobile": "cd openhouse-mobile && npm start",
-    "android": "cd openhouse-mobile && npm run android",
-    "ios": "cd openhouse-mobile && npm run ios"
+    "start": "npm run start --prefix openhouse-mobile",
+    "mobile": "npm run start --prefix openhouse-mobile",
+    "android": "npm run android --prefix openhouse-mobile",
+    "ios": "npm run ios --prefix openhouse-mobile"
   }
 }
