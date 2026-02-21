@@ -10,14 +10,18 @@ const json = (body) =>
     const text = await r.text();
     if (!r.ok) {
       let detail = r.statusText || "Eroare server";
+      let body = null;
       try {
-        const d = JSON.parse(text);
-        detail = d.detail ?? d.error ?? detail;
+        body = JSON.parse(text);
+        detail = body.detail ?? body.error ?? detail;
         if (Array.isArray(detail) && detail.length) detail = detail[0].msg || detail[0].message || String(detail[0]);
       } catch (_) {
         if (text) detail = text.slice(0, 200);
       }
-      return Promise.reject(new Error(detail));
+      const err = new Error(detail);
+      err.status = status;
+      err.body = body;
+      return Promise.reject(err);
     }
     try {
       return JSON.parse(text);

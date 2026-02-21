@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity, Text, ActivityIndicator } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Text, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import MapView, { Marker } from "react-native-maps";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -9,7 +9,8 @@ import type { CatastroProperty } from "./PropertyScreen";
 
 const MADRID = { latitude: 40.4167, longitude: -3.7037, latitudeDelta: 0.02, longitudeDelta: 0.02 };
 const FRIENDLY_ERROR =
-  "Informații indisponibile pentru acest punct. Încearcă să dai click pe centrul clădirii.";
+  "Informații indisponibile pentru acest punct. Încearcă să dai click pe centrul clădirii, nu pe stradă.";
+const OFFSET_RETRY_DEG = 0.00005; // ~5 m – mici deplasări pentru sensibilitate (stradă vs clădire)
 
 export type MapScreenParams = {
   Map: undefined;
@@ -18,19 +19,22 @@ export type MapScreenParams = {
 
 type Props = NativeStackScreenProps<MapScreenParams, "Map">;
 
-/** Construiește un obiect CatastroProperty din răspunsul backend (/identifica-imobil/). */
+/** Construiește un obiect CatastroProperty din răspunsul backend (/identifica-imobil/). Backend trimite address și year_built ca string-uri. */
 function buildCatastroProperty(
-  res: { data?: Record<string, unknown>; ref_catastral?: string; address?: string; year_built?: number; scor?: number },
+  res: { data?: Record<string, unknown>; ref_catastral?: string; address?: string; year_built?: string | number; scor?: number },
   latitude: number,
   longitude: number
 ): CatastroProperty {
   const payload = res.data ?? {};
   const id = (payload.id as number) ?? (res as { data?: { id?: number } }).data?.id ?? 0;
+  const rawYear = payload.year_built ?? res.year_built;
+  const year = typeof rawYear === "string" ? (rawYear ? parseInt(rawYear, 10) : null) : (rawYear ?? null);
+  const yearBuilt = Number.isNaN(year) ? null : year;
   return {
     id: Number(id),
-    ref_catastral: (payload.ref_catastral ?? res.ref_catastral ?? "") as string,
-    address: (payload.address ?? res.address ?? null) as string | null,
-    year_built: (payload.year_built ?? res.year_built ?? null) as number | null,
+    ref_catastral: String(payload.ref_catastral ?? res.ref_catastral ?? ""),
+    address: String(payload.address ?? res.address ?? "").trim() || null,
+    year_built: yearBuilt,
     lat: (payload.lat ?? latitude) as number,
     lon: (payload.lon ?? longitude) as number,
     scor_oportunitate: (payload.scor_oportunitate ?? res.scor ?? null) as number | null,
@@ -47,19 +51,66 @@ export default function MapScreen({ navigation }: Props) {
 
   const onMapPress = useCallback(async (e: { nativeEvent: { coordinate: { latitude: number; longitude: number } } }) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
+    // Pentru comparare cu Google Maps: coordonate exacte la click (verificare decalaj/offset)
+    console.log("Click hartă — Lat:", latitude, "Lon:", longitude);
+    Alert.alert(
+      "Coordonate click",
+      `Lat: ${latitude}\nLon: ${longitude}\n\n(Compară cu Google Maps pentru a verifica decalajul.)`
+    );
     setIsLoadingProperty(true);
     setSelectedProp(null);
     setErrorProperty(null);
+
+    const tryIdentify = async (lat: number, lon: number) => {
+      const res = await identificaImobil(lat, lon);
+      console.log("Răspuns API (brut):", res);
+      const data = (res as { data?: Record<string, unknown> }).data ?? res as Record<string, unknown>;
+      const keys = Object.keys(data);
+      const wanted = ["ref_catastral", "address", "year_built", "id"];
+      const missing = wanted.filter((k) => data[k] == null || data[k] === "");
+      console.log("Chei în răspuns:", keys, "| Lipsesc:", missing);
+      return res;
+    };
+
     try {
-      const res = await identificaImobil(latitude, longitude);
+      let res: Awaited<ReturnType<typeof identificaImobil>>;
+      try {
+        res = await tryIdentify(latitude, longitude);
+      } catch (firstErr) {
+        const lat2 = latitude + OFFSET_RETRY_DEG;
+        const lon2 = longitude + OFFSET_RETRY_DEG;
+        res = await tryIdentify(lat2, lon2);
+      }
+      const data = (res as { data?: Record<string, unknown> }).data;
+      if (data && (data as { ref_catastral?: string }).ref_catastral) {
+        setErrorProperty(null);
+        const property = buildCatastroProperty(res, latitude, longitude);
+        setSelectedProp(property);
+        navigation.navigate("Property", { property });
+        return;
+      }
       const property = buildCatastroProperty(res, latitude, longitude);
       setSelectedProp(property);
-    } catch (_err) {
-      setErrorProperty(FRIENDLY_ERROR);
+    } catch (err: unknown) {
+      const e = err as { body?: { data?: { ref_catastral?: string; id?: number }; ref_catastral?: string }; status?: number };
+      if (e?.body && (e.body.data?.ref_catastral || e.body.ref_catastral || e.body.data?.id != null)) {
+        const property = buildCatastroProperty(
+          { ...e.body, data: e.body.data ?? e.body },
+          latitude,
+          longitude
+        );
+        setSelectedProp(property);
+        setErrorProperty(null);
+        if (property.ref_catastral) {
+          navigation.navigate("Property", { property });
+        }
+      } else {
+        setErrorProperty(FRIENDLY_ERROR);
+      }
     } finally {
       setIsLoadingProperty(false);
     }
-  }, []);
+  }, [navigation]);
 
   const goToProperty = useCallback(() => {
     if (selectedProp) {
@@ -105,7 +156,7 @@ export default function MapScreen({ navigation }: Props) {
               <ActivityIndicator size="small" color={colors.gold} />
               <Text style={styles.panelLoadingText}>Se interoghează Catastro Spania...</Text>
             </View>
-          ) : errorProperty ? (
+          ) : errorProperty && !selectedProp?.ref_catastral ? (
             <Text style={styles.panelErrorText}>{errorProperty}</Text>
           ) : selectedProp ? (
             <>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useStripe } from "@stripe/stripe-react-native";
@@ -34,6 +35,26 @@ export type PropertyScreenParams = {
 
 type Props = NativeStackScreenProps<PropertyScreenParams, "Property">;
 
+/** Scor de oportunitate: year < 1960 → 95, 1960–1984 → 80, 1985–2004 → 50, >= 2005 → 15. */
+function calculateOpportunityScore(year: number | string | null | undefined): number {
+  if (year == null || year === "") return 0;
+  const y = typeof year === "string" ? parseInt(year, 10) : year;
+  if (Number.isNaN(y)) return 0;
+  if (y < 1960) return 95;
+  if (y < 1985) return 80;
+  if (y < 2005) return 50;
+  return 15;
+}
+
+type ScoreStyle = "pulsatingRed" | "red" | "orange" | "green" | "neutral";
+function getScoreStyle(score: number): ScoreStyle {
+  if (score >= 95) return "pulsatingRed";
+  if (score >= 75) return "red";
+  if (score >= 50) return "orange";
+  if (score >= 15) return "green";
+  return "neutral";
+}
+
 export default function PropertyScreen({ route, navigation }: Props) {
   const property = route.params?.property;
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -44,11 +65,35 @@ export default function PropertyScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!property) {
       if (navigation.canGoBack()) navigation.goBack();
-      else navigation.replace("Map");
+      else (navigation as { replace: (name: string) => void }).replace("Map");
     }
   }, [property, navigation]);
 
   if (!property) return null;
+
+  const displayYear =
+    property.year_built != null && !Number.isNaN(Number(property.year_built))
+      ? String(Number(property.year_built))
+      : "—";
+  const scorOportunitate =
+    property.scor_oportunitate != null
+      ? Number(property.scor_oportunitate)
+      : calculateOpportunityScore(property.year_built);
+  const scoreStyle = getScoreStyle(scorOportunitate);
+  const showPotentialText = scorOportunitate > 75;
+
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (scoreStyle !== "pulsatingRed") return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.92, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scoreStyle, pulseAnim]);
 
   const handleBuyReport = async () => {
     const trimmed = email.trim().toLowerCase();
@@ -72,8 +117,8 @@ export default function PropertyScreen({ route, navigation }: Props) {
       const { error: initErr } = await initPaymentSheet({
         paymentIntentClientSecret: clientSecret,
         merchantDisplayName: "Vesta AI",
-        applePay: true,
-        googlePay: true,
+        applePay: { merchantCountryCode: "ES" },
+        googlePay: { merchantCountryCode: "ES", testEnv: __DEV__ },
         defaultBillingDetails: { name: "Utilizator Vesta" },
       });
       if (initErr) {
@@ -86,7 +131,7 @@ export default function PropertyScreen({ route, navigation }: Props) {
         return;
       }
       Alert.alert("Plată reușită", "Raportul se generează. Vei primi notificare pe email.");
-      navigation.navigate("Success");
+      (navigation as { navigate: (name: string) => void }).navigate("Success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Plata nu a putut fi inițiată.");
     } finally {
@@ -103,7 +148,30 @@ export default function PropertyScreen({ route, navigation }: Props) {
           <Text style={styles.label}>📍 Dirección</Text>
           <Text style={styles.value}>{property.address || "—"}</Text>
           <Text style={styles.label}>📅 Año de Construcción</Text>
-          <Text style={styles.value}>{property.year_built ?? "—"}</Text>
+          <Text style={styles.value}>{displayYear}</Text>
+          <Text style={styles.label}>📊 Scor Oportunitate</Text>
+          {scorOportunitate > 0 ? (
+            <>
+              <Animated.Text
+                style={[
+                  styles.value,
+                  styles.scoreValue,
+                  scoreStyle === "pulsatingRed" && styles.scorePulsatingRed,
+                  scoreStyle === "red" && styles.scoreRed,
+                  scoreStyle === "orange" && styles.scoreOrange,
+                  scoreStyle === "green" && styles.scoreGreen,
+                  scoreStyle === "pulsatingRed" && { transform: [{ scale: pulseAnim }] },
+                ]}
+              >
+                {scorOportunitate}
+              </Animated.Text>
+              {showPotentialText && (
+                <Text style={styles.potentialText}>Potențial ridicat de renovare/investiție</Text>
+              )}
+            </>
+          ) : (
+            <Text style={styles.value}>—</Text>
+          )}
           <Text style={styles.label}>🆔 Ref. Catastral</Text>
           <Text style={[styles.value, styles.valueCode]}>{property.ref_catastral || "—"}</Text>
         </View>
@@ -156,6 +224,12 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, color: colors.textMuted, marginTop: spacing.md },
   value: { fontSize: 16, marginBottom: 4, color: colors.text },
   valueCode: { fontFamily: "monospace", fontSize: 14 },
+  scoreValue: { fontWeight: "700", fontSize: 18 },
+  scorePulsatingRed: { color: "#b91c1c" },
+  scoreRed: { color: "#dc2626" },
+  scoreOrange: { color: "#ea580c" },
+  scoreGreen: { color: "#16a34a" },
+  potentialText: { fontSize: 13, color: colors.textMuted, marginTop: 4, fontStyle: "italic" },
   input: {
     borderWidth: 1,
     borderColor: colors.border,

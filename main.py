@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import shutil
@@ -65,7 +66,29 @@ from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satelli
 from carta_oferta import genera_carta_oferta
 
 # Identificare: coordonate -> referință cadastrală (folosim modulul cu SSL)
-from coordonate_la_referinta import coordonate_la_referinta
+from coordonate_la_referinta import coordonate_la_referinta, _proceseaza_raspuns_catastro as proceseaza_xml_catastro
+
+
+def _coordonate_la_referinta_cu_buffer(lat: float, lon: float, catastro_url: str = None, cert_path: str = None):
+    """
+    Apelează Catastro la (lat, lon). Dacă nu găsește referință, reîncearcă cu un buffer de ~3 m
+    (4 puncte: ±lat, ±lon) – click-ul pe centrul clădirii poate să nu cadă exact pe punctul cadastral.
+    Returnează (data, err) ca coordonate_la_referinta.
+    """
+    points = [
+        (lat, lon),
+        (lat + CATASTRO_BUFFER_DEG, lon),
+        (lat - CATASTRO_BUFFER_DEG, lon),
+        (lat, lon + CATASTRO_BUFFER_DEG),
+        (lat, lon - CATASTRO_BUFFER_DEG),
+    ]
+    last_err = None
+    for la, lo in points:
+        data, err = coordonate_la_referinta(la, lo, srs="EPSG:4326", catastro_url=catastro_url, cert_path=cert_path)
+        if err is None and data and (data.get("ref_catastral") or "").strip():
+            return data, None
+        last_err = err
+    return None, last_err or "Referință negăsită în raza de căutare (buffer ~3 m)"
 
 # Fallback identificare: când Catastro (coordonate) eșuează, folosim adresa poștală + ConsultaNumero
 try:
@@ -342,6 +365,8 @@ async def analizeaza_satelit_property(property_id: int, db: Session = Depends(ge
 
 # Toleranță pentru „aceeași” locație (aprox. ~10 m la ecuator)
 COORD_TOLERANCE = 0.0001
+# Buffer pentru reîncercare Catastro: ~3 m (click pe centrul clădirii poate să nu cadă exact pe punctul cadastral)
+CATASTRO_BUFFER_DEG = 0.000027
 
 # Fallback: adresă poștală din Nominatim (gratuit) pentru când Catastro pe coordonate eșuează
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
@@ -416,16 +441,33 @@ def _identifica_imobil_fallback_adresa(lat: float, lon: float) -> Optional[dict]
     return {"status": "success", "data": {"ref_catastral": ref.strip(), "address": address_display}}
 
 
-def _consulta_dnprc_antiguedad(ref_catastral: str, cmun_ine: Optional[str] = None) -> Optional[int]:
+def _tag_local_dnprc(elem) -> str:
+    """Nume tag fără namespace (pentru XML DNPRC)."""
+    if not elem.tag:
+        return ""
+    return elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+
+
+def _text_full_dnprc(elem) -> str:
+    """Text element + copii (pentru valorile în subelemente)."""
+    if elem is None:
+        return ""
+    direct = (elem.text or "").strip()
+    child = " ".join(
+        (e.text or "").strip() for e in elem.iter() if e is not elem and (e.text or "").strip()
+    )
+    return (direct + " " + child).strip()
+
+
+def _consulta_dnprc_datos(ref_catastral: str, cmun_ine: Optional[str] = None) -> dict:
     """
-    Cerere rapidă către Consulta_DNPRC_Codigos (Catastro) pentru a obține antigüedad (anul construcției).
-    ref_catastral: referința cadastrală (min 14 caractere). Din ea extragem CodigoProvincia (2) și CodigoMunicipio (3).
-    cmun_ine: cod INE municipiu dacă e disponibil din răspunsul Consulta_RCCOOR.
-    Returnează anul (int) sau None.
+    A doua cerere: Consulta_DNPRC_Codigos pentru a completa year_built și/sau address
+    când prima cerere (coordonate) nu le returnează. Returnează {"year_built": int|None, "address": str|None}.
     """
+    out = {"year_built": None, "address": None}
     ref = (ref_catastral or "").strip()
     if len(ref) < 14:
-        return None
+        return out
     try:
         codigo_provincia = ref[:2]
         codigo_municipio = ref[2:5]
@@ -449,20 +491,46 @@ def _consulta_dnprc_antiguedad(ref_catastral: str, cmun_ine: Optional[str] = Non
             timeout=8,
         )
         if response.status_code != 200:
-            return None
+            return out
         root = ET.fromstring(response.content)
-        # Căutăm antigüedad în XML (tag-uri posibile: ant, Antiguedad, etc.)
+        current_year = datetime.datetime.now().year
+        address_candidates = []
         for elem in root.iter():
-            tag = elem.tag.split("}")[-1] if elem.tag and "}" in elem.tag else (elem.tag or "")
-            if tag.lower() in ("ant", "antiguedad"):
-                text = (elem.text or "").strip()
-                if text and text.isdigit():
-                    year = int(text)
-                    if 1800 <= year <= 2030:
-                        return year
-        return None
+            tag = _tag_local_dnprc(elem)
+            tag_lower = tag.lower()
+            text = (elem.text or "").strip()
+            full = _text_full_dnprc(elem)
+            val = full or text
+            if tag_lower in ("ldt", "dc", "dir", "ldtr") and val and len(val) > 2:
+                address_candidates.append(val)
+            if not text or not text.isdigit():
+                continue
+            val_int = int(text)
+            if tag_lower in ("anioconstruccion", "anio", "fechaconst", "anioconst"):
+                if 1800 <= val_int <= 2030:
+                    out["year_built"] = val_int
+                    break
+            elif tag_lower in ("ant", "antiguedad"):
+                if 1800 <= val_int <= 2030:
+                    out["year_built"] = val_int
+                    break
+                if 1 <= val_int <= 200:
+                    out["year_built"] = current_year - val_int
+                    break
+        if address_candidates:
+            out["address"] = ", ".join(address_candidates[:3])
+        return out
     except Exception:
-        return None
+        return out
+
+
+def _consulta_dnprc_antiguedad(ref_catastral: str, cmun_ine: Optional[str] = None) -> Optional[int]:
+    """
+    Cerere rapidă către Consulta_DNPRC_Codigos (Catastro) pentru a obține antigüedad (anul construcției).
+    Pentru completare completă (an + adresă) folosiți _consulta_dnprc_datos.
+    """
+    datos = _consulta_dnprc_datos(ref_catastral, cmun_ine)
+    return datos.get("year_built")
 
 
 def get_catastro_data(lat: float, lon: float):
@@ -499,26 +567,13 @@ def get_catastro_data(lat: float, lon: float):
         return {"status": "error", "message": f"Catastro a returnat {response.status_code}"}
 
     try:
+        data, err = proceseaza_xml_catastro(response.content)
+        if err is None and data and (data.get("ref_catastral") or "").strip():
+            return {"status": "success", "data": data}
+        if data is None and err:
+            return {"status": "error", "message": err}
         root = ET.fromstring(response.content)
         ns = {"cat": "http://www.catastro.minhap.es/"}
-
-        pc1 = root.find(".//cat:pc1", ns)
-        pc2 = root.find(".//cat:pc2", ns)
-        if pc1 is None or pc2 is None:
-            pc1 = root.find(".//{http://www.catastro.meh.es/}pc1")
-            pc2 = root.find(".//{http://www.catastro.meh.es/}pc2")
-        if pc1 is not None and pc2 is not None and (pc1.text or pc2.text):
-            referinta = (pc1.text or "") + (pc2.text or "")
-            referinta = referinta.strip()
-            if referinta:
-                return {
-                    "status": "success",
-                    "data": {
-                        "ref_catastral": referinta,
-                        "address": None,
-                    },
-                }
-
         des_error = root.find(".//cat:des", ns) or root.find(".//{http://www.catastro.meh.es/}des")
         error_msg = (des_error.text or "").strip() if des_error is not None else "Locație fără referință"
         if not error_msg:
@@ -528,6 +583,16 @@ def get_catastro_data(lat: float, lon: float):
         return {"status": "error", "message": "Eroare parsare XML"}
     except Exception as e:
         return {"status": "error", "message": "Eroare internă server la procesare"}
+
+
+def _data_for_mobile(d: dict) -> dict:
+    """Obiect pentru mobil: address și year_built ca string-uri, nu null."""
+    addr = d.get("address")
+    year = d.get("year_built")
+    out = {**d}
+    out["address"] = (addr if addr is not None else "") if isinstance(addr, str) else (str(addr) if addr is not None else "")
+    out["year_built"] = str(year) if year is not None else ""
+    return out
 
 
 @app.post("/identifica-imobil/")
@@ -544,25 +609,25 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
 
     if existing_prop:
         data = property_to_dict(existing_prop)
+        data_mobile = _data_for_mobile(data)
         ref = existing_prop.ref_catastral or ""
-        addr = existing_prop.address or ""
         return {
             "success": True,
             "ref_catastral": ref,
-            "address": addr,
-            "year_built": getattr(existing_prop, "year_built", None),
+            "address": data_mobile["address"],
+            "year_built": data_mobile["year_built"],
             "source": "baza_de_date",
             "status": "succes",
             "referinta": ref,
             "referinta_cadastrala": ref,
-            "data": data,
+            "data": data_mobile,
             "scor": data.get("scor_oportunitate"),
         }
 
-    # 2. Apelăm coordonate_la_referinta (Catastro) – returnează dict cu ref_catastral, address, year_built, cmun_ine
+    # 2. Apelăm Catastro cu buffer: punct central apoi ±~3 m dacă nu găsește referință
     result = None
     try:
-        data_coord, err = coordonate_la_referinta(
+        data_coord, err = _coordonate_la_referinta_cu_buffer(
             location.lat, location.lon,
             catastro_url=CATASTRO_URL,
             cert_path=CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else None,
@@ -570,18 +635,22 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         if err is None and data_coord and (data_coord.get("ref_catastral") or "").strip():
             data_block = {
                 "ref_catastral": (data_coord.get("ref_catastral") or "").strip(),
-                "address": data_coord.get("address"),
+                "address": data_coord.get("address") or "",
                 "year_built": data_coord.get("year_built"),
                 "cmun_ine": data_coord.get("cmun_ine"),
             }
-            # Dacă anul lipsește, a doua cerere rapidă: Consulta_DNPRC pentru antigüedad
-            if data_block.get("year_built") is None:
-                year_ant = _consulta_dnprc_antiguedad(
+            # Dacă prima cerere nu a returnat year_built sau address, a doua cerere (Consulta_DNPRC) completează înainte de răspuns către mobil.
+            need_year = data_block.get("year_built") is None
+            need_address = not (data_block.get("address") or "").strip()
+            if need_year or need_address:
+                datos = _consulta_dnprc_datos(
                     data_block["ref_catastral"],
                     data_block.get("cmun_ine"),
                 )
-                if year_ant is not None:
-                    data_block["year_built"] = year_ant
+                if need_year and datos.get("year_built") is not None:
+                    data_block["year_built"] = datos["year_built"]
+                if need_address and (datos.get("address") or "").strip():
+                    data_block["address"] = datos["address"].strip()
             result = {"status": "success", "data": data_block}
     except Exception as e:
         result = {"status": "error", "message": str(e)}
@@ -589,13 +658,19 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     if result is None:
         try:
             result = get_catastro_data(location.lat, location.lon)
-            # Dacă avem doar ref (fără an), încercăm Consulta_DNPRC pentru antigüedad
-            if result.get("status") == "success" and result.get("data") and result["data"].get("year_built") is None:
-                ref = (result["data"].get("ref_catastral") or "").strip()
-                if ref:
-                    year_ant = _consulta_dnprc_antiguedad(ref, None)
-                    if year_ant is not None:
-                        result["data"]["year_built"] = year_ant
+            # Completează year_built și address din Consulta_DNPRC dacă lipsesc
+            if result.get("status") == "success" and result.get("data"):
+                data_block = result["data"]
+                need_year = data_block.get("year_built") is None
+                need_address = not (data_block.get("address") or "").strip()
+                if need_year or need_address:
+                    ref = (data_block.get("ref_catastral") or "").strip()
+                    if ref:
+                        datos = _consulta_dnprc_datos(ref, data_block.get("cmun_ine"))
+                        if need_year and datos.get("year_built") is not None:
+                            data_block["year_built"] = datos["year_built"]
+                        if need_address and (datos.get("address") or "").strip():
+                            data_block["address"] = datos["address"].strip()
         except Exception as e:
             result = {"status": "error", "message": str(e)}
 
@@ -620,16 +695,17 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     existing_by_ref = db.query(Property).filter(Property.ref_catastral == referinta_cadastrala).first()
     if existing_by_ref:
         data = property_to_dict(existing_by_ref)
+        data_mobile = _data_for_mobile(data)
         return {
             "success": True,
             "ref_catastral": referinta_cadastrala,
-            "address": data.get("address") or "",
-            "year_built": data.get("year_built"),
+            "address": data_mobile["address"],
+            "year_built": data_mobile["year_built"],
             "source": "baza_de_date",
             "status": "succes",
             "referinta": referinta_cadastrala,
             "referinta_cadastrala": referinta_cadastrala,
-            "data": data,
+            "data": data_mobile,
             "scor": data.get("scor_oportunitate"),
         }
 
@@ -648,16 +724,17 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     db.refresh(noua_proprietate)
 
     data = property_to_dict(noua_proprietate)
+    data_mobile = _data_for_mobile(data)
     return {
         "success": True,
         "ref_catastral": referinta_cadastrala,
-        "address": data.get("address") or "",
-        "year_built": data.get("year_built"),
+        "address": data_mobile["address"],
+        "year_built": data_mobile["year_built"],
         "source": "catastro_api",
         "status": "succes",
         "referinta": referinta_cadastrala,
         "referinta_cadastrala": referinta_cadastrala,
-        "data": data,
+        "data": data_mobile,
         "scor": data.get("scor_oportunitate"),
     }
 

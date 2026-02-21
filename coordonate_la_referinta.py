@@ -11,14 +11,16 @@ _DEFAULT_CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocaliza
 def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală folosind API-ul Catastro.
-    Pentru EPSG:4326 (WGS84): X = longitudine, Y = latitudine.
-    Poți pasa catastro_url și cert_path din main.py (CATASTRO_URL, CATASTRO_CERT_PATH) pentru URL verificat 100%.
+    Ordinea corectă pentru hărți mobile (WGS84): Coordenada_X = Longitudine, Coordenada_Y = Latitudine.
+    SRS=EPSG:4326 este obligatoriu – fără el Catastro poate interpreta coordonatele greșit (ocean/altă țară).
     """
     url = catastro_url or _DEFAULT_CATASTRO_URL
+    # Garantăm SRS=EPSG:4326 (format standard hărți mobile); X=Longitudine, Y=Latitudine.
+    srs_val = (srs or "").strip() or "EPSG:4326"
     params = {
-        "SRS": srs,
-        "Coordenada_X": lon,  # longitudine
-        "Coordenada_Y": lat,  # latitudine
+        "SRS": srs_val,
+        "Coordenada_X": lon,   # Longitudine (X în EPSG:4326)
+        "Coordenada_Y": lat,   # Latitudine (Y în EPSG:4326)
     }
     # Preferă verify=cert_path când main trimite CATASTRO_URL + CATASTRO_CERT_PATH (fără verify=False)
     if cert_path and os.path.isfile(cert_path):
@@ -45,6 +47,38 @@ def _tag_local(elem):
     return elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
 
 
+def _text_full(elem):
+    """Textul elementului + toți copiii (pentru tag-uri unde valoarea e în subelemente)."""
+    if elem is None:
+        return ""
+    direct = (elem.text or "").strip()
+    child_text = " ".join((e.text or "").strip() for e in elem.iter() if e is not elem and (e.text or "").strip())
+    return (direct + " " + child_text).strip()
+
+
+def _find_recursive(root, tag_wanted):
+    """
+    Caută recursiv primul element al cărui tag local (fără namespace) este tag_wanted.
+    tag_wanted: string, ex. 'ldt', 'cn', 'v'. Comparația e case-insensitive.
+    Returnează elementul sau None.
+    """
+    tag_wanted = (tag_wanted or "").strip().lower()
+    if not tag_wanted:
+        return None
+    for elem in root.iter():
+        if _tag_local(elem).lower() == tag_wanted:
+            return elem
+    return None
+
+
+def _find_all_recursive(root, tag_wanted):
+    """Caută toate elementele cu tag local == tag_wanted (case-insensitive). Returnează listă de elemente."""
+    tag_wanted = (tag_wanted or "").strip().lower()
+    if not tag_wanted:
+        return []
+    return [e for e in root.iter() if _tag_local(e).lower() == tag_wanted]
+
+
 def _proceseaza_raspuns_catastro(xml_content):
     """
     Procesează XML-ul de la Catastro (Consulta_RCCOOR).
@@ -60,33 +94,52 @@ def _proceseaza_raspuns_catastro(xml_content):
         if error_el is not None and error_el.text and error_el.text.strip():
             return None, error_el.text.strip()
 
-        # Colectăm toate câmpurile utile prin iterare (namespace-uri pot varia)
+        # 1) Adresă: find_recursive pentru <ldt> (adresa completă)
+        ldt_el = _find_recursive(root, "ldt")
+        address = _text_full(ldt_el) if ldt_el else None
+        if not address:
+            cn_elems = _find_all_recursive(root, "cn")
+            v_elems = _find_all_recursive(root, "v")
+            cn_parts = [_text_full(e) for e in cn_elems if _text_full(e)]
+            v_parts = [_text_full(e) for e in v_elems if _text_full(e)]
+            if cn_parts or v_parts:
+                address = " ".join(cn_parts + v_parts)
+
+        # 2) Referință, an, cmun_ine și fallback adresă prin iterare
         ref = ""
-        address = None
         year_built = None
         cmun_ine = None
-        # Câmpuri adresă: ldt (literal dirección), dir (dirección), domicilio
         address_candidates = []
+        address_parts = []
 
         for elem in root.iter():
             tag = _tag_local(elem)
-            text = (elem.text or "").strip() if elem.text else ""
+            tag_lower = tag.lower() if tag else ""
+            text = (elem.text or "").strip()
+            full = _text_full(elem)
+            val = full or text
             if tag == "pc1":
                 ref = (ref + (elem.text or "")).strip()
             elif tag == "pc2":
                 ref = (ref + (elem.text or "")).strip()
-            elif tag in ("ldt", "dir", "dc", "dv", "np", "pnp", "cv"):
-                if text:
-                    address_candidates.append(text)
-            elif tag in ("ant", "antiguedad", "AnioConstruccion", "anio"):
-                if text and text.isdigit() and len(text) == 4:
-                    year_built = int(text)
-            elif tag in ("cmun", "cmun_ine", "ine"):
+            elif tag_lower in ("ldtr", "dc", "dir") and val and len(val) > 2:
+                address_candidates.append(val)
+            elif tag_lower in ("cv", "nv", "tv", "pnp", "np", "dv", "nomvia", "num", "nm"):
+                if val:
+                    address_parts.append(val)
+            elif tag_lower in ("ant", "antiguedad", "anioconstruccion", "anio"):
+                if text and text.isdigit():
+                    y = int(text)
+                    if len(text) == 4 and 1800 <= y <= 2030:
+                        year_built = y
+            elif tag_lower in ("cmun", "cmun_ine", "ine"):
                 if text:
                     cmun_ine = text
 
-        if address_candidates:
+        if not address and address_candidates:
             address = ", ".join(address_candidates)
+        if not address and address_parts:
+            address = " ".join(address_parts)
 
         if ref:
             return {
