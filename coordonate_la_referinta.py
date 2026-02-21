@@ -1,43 +1,54 @@
-import os
-import requests
 import xml.etree.ElementTree as ET
 
-from catastro_ssl import get_catastro_session
+import requests
 
-# URL implicit (același string ca în main.py – fără cratimă)
-_DEFAULT_CATASTRO_URL = "https://ovc.catastro.minhap.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
+# Helper-ul din main (sesiune securizată Catastro: prod = FNMT obligatoriu, dev = fallback verify=False)
+from main import CATASTRO_URL, get_catastro_http_client
+
+# Limita pentru log XML (evită flood în consolă)
+_CATASTRO_LOG_XML_MAX = 4000
 
 
 def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_path=None):
     """
-    Convertește coordonate (lat, lon) în referință cadastrală folosind API-ul Catastro.
-    Ordinea corectă pentru hărți mobile (WGS84): Coordenada_X = Longitudine, Coordenada_Y = Latitudine.
-    SRS=EPSG:4326 este obligatoriu – fără el Catastro poate interpreta coordonatele greșit (ocean/altă țară).
+    Convertește coordonate (lat, lon) în referință cadastrală folosind Consulta_RCCOOR.
+    Folosește clientul securizat (context SSL FNMT în prod). Ordine WGS84: X=Longitudine, Y=Latitudine.
     """
-    url = catastro_url or _DEFAULT_CATASTRO_URL
-    # Garantăm SRS=EPSG:4326 (format standard hărți mobile); X=Longitudine, Y=Latitudine.
-    srs_val = (srs or "").strip() or "EPSG:4326"
+    url = catastro_url or CATASTRO_URL
     params = {
-        "SRS": srs_val,
-        "Coordenada_X": lon,   # Longitudine (X în EPSG:4326)
-        "Coordenada_Y": lat,   # Latitudine (Y în EPSG:4326)
+        "SRS": (srs or "").strip() or "EPSG:4326",
+        "Coordenada_X": f"{float(lon):.8f}",
+        "Coordenada_Y": f"{float(lat):.8f}",
     }
-    # Preferă verify=cert_path când main trimite CATASTRO_URL + CATASTRO_CERT_PATH (fără verify=False)
-    if cert_path and os.path.isfile(cert_path):
-        response = requests.get(url, params=params, timeout=15, verify=cert_path)
-    else:
-        session = get_catastro_session()
-        if session is not False:
-            response = session.get(url, params=params, timeout=15)
-        else:
-            response = requests.get(url, params=params, timeout=15, verify=False)
-
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        "Accept": "application/xml, text/xml, */*",
+    }
     try:
+        session = get_catastro_http_client()
+        response = session.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=15,  # API-uri guvernamentale spaniole pot fi lente în orele de vârf
+        )
         response.raise_for_status()
-        # Catastro returnează XML, nu JSON – nu folosi response.json()
+        _log_catastro_request(response)
         return _proceseaza_raspuns_catastro(response.content)
-    except requests.RequestException as e:
-        return None, f"Eroare rețea: {e}"
+    except Exception as e:
+        print(f"❌ Eroare apel Catastro SSL/Network: {e}")
+        return None, f"Eroare conexiune Catastro: {str(e)}"
+
+
+def _log_catastro_request(response):
+    """Printează URL-ul complet trimis către Catastro și răspunsul XML brut (pentru debug)."""
+    print("[Catastro] URL complet:", response.url)
+    try:
+        raw = response.text if hasattr(response, "text") else response.content.decode(response.encoding or "utf-8", errors="replace")
+        snippet = raw[: _CATASTRO_LOG_XML_MAX] + ("..." if len(raw) > _CATASTRO_LOG_XML_MAX else "")
+        print("[Catastro] Răspuns XML (brut):", snippet)
+    except Exception as e:
+        print("[Catastro] Nu s-a putut decoda răspunsul:", e)
 
 
 def _tag_local(elem):

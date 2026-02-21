@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 import certifi
+from urllib3.exceptions import InsecureRequestWarning
 import requests
 import smtplib
 import stripe
@@ -55,10 +56,35 @@ def setup_ssl_bundle():
 
 setup_ssl_bundle()
 
-# Serviciu oficial documentat: ovc.catastro.meh.es (GET Consulta_RCCOOR)
-CATASTRO_URL = "https://ovc.catastro.meh.es/ovcservweb/ovcswlocalizacionrc/ovccoordenadas.asmx/Consulta_RCCOOR"
-# Consulta date descriptive (antigüedad = an construcție) după referință cadastrală
-CATASTRO_DNPRC_URL = "https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
+# --- Helper global Catastro (motor pentru toate cererile către infrastructura spaniolă) ---
+from catastro_ssl import get_catastro_session
+
+ENV = os.getenv("ENV", "dev")  # dev (implicit) sau prod (setat în Railway)
+
+# API Catastro: endpoint modern și stabil (Sede Catastro)
+CATASTRO_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
+CATASTRO_DNPRC_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
+
+
+def get_catastro_http_client() -> requests.Session:
+    """
+    Returnează o sesiune securizată pentru Catastro.
+    Prod: Folosește obligatoriu fnmt_root.pem. Dacă lipsește, crapă (safety first).
+    Dev: Dacă lipsește fnmt_root.pem, face fallback la verify=False cu warning.
+    """
+    session = get_catastro_session()
+    if session is False:
+        if ENV == "prod":
+            raise RuntimeError(
+                "CRITICAL: fnmt_root.pem lipsește în PROD. "
+                "Verifică CATASTRO_CA_BUNDLE sau prezența fișierului în /app."
+            )
+        urllib3.disable_warnings(InsecureRequestWarning)
+        s = requests.Session()
+        s.verify = False
+        return s
+    return session
+
 
 from database import DetailedReport, Property, SessionLocal, User
 from red_flags import calculeaza_scor_oportunitate
@@ -142,13 +168,13 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Verificare SSL la pornire (certifi + FNMT injectat)
+# Verificare SSL la pornire: sesiune comună (prod = CA obligatoriu, dev/staging = fallback verify=False)
 try:
-    r = requests.get(
+    session = get_catastro_http_client()
+    r = session.get(
         CATASTRO_URL,
         params={"SRS": "EPSG:4326", "Coordenada_X": -3.70, "Coordenada_Y": 40.42},
         timeout=10,
-        verify=False,
     )
     r.raise_for_status()
     print("Succes SSL Catastro")
@@ -483,13 +509,17 @@ def _consulta_dnprc_datos(ref_catastral: str, cmun_ine: Optional[str] = None) ->
             "Accept": "application/xml, text/xml, */*",
             "Accept-Language": "es-ES,es;q=0.9",
         }
-        response = requests.get(
-            CATASTRO_DNPRC_URL,
-            params=params,
-            headers=headers,
-            verify=False,
-            timeout=8,
-        )
+        try:
+            session = get_catastro_http_client()
+            response = session.get(
+                CATASTRO_DNPRC_URL,
+                params=params,
+                headers=headers,
+                timeout=10,  # DNPRC: valoare potrivită pentru API guvernamental spaniol
+            )
+        except Exception as e:
+            print(f"⚠️ Eroare DNPRC: {e}")
+            return out
         if response.status_code != 200:
             return out
         root = ET.fromstring(response.content)
@@ -533,15 +563,26 @@ def _consulta_dnprc_antiguedad(ref_catastral: str, cmun_ine: Optional[str] = Non
     return datos.get("year_built")
 
 
+def _log_catastro_xml_response(response, max_chars: int = 4000):
+    """Loghează răspunsul XML brut de la Catastro (debug: punct în stradă vs eroare certificat/autorizare)."""
+    try:
+        raw = response.text if hasattr(response, "text") else response.content.decode(getattr(response, "encoding", None) or "utf-8", errors="replace")
+        snippet = raw[:max_chars] + ("..." if len(raw) > max_chars else "")
+        print(f"📡 Catastro – Răspuns XML (brut): {snippet}")
+    except Exception as e:
+        print(f"📡 Catastro – Nu s-a putut decoda XML: {e}")
+
+
 def get_catastro_data(lat: float, lon: float):
     """
-    Apelează Catastro pe domeniul oficial meh.es (documentație Sede Electrónica).
-    GET Consulta_RCCOOR: SRS, Coordenada_X (lon), Coordenada_Y (lat). Headers iPhone + es-ES.
+    Apelează Catastro (Consulta_RCCOOR) pe domeniul oficial meh.es.
+    Ordine coordonate pentru SRS=EPSG:4326 (WGS84): X = Longitudine, Y = Latitudine.
+    Obligatoriu SRS=EPSG:4326 – fără el serverul presupune ED50 (sistem local spaniol) și nu găsește punctul.
     """
     params = {
-        "SRS": "EPSG:4326",
-        "Coordenada_X": f"{lon:.8f}",   # Longitudinea (X)
-        "Coordenada_Y": f"{lat:.8f}",   # Latitudinea (Y)
+        "SRS": "EPSG:4326",  # WGS84; fără acest parametru Catastro interpretează ca ED50
+        "Coordenada_X": f"{lon:.8f}",   # Longitudine (X în EPSG:4326)
+        "Coordenada_Y": f"{lat:.8f}",   # Latitudine (Y în EPSG:4326)
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
@@ -550,15 +591,16 @@ def get_catastro_data(lat: float, lon: float):
     }
 
     try:
-        response = requests.get(
+        session = get_catastro_http_client()
+        response = session.get(
             CATASTRO_URL,
             params=params,
             headers=headers,
-            verify=False,
             timeout=10,
         )
-        print(f"📡 Status final: {response.status_code}")
-        print(f"📡 URL apelat: {response.url}")
+        print(f"📡 Catastro – Status: {response.status_code}")
+        print(f"📡 Catastro – URL complet: {response.url}")
+        _log_catastro_xml_response(response)
     except Exception as e:
         print(f"❌ Eroare apel: {e}")
         return {"status": "error", "message": f"Eroare rețea: {str(e)}"}

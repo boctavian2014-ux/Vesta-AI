@@ -31,12 +31,12 @@ def test_imports():
 
 
 def test_catastro_url_constant():
-    """URL Catastro fără cratimă (ovc.catastro, nu ovc.-catastro)."""
+    """URL Catastro: fără cratimă greșită; acceptă sedecatastro.gob.es sau ovc.catastro.minhap.es."""
     from main import CATASTRO_URL
     if "ovc.-" in CATASTRO_URL:
         fail("CATASTRO_URL", "URL conține ovc.- (cratimă greșită)")
-    elif "ovc.catastro.minhap.es" in CATASTRO_URL:
-        ok("CATASTRO_URL corect (ovc.catastro.minhap.es)")
+    elif "sedecatastro.gob.es" in CATASTRO_URL or "ovc.catastro.minhap.es" in CATASTRO_URL:
+        ok("CATASTRO_URL corect")
     else:
         fail("CATASTRO_URL", "URL neașteptat: " + CATASTRO_URL[:60])
 
