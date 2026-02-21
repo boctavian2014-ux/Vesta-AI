@@ -57,20 +57,23 @@ export default function MapScreen({ navigation }: Props) {
     try {
       const res = await identificaImobil(latitude, longitude);
       const data = (res as { data?: Record<string, unknown> }).data;
-      if (data && (data as { ref_catastral?: string }).ref_catastral) {
+      const ref = (data && typeof (data as { ref_catastral?: string }).ref_catastral === "string")
+        ? (data as { ref_catastral: string }).ref_catastral.trim()
+        : "";
+      if (ref) {
         setErrorProperty(null);
         const property = buildCatastroProperty(res, latitude, longitude);
         setSelectedProp(property);
         navigation.navigate("Property", { property });
         return;
       }
-      // Răspuns OK dar fără ref_catastral: nu afișăm proprietate invalidă
+      // Răspuns OK dar fără ref_catastral valid: nu afișăm proprietate invalidă
       setSelectedProp(null);
       setErrorProperty(FRIENDLY_ERROR);
     } catch (err: unknown) {
       const e = err as { body?: { data?: { ref_catastral?: string; id?: number }; ref_catastral?: string }; status?: number };
-      const hasRef = e?.body && (e.body.data?.ref_catastral || e.body.ref_catastral);
-      if (hasRef) {
+      const refFromErr = (e?.body?.data?.ref_catastral ?? e?.body?.ref_catastral ?? "")?.trim() ?? "";
+      if (refFromErr) {
         const property = buildCatastroProperty(
           { ...e.body, data: e.body.data ?? e.body },
           latitude,
