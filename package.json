@@ -1,0 +1,11 @@
+{
+  "name": "vesta-ai",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "cd openhouse-mobile && npm start",
+    "mobile": "cd openhouse-mobile && npm start",
+    "android": "cd openhouse-mobile && npm run android",
+    "ios": "cd openhouse-mobile && npm run ios"
+  }
+}

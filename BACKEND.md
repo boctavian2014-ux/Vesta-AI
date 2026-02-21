@@ -54,9 +54,11 @@ API-ul Catastro (Spania) este semnat cu certificate FNMT care nu sunt în trust 
 2. Convertește din DER în PEM (dacă e cazul):  
    `openssl x509 -inform DER -in AC_Raiz_FNMT-RCM_SHA256.cer -out fnmt_root.pem`
 3. Salvează `fnmt_root.pem` în **rădăcina proiectului** (acolo unde e `main.py`). Backend-ul îl folosește automat la cererile către Catastro.
-4. Opțional: setează `CATASTRO_CA_BUNDLE=/cale/absolută/fnmt_root.pem` dacă fișierul e în alt loc.
+4. În `.env` setează (după ce ai pus `fnmt_root.pem` în rădăcina proiectului):  
+   `CATASTRO_CA_BUNDLE=./fnmt_root.pem`  
+   Dacă fișierul e în alt loc, folosește calea absolută.
 
-Dacă `fnmt_root.pem` lipsește, verificarea SSL este dezactivată pentru Catastro și în consolă apare un avertisment.
+Dacă `fnmt_root.pem` lipsește, verificarea SSL este dezactivată pentru Catastro (`verify=False`) și în consolă apare un avertisment – backend-ul poate rula, dar conexiunea la Catastro nu e verificată criptografic (risc MITM).
 
 ---
 

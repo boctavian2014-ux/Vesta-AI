@@ -1,3 +1,4 @@
+import base64
 import os
 import shutil
 import uuid
@@ -12,9 +13,10 @@ import certifi
 import requests
 import smtplib
 import stripe
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, File, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -58,6 +60,15 @@ from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
 from carta_oferta import genera_carta_oferta
 
+# Fallback identificare: când Catastro (coordonate) eșuează, folosim adresa poștală + ConsultaNumero
+try:
+    from cauta_imobil_spania import cauta_imobil_spania
+except ImportError:
+    cauta_imobil_spania = None
+
+from ocr_nota_simple import extrage_nota_simple
+from pdf_generator import exporta_scrisoare_pdf
+
 # --- Stripe (setează în .env: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET) ---
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
@@ -84,6 +95,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Foldere pentru upload temporar și scrisori PDF
+TEMP_UPLOADS_DIR = os.path.join(BASE_DIR, "temp_uploads")
+STATIC_LETTERS_DIR = os.path.join(BASE_DIR, "static", "letters")
+for _dir in (TEMP_UPLOADS_DIR, STATIC_LETTERS_DIR):
+    os.makedirs(_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 
 @app.exception_handler(Exception)
@@ -297,11 +315,84 @@ async def analizeaza_satelit_property(property_id: int, db: Session = Depends(ge
 # Toleranță pentru „aceeași” locație (aprox. ~10 m la ecuator)
 COORD_TOLERANCE = 0.0001
 
+# Fallback: adresă poștală din Nominatim (gratuit) pentru când Catastro pe coordonate eșuează
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
+
+
+def _reverse_geocode_nominatim(lat: float, lon: float) -> Optional[dict]:
+    """
+    Reverse geocode (lat, lon) -> adresă. Returnează dict cu provincie, municipiu, strada, numar
+    (pentru cauta_imobil_spania) sau None dacă nu s-a putut obține o adresă în Spania.
+    """
+    try:
+        r = requests.get(
+            NOMINATIM_URL,
+            params={"lat": lat, "lon": lon, "format": "json", "addressdetails": 1},
+            headers={"User-Agent": "VestaOpenHouse/1.0"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        addr = data.get("address") or {}
+        country = (addr.get("country_code") or "").upper()
+        if country != "ES":
+            return None
+        # Provincia: state poate fi "Community of Madrid" -> MADRID, sau "Málaga" -> MALAGA
+        state = (addr.get("state") or addr.get("region") or "").strip()
+        if not state:
+            state = addr.get("city") or addr.get("town") or addr.get("village") or ""
+        provincie = state.upper().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
+        # Ultimul cuvânt e often numele provinciei (e.g. "Community of Madrid" -> MADRID)
+        if " " in provincie:
+            provincie = provincie.split()[-1]
+        # Municipio
+        municipiu = (addr.get("city") or addr.get("town") or addr.get("village") or addr.get("municipality") or state or "").strip().upper()
+        municipiu = municipiu.replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
+        if " " in municipiu:
+            municipiu = municipiu.split()[-1] if municipiu else ""
+        # Strada și număr
+        strada = (addr.get("road") or addr.get("pedestrian") or addr.get("street") or "").strip().upper()
+        numar = (addr.get("house_number") or addr.get("house_name") or "S/N").strip().upper()
+        if not strada and not municipiu:
+            return None
+        if not strada:
+            strada = "CALLE"
+        return {"provincie": provincie or "MADRID", "municipiu": municipiu or "MADRID", "strada": strada, "numar": numar}
+    except Exception as e:
+        print(f"⚠️ Nominatim reverse geocode failed: {e}")
+        return None
+
+
+def _identifica_imobil_fallback_adresa(lat: float, lon: float) -> Optional[dict]:
+    """
+    Dacă Catastro pe coordonate eșuează: obține adresa din Nominatim și caută referința
+    cadastrală prin ConsultaNumero (cauta_imobil_spania). Returnează același format ca
+    get_catastro_data: {"status": "success", "data": {"ref_catastral": ..., "address": ...}}
+    sau None.
+    """
+    if not cauta_imobil_spania:
+        return None
+    addr = _reverse_geocode_nominatim(lat, lon)
+    if not addr:
+        return None
+    ref = cauta_imobil_spania(
+        addr["provincie"],
+        addr["municipiu"],
+        addr["strada"],
+        addr["numar"],
+    )
+    if not ref or not ref.strip():
+        return None
+    # Adresă afiș pentru utilizator (reconstruită)
+    address_display = f"{addr['strada']} {addr['numar']}, {addr['municipiu']}"
+    return {"status": "success", "data": {"ref_catastral": ref.strip(), "address": address_display}}
+
 
 def obtine_analiza_oportunitate(lat: float, lon: float) -> Optional[str]:
     """
     Analiză AI (GPT-4o + imagine Mapbox satelit) pentru investitor: piscină, curte, panouri solare,
     scor oportunitate renovare 1–10. Returnează textul sau None dacă lipsesc chei/eroare.
+    Imaginea Mapbox este descărcată pe backend și trimisă ca base64 către OpenAI (evită invalid_image_url).
     """
     if not OPENAI_API_KEY or not MAPBOX_ACCESS_TOKEN:
         return None
@@ -310,6 +401,13 @@ def obtine_analiza_oportunitate(lat: float, lon: float) -> Optional[str]:
         f"?access_token={MAPBOX_ACCESS_TOKEN}"
     )
     try:
+        # Descărcăm imaginea pe server; OpenAI nu poate accesa direct URL-ul Mapbox (invalid_image_url)
+        img_resp = requests.get(image_url, timeout=15)
+        img_resp.raise_for_status()
+        img_bytes = img_resp.content
+        img_b64 = base64.standard_b64encode(img_bytes).decode("ascii")
+        data_url = f"data:image/jpeg;base64,{img_b64}"
+
         client = OpenAI(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -327,13 +425,15 @@ def obtine_analiza_oportunitate(lat: float, lon: float) -> Optional[str]:
                                 "4. Dă un scor de 'Oportunitate de Renovare' de la 1 la 10 (unde 10 înseamnă casă clar abandonată cu potențial mare)."
                             ),
                         },
-                        {"type": "image_url", "image_url": {"url": image_url}},
+                        {"type": "image_url", "image_url": {"url": data_url}},
                     ],
                 }
             ],
             max_tokens=500,
         )
         return response.choices[0].message.content or None
+    except requests.RequestException as e:
+        return f"Eroare la descărcarea imaginii satelit: {str(e)}"
     except Exception as e:
         return f"Eroare AI: {str(e)}"
 
@@ -428,14 +528,19 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
             "scor": data.get("scor_oportunitate"),
         }
 
-    # 2. Apelăm Catastro (namespace corect, returnare JSON curat)
+    # 2. Apelăm Catastro (coordonate -> referință cadastrală)
     try:
         result = get_catastro_data(location.lat, location.lon)
     except Exception as e:
-        return {"eroare": f"Catastro a răspuns cu eroare: {str(e)}"}
+        result = {"status": "error", "message": str(e)}
 
+    # Fallback: dacă coordonate_la_referinta/Catastro eșuează, preluăm adresa din Nominatim și apelăm cauta_imobil_spania
     if result["status"] == "error":
-        raise HTTPException(status_code=422, detail=result.get("message", "Catastro: eroare"))
+        fallback = _identifica_imobil_fallback_adresa(location.lat, location.lon)
+        if fallback and fallback.get("status") == "success":
+            result = fallback
+        else:
+            raise HTTPException(status_code=422, detail=result.get("message", "Catastro: eroare"))
 
     referinta_cadastrala = result["data"]["ref_catastral"]
 
@@ -751,6 +856,139 @@ async def get_carta_oferta(report_id: int, db: Session = Depends(get_db)):
         "asunto": asunto,
         "cuerpo": cuerpo,
         "texto_completo": f"Asunto: {asunto}\n\n{cuerpo}",
+    }
+
+
+@app.post("/proceseaza-nota-simple/")
+async def proceseaza_nota_simple(
+    db: Session = Depends(get_db),
+    file: UploadFile = File(...),
+    report_id: Optional[int] = Form(None),
+):
+    """
+    Primește un fișier (PDF sau imagine) Nota Simple, extrage cu AI (GPT-4o Vision):
+    Titular, Descripción, Cargas, Dirección. Salvează în detailed_reports dacă report_id e dat.
+    Apelează genera_carta_oferta și returnează atât datele extrase cât și scrisoarea de ofertă.
+    """
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Fișier gol")
+    extracted = extrage_nota_simple(content, file.filename or "")
+    if extracted.get("error"):
+        raise HTTPException(status_code=422, detail=extracted["error"])
+
+    titular = extracted.get("titular", "")
+    cargas_resumen = extracted.get("cargas", "")
+    direccion = extracted.get("direccion", "") or "Málaga"
+
+    # Actualizare raport dacă report_id este furnizat
+    if report_id is not None:
+        report = db.query(DetailedReport).filter(DetailedReport.id == report_id).first()
+        if report:
+            report.extracted_owner = titular or report.extracted_owner
+            report.cargas_resumen = cargas_resumen or report.cargas_resumen
+            report.status = "completed"
+            db.commit()
+            # Dirección pentru scrisoare: din proprietate dacă există, altfel din OCR
+            prop = db.query(Property).filter(Property.id == report.property_id).first()
+            if prop and (prop.address or prop.ref_catastral):
+                direccion = prop.address or f"Ref. cadastral {prop.ref_catastral}"
+
+    asunto, cuerpo = genera_carta_oferta(titular or "Propietario/a", direccion, cargas_resumen)
+
+    return {
+        "extracted": {
+            "titular": titular,
+            "descripcion": extracted.get("descripcion", ""),
+            "cargas": cargas_resumen,
+            "direccion": direccion,
+        },
+        "report_id": report_id,
+        "asunto": asunto,
+        "cuerpo": cuerpo,
+        "texto_completo": f"Asunto: {asunto}\n\n{cuerpo}",
+        "manual_check": extracted.get("manual_check", False),
+    }
+
+
+@app.post("/api/reports/{report_id}/upload-nota-simple")
+async def upload_nota_simple(
+    report_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    file: UploadFile = File(...),
+):
+    """
+    Upload Nota Simple pentru un raport: OCR -> genera_carta_oferta -> exporta_scrisoare_pdf.
+    Salvează PDF-ul în static/letters/, actualizează pdf_url în detailed_reports.
+    Returnează datele extrase, scrisoarea și download_url către PDF.
+    """
+    report = db.query(DetailedReport).filter(DetailedReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Raport negăsit")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Fișier gol")
+
+    # Salvare temporară opțională (pentru debug / audit)
+    temp_path = None
+    try:
+        temp_path = os.path.join(TEMP_UPLOADS_DIR, f"nota_{report_id}_{uuid.uuid4().hex[:8]}_{(file.filename or 'doc')[-50:]}")
+        with open(temp_path, "wb") as f:
+            f.write(content)
+    except Exception:
+        pass  # continuăm fără temp
+
+    extracted = extrage_nota_simple(content, file.filename or "")
+    if extracted.get("error"):
+        if temp_path and os.path.isfile(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        raise HTTPException(status_code=422, detail=extracted["error"])
+
+    titular = extracted.get("titular", "") or (report.extracted_owner or "")
+    cargas_resumen = extracted.get("cargas", "") or (report.cargas_resumen or "")
+    direccion = extracted.get("direccion", "") or "Málaga"
+
+    prop = db.query(Property).filter(Property.id == report.property_id).first()
+    if prop and (prop.address or prop.ref_catastral):
+        direccion = prop.address or f"Ref. cadastral {prop.ref_catastral}"
+
+    asunto, cuerpo = genera_carta_oferta(titular or "Propietario/a", direccion, cargas_resumen)
+
+    filename_pdf = f"scrisoare_{report_id}_{uuid.uuid4().hex[:12]}.pdf"
+    output_path = os.path.join(STATIC_LETTERS_DIR, filename_pdf)
+    try:
+        exporta_scrisoare_pdf(titular or "Propietario/a", direccion, cuerpo, output_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Eroare generare PDF: {e}")
+
+    report.extracted_owner = titular or report.extracted_owner
+    report.cargas_resumen = cargas_resumen or report.cargas_resumen
+    report.status = "completed"
+    report.pdf_url = f"/static/letters/{filename_pdf}"
+    db.commit()
+
+    base_url = str(request.base_url).rstrip("/")
+    download_url = f"{base_url}/static/letters/{filename_pdf}"
+
+    return {
+        "extracted": {
+            "titular": titular,
+            "descripcion": extracted.get("descripcion", ""),
+            "cargas": cargas_resumen,
+            "direccion": direccion,
+        },
+        "report_id": report_id,
+        "asunto": asunto,
+        "cuerpo": cuerpo,
+        "texto_completo": f"Asunto: {asunto}\n\n{cuerpo}",
+        "download_url": download_url,
+        "pdf_url": report.pdf_url,
+        "manual_check": extracted.get("manual_check", False),
     }
 
 
