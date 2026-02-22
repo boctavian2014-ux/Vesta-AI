@@ -9,20 +9,21 @@ from main import CATASTRO_URL, get_catastro_http_client
 _CATASTRO_LOG_XML_MAX = 4000
 
 
-def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_path=None):
+def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală.
     Pentru ConsultaCPMRC (CATASTRO_URL curent): SRS, CoordenadaX, CoordenadaY (fără underscore).
-    Pentru Consulta_RCCOOR: SRS, Coordenada_X, Coordenada_Y. Ordine WGS84: X=Longitudine, Y=Latitudine.
+    SRS implicit EPSG:4258 (ETRS89, standard oficial Spania); dacă 4258 dă 404, poți încerca fără SRS (lăsând serverul pe default).
     """
     url = catastro_url or CATASTRO_URL
+    srs_val = (srs or "").strip() or "EPSG:4258"
     params = {
-        "SRS": (srs or "").strip() or "EPSG:4326",
+        "SRS": srs_val,
         "CoordenadaX": f"{float(lon):.8f}",
         "CoordenadaY": f"{float(lat):.8f}",
     }
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/xml, text/xml, */*",
     }
     try:

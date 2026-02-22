@@ -121,7 +121,7 @@ def _coordonate_la_referinta_cu_buffer(lat: float, lon: float, catastro_url: str
     last_err = None
     for d_lat, d_lon in offsets:
         la, lo = lat + d_lat, lon + d_lon
-        data, err = coordonate_la_referinta(la, lo, srs="EPSG:4326", catastro_url=catastro_url, cert_path=cert_path)
+        data, err = coordonate_la_referinta(la, lo, srs="EPSG:4258", catastro_url=catastro_url, cert_path=cert_path)
         if err is None and data and (data.get("ref_catastral") or "").strip():
             if d_lat != 0 or d_lon != 0:
                 print(f"✅ Imobil găsit cu buffer la offset: d_lat={d_lat}, d_lon={d_lon}")
@@ -186,7 +186,7 @@ try:
     session = get_catastro_http_client()
     r = session.get(
         CATASTRO_URL,
-        params={"SRS": "EPSG:4326", "CoordenadaX": -3.70, "CoordenadaY": 40.42},
+        params={"SRS": "EPSG:4258", "CoordenadaX": -3.70, "CoordenadaY": 40.42},
         timeout=10,
     )
     r.raise_for_status()
@@ -589,18 +589,16 @@ def _log_catastro_xml_response(response, max_chars: int = 4000):
 def get_catastro_data(lat: float, lon: float):
     """
     Apelează Catastro (ConsultaCPMRC / coordonate) pe domeniul oficial www1.sedecatastro.gob.es.
-    Ordine coordonate pentru SRS=EPSG:4326 (WGS84): X = Longitudine, Y = Latitudine.
-    Obligatoriu SRS=EPSG:4326 – fără el serverul presupune ED50 (sistem local spaniol) și nu găsește punctul.
+    SRS=EPSG:4258 (ETRS89, standard oficial Spania). X = Longitudine, Y = Latitudine.
     """
     params = {
-        "SRS": "EPSG:4326",  # WGS84; fără acest parametru Catastro interpretează ca ED50
-        "CoordenadaX": f"{lon:.8f}",   # Longitudine (X în EPSG:4326); ConsultaCPMRC nu acceptă underscore
-        "CoordenadaY": f"{lat:.8f}",   # Latitudine (Y în EPSG:4326)
+        "SRS": "EPSG:4258",  # ETRS89 (standard Spania); fără el serverul poate presupune ED50
+        "CoordenadaX": f"{lon:.8f}",
+        "CoordenadaY": f"{lat:.8f}",
     }
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "es-ES,es;q=0.9",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/xml, text/xml, */*",
     }
 
     try:

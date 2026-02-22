@@ -42,13 +42,15 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 | Metodă | ConsultaCPMRC | Endpoint stabil, interogări WGS84. |
 | Longitudine | CoordenadaX | Recunoscut de server (evită 404/400). |
 | Latitudine | CoordenadaY | Recunoscut de server (evită 404/400). |
-| Case sensitivity | SRS=EPSG:4326 | Majuscule obligatorii pentru proiecție corectă. |
+| SRS | EPSG:4258 (ETRS89) | Standard oficial Spania; multe endpoint-uri returnează 404 cu EPSG:4326. Dacă 4258 nu merge, poți încerca fără SRS. |
 
-**Note pentru WSDL (cauta_imobil_spania.py):** Noul host nu servește mereu `?WSDL` prin GET; în cod se folosește URL-ul de bază `.asmx` (fără `?WSDL`). Dacă zeep cere definiția explicit: `.../OVCCallejero.asmx?handler=GenWSDL`. Clientul folosește `CATASTRO_HOST` și `get_catastro_http_client()`.
+**Antete obligatorii:** Serverul returnează 404 dacă lipsește User-Agent. Folosim `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36` și `Accept: application/xml, text/xml, */*`.
+
+**Note pentru WSDL (cauta_imobil_spania.py):** URL complet cu `?WSDL`: `.../OVCCallejero.asmx?WSDL`. Eroarea la WSDL apare și din cauza lipsei headere; session-ul folosește `get_catastro_http_client()`. Clientul folosește `CATASTRO_HOST` și același session.
 
 **De ce dispare „Hostname mismatch”:** Toate apelurile Catastro trec prin `get_catastro_http_client()` (main.py), care folosește sesiunea din `catastro_ssl.py` (context SSL: sistem + fnmt_root.pem). Noul host `www1.sedecatastro.gob.es` are certificatele SSL la zi. În producție nu se folosește `verify=False`.
 
-**De ce 422 Unprocessable Entity:** Când Catastro returnează o pagină HTML de eroare (în loc de XML), codul de parsare eșuează; FastAPI vede că handler-ul nu a returnat răspunsul așteptat și trimite 422 către mobil. Cu ConsultaCPMRC și CoordenadaX/CoordenadaY, serverul răspunde cu XML valid → handler-ul returnează JSON → 422 dispare. **Fix:** URL ConsultaCPMRC, parametri exacti (SRS, CoordenadaX, CoordenadaY), host `www1.sedecatastro.gob.es` și fnmt_root.pem în Railway (CATASTRO_CA_BUNDLE).
+**De ce 422 Unprocessable Entity:** Când Catastro răspunde cu 404 (pagină HTML, nu XML), `ET.fromstring(response.content)` aruncă excepție; FastAPI vede că procesarea a eșuat și returnează 422 către mobil. **Fix:** SRS=EPSG:4258 (ETRS89), CoordenadaX/CoordenadaY, User-Agent și Accept corecte, URL ConsultaCPMRC, fnmt_root.pem în Railway. După fix, verifică în log **📡 Catastro – Status: 200**; apoi intră în funcțiune buffer-ul de 8 m.
 
 **Verificare post-deploy:** (1) **Log-uri la pornire:** Caută **Succes SSL Catastro**. Dacă apare fără 404, testul automat cu coordonatele Madrid a reușit. (2) **Test identificare:** Rulează comanda `Invoke-RestMethod` din acest document (secțiunea cu coordonate Madrid). Dacă primești JSON cu `referinta`, lanțul complet este funcțional: SSL → host nou → parametri corecți → buffer 8 m.
 

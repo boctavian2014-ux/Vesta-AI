@@ -6,9 +6,8 @@ from catastro_ssl import CATASTRO_HOST
 # Sesiune securizată Catastro (din main)
 from main import get_catastro_http_client
 
-# WSDL: noul host nu servește mereu ?WSDL prin GET — folosim URL-ul de bază .asmx (fără ?WSDL).
-# Dacă zeep cere neapărat definiția: .../OVCCallejero.asmx?handler=GenWSDL
-WSDL_URL = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx"
+# WSDL: URL complet cu ?WSDL; serverul poate returna 404 fără headere corecte (session folosește get_catastro_http_client).
+WSDL_URL = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
 
 
 def cauta_imobil_spania(provincie, municipiu, strada, numar):
