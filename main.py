@@ -71,6 +71,7 @@ CATASTRO_BASE = "https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC"
 CATASTRO_URL = f"{CATASTRO_BASE}/OVCCoordenadas.asmx/Consulta_RCCOOR"
 CATASTRO_RCCOOR_DISTANCIA = f"{CATASTRO_BASE}/OVCCoordenadas.asmx/Consulta_RCCOOR_Distancia"
 CATASTRO_COORD_ASMX_BASE = f"{CATASTRO_BASE}/OVCCoordenadas.asmx"
+CATASTRO_CONSULTA_CPMRC = f"{CATASTRO_BASE}/OVCCoordenadas.asmx/Consulta_CPMRC"
 CATASTRO_DNPRC_URL = f"{CATASTRO_BASE}/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
 
 
@@ -99,8 +100,8 @@ from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
 from carta_oferta import genera_carta_oferta
 
-# Identificare: coordonate -> referință cadastrală (folosim modulul cu SSL)
-from coordonate_la_referinta import coordonate_la_referinta, _proceseaza_raspuns_catastro as proceseaza_xml_catastro
+# Identificare: coordonate -> referință cadastrală + date descriptive după RC (Consulta_CPMRC)
+from coordonate_la_referinta import coordonate_la_referinta, get_full_catastro_details, _proceseaza_raspuns_catastro as proceseaza_xml_catastro
 
 
 def _coordonate_la_referinta_cu_buffer(lat: float, lon: float, catastro_url: str = None, cert_path: str = None):
@@ -499,6 +500,17 @@ def _text_full_dnprc(elem) -> str:
     return (direct + " " + child).strip()
 
 
+def _clean_address_display(raw: str) -> str:
+    """Curăță adresa pentru UI: opțional elimină Polígono, Parcela pentru aspect mai curat."""
+    if not raw or not isinstance(raw, str):
+        return raw or ""
+    s = raw.strip()
+    for token in ("Polígono", "Parcela", "POLÍGONO", "PARCELA"):
+        if token in s:
+            s = s.replace(token, "").strip()
+    return " ".join(s.split()) if s else raw.strip()
+
+
 def _consulta_dnprc_datos(ref_catastral: str, cmun_ine: Optional[str] = None) -> dict:
     """
     A doua cerere: Consulta_DNPRC_Codigos pentru a completa year_built și/sau address
@@ -660,18 +672,26 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
                 "year_built": data_coord.get("year_built"),
                 "cmun_ine": data_coord.get("cmun_ine"),
             }
-            # Dacă prima cerere nu a returnat year_built sau address, a doua cerere (Consulta_DNPRC) completează înainte de răspuns către mobil.
+            # Completează address și year_built: întâi Consulta_CPMRC (date descriptive după RC), apoi fallback DNPRC.
             need_year = data_block.get("year_built") is None
             need_address = not (data_block.get("address") or "").strip()
             if need_year or need_address:
-                datos = _consulta_dnprc_datos(
-                    data_block["ref_catastral"],
-                    data_block.get("cmun_ine"),
-                )
-                if need_year and datos.get("year_built") is not None:
-                    data_block["year_built"] = datos["year_built"]
-                if need_address and (datos.get("address") or "").strip():
-                    data_block["address"] = datos["address"].strip()
+                detalles = get_full_catastro_details(data_block["ref_catastral"])
+                if need_address and (detalles.get("address") or "").strip():
+                    data_block["address"] = _clean_address_display(detalles["address"])
+                if need_year and detalles.get("year_built") is not None:
+                    data_block["year_built"] = detalles["year_built"]
+                need_year = data_block.get("year_built") is None
+                need_address = not (data_block.get("address") or "").strip()
+                if need_year or need_address:
+                    datos = _consulta_dnprc_datos(
+                        data_block["ref_catastral"],
+                        data_block.get("cmun_ine"),
+                    )
+                    if need_year and datos.get("year_built") is not None:
+                        data_block["year_built"] = datos["year_built"]
+                    if need_address and (datos.get("address") or "").strip():
+                        data_block["address"] = (data_block.get("address") or "").strip() or _clean_address_display(datos["address"])
             result = {"status": "success", "data": data_block}
     except Exception as e:
         result = {"status": "error", "message": str(e)}
@@ -679,7 +699,7 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     if result is None:
         try:
             result = get_catastro_data(location.lat, location.lon)
-            # Completează year_built și address din Consulta_DNPRC dacă lipsesc
+            # Completează year_built și address: întâi Consulta_CPMRC, apoi fallback DNPRC
             if result.get("status") == "success" and result.get("data"):
                 data_block = result["data"]
                 need_year = data_block.get("year_built") is None
@@ -687,11 +707,19 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
                 if need_year or need_address:
                     ref = (data_block.get("ref_catastral") or "").strip()
                     if ref:
-                        datos = _consulta_dnprc_datos(ref, data_block.get("cmun_ine"))
-                        if need_year and datos.get("year_built") is not None:
-                            data_block["year_built"] = datos["year_built"]
-                        if need_address and (datos.get("address") or "").strip():
-                            data_block["address"] = datos["address"].strip()
+                        detalles = get_full_catastro_details(ref)
+                        if need_address and (detalles.get("address") or "").strip():
+                            data_block["address"] = _clean_address_display(detalles["address"])
+                        if need_year and detalles.get("year_built") is not None:
+                            data_block["year_built"] = detalles["year_built"]
+                        need_year = data_block.get("year_built") is None
+                        need_address = not (data_block.get("address") or "").strip()
+                        if need_year or need_address:
+                            datos = _consulta_dnprc_datos(ref, data_block.get("cmun_ine"))
+                            if need_year and datos.get("year_built") is not None:
+                                data_block["year_built"] = datos["year_built"]
+                            if need_address and (datos.get("address") or "").strip():
+                                data_block["address"] = (data_block.get("address") or "").strip() or _clean_address_display(datos["address"])
         except Exception as e:
             result = {"status": "error", "message": str(e)}
 

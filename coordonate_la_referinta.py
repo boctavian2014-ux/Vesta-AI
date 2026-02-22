@@ -77,6 +77,51 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_p
         return None, "Catastro indisponibil sau endpoint neacceptat. Încearcă din nou mai târziu."
 
 
+def get_full_catastro_details(rc: str):
+    """
+    Date descriptive după RC: apelează Consulta_CPMRC pe ovc.catastro.meh.es.
+    Extrage din XML: dirección (<ldt>), año de construcción (<ant> sau <ayc>).
+    Returnează dict cu chei pentru UI: address, year_built (compatibil cu mobil).
+    """
+    rc = (rc or "").strip()
+    if not rc:
+        return {"address": "", "year_built": None}
+    from main import CATASTRO_CONSULTA_CPMRC, get_catastro_http_client
+    url = CATASTRO_CONSULTA_CPMRC
+    params = {"RC": rc, "SRS": "EPSG:4326", "Provincia": "", "Municipio": ""}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0"}
+    try:
+        session = get_catastro_http_client()
+        resp = session.get(url, params=params, headers=headers, timeout=15)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        address = ""
+        ldt_el = _find_recursive(root, "ldt")
+        if ldt_el is not None:
+            address = (_text_full(ldt_el) or "").strip()
+        year_built = None
+        for tag in ("ant", "ayc"):
+            el = _find_recursive(root, tag)
+            if el is not None and (el.text or "").strip().isdigit():
+                y = int((el.text or "").strip())
+                if 1800 <= y <= 2030:
+                    year_built = y
+                    break
+        if not year_built:
+            for elem in root.iter():
+                if _tag_local(elem).lower() in ("ant", "antiguedad", "anioconstruccion", "anio", "ayc"):
+                    t = (elem.text or "").strip()
+                    if t.isdigit():
+                        val = int(t)
+                        if 1800 <= val <= 2030:
+                            year_built = val
+                            break
+        return {"address": address or "", "year_built": year_built}
+    except Exception as e:
+        print(f"❌ Eroare Consulta_CPMRC (RC={rc[:20]}...): {e}")
+        return {"address": "", "year_built": None}
+
+
 def _log_catastro_request(response):
     """Printează URL-ul complet trimis către Catastro și răspunsul XML brut (pentru debug)."""
     print("[Catastro] URL complet:", response.url)
