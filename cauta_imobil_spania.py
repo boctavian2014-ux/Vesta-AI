@@ -9,10 +9,11 @@ from main import get_catastro_http_client
 # WSDL: URL complet https + noul host; serverul refuză WSDL la GET fără User-Agent.
 WSDL_URL = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
 
-# Headere de browser pentru cererea WSDL (evită 404 la descărcarea definiției SOAP).
+# Headere de browser pentru cererea WSDL (serverul refuză WSDL fără User-Agent / interogare ca browser).
 _WSDL_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
     "Accept": "application/xml, text/xml, */*",
+    "Accept-Language": "es-ES,es;q=0.9",
 }
 
 
@@ -21,8 +22,10 @@ def cauta_imobil_spania(provincie, municipiu, strada, numar):
 
     try:
         session = get_catastro_http_client()
-        session.headers.update(_WSDL_HEADERS)  # User-Agent obligatoriu ca serverul să servească WSDL
         transport = Transport(session=session)
+        # Zeep overwrites session.headers['User-Agent'] in Transport.__init__; restore browser headers
+        # so the WSDL GET uses our User-Agent (server returns 404 without it).
+        session.headers.update(_WSDL_HEADERS)
         client = zeep.Client(wsdl=wsdl_url, transport=transport)
 
         # Apelăm funcția care caută Referința Catastrală după adresă

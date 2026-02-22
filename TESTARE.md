@@ -52,7 +52,9 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 
 **De ce 422 Unprocessable Entity:** Când Catastro răspunde cu 404 (pagină HTML, nu XML), `ET.fromstring(response.content)` aruncă excepție; FastAPI vede că procesarea a eșuat și returnează 422 către mobil. **Fix:** SRS=EPSG:4258 (ETRS89), CoordenadaX/CoordenadaY (fără underscore), User-Agent și Accept corecte, URL ConsultaCPMRC, fnmt_root.pem în Railway. După fix, verifică în log **📡 Catastro – Status: 200**; apoi intră în funcțiune buffer-ul de 8 m.
 
-**Analiză flux 422:** 422 este un rezultat indirect. Backend-ul primește de la Catastro un răspuns 404 (conținut HTML de eroare), încearcă să îl parseze ca XML (ex. `ET.fromstring(response.content)`), parser-ul aruncă excepție. FastAPI interceptează excepția de procesare și returnează 422 către aplicația mobilă.
+**Analiză flux 422:** Aplicația returnează 422 deoarece, când `requests` primește pagina HTML de eroare (404), funcția de parsare XML eșuează; FastAPI interceptează excepția și returnează 422 către mobil.
+
+**Checklist final deploy:** Parametri: CoordenadaX și CoordenadaY (lipit, fără underscore). SRS: EPSG:4258 (oficial Spania). Headers: **OBLIGATORIU** User-Agent de browser (și Accept, Accept-Language). Railway: **Redeploy curat** ca noul cod cu headere să fie activ. Odată ce User-Agent e aplicat, log-ul trece de la Status 404 la **Status 200**, iar buffer-ul de 8 m returnează referința cadastrală corectă.
 
 **Verificare post-deploy:** (1) **Log-uri la pornire:** Caută **Succes SSL Catastro**. Dacă apare fără 404, testul automat cu coordonatele Madrid a reușit. (2) **Test identificare:** Rulează comanda `Invoke-RestMethod` din acest document (secțiunea cu coordonate Madrid). Dacă primești JSON cu `referinta`, lanțul complet este funcțional: SSL → host nou → parametri corecți → buffer 8 m.
 

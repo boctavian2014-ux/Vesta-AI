@@ -22,10 +22,11 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_p
         "CoordenadaX": f"{float(lon):.8f}",   # FĂRĂ underscore – ConsultaCPMRC acceptă doar CoordenadaX/CoordenadaY
         "CoordenadaY": f"{float(lat):.8f}",
     }
-    # www1.sedecatastro.gob.es blochează cereri fără User-Agent de browser (returnează 404 chiar dacă URL-ul e corect).
+    # Serverul blochează cereri care par scripturi (fără User-Agent de browser) → 404.
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
         "Accept": "application/xml, text/xml, */*",
+        "Accept-Language": "es-ES,es;q=0.9",
     }
     try:
         session = get_catastro_http_client()
