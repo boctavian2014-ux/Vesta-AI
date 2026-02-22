@@ -6,9 +6,8 @@ from catastro_ssl import CATASTRO_HOST
 # Sesiune securizată Catastro (din main)
 from main import get_catastro_http_client
 
-# WSDL: pe noul host, ?WSDL poate returna 404; încearcă URL de bază .asmx (fără ?WSDL).
-# Dacă tot 404: .../OVCCallejero.asmx?WSDL sau .../OVCCallejero.asmx?handler=GenWSDL
-WSDL_URL = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx"
+# WSDL: URL corect cu ?WSDL. Sesiunea trebuie să aibă User-Agent (session.headers) ca serverul să nu returneze 404.
+WSDL_URL = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
 
 # User-Agent obligatoriu – serverul blochează cereri fără antet valid (404). Zeep suprascrie în Transport.__init__, deci refacem după.
 _WSDL_HEADERS = {
