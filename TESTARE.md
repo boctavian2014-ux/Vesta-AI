@@ -82,6 +82,21 @@ Trecerea la **ConsultaCPMRC** și la parametrii **CoordenadaX** / **CoordenadaY*
 
 **Notă de siguranță înainte de push:** Rulează local `python tests_e2e.py` înainte de push-ul final pe Railway. Testul verifică că `CATASTRO_URL` folosește `www1.sedecatastro.gob.es` și că nu a rămas nicio referință activă către host-ul vechi în codul de testare.
 
+### Dacă OVCCoordenadas.asmx răspunde 404 (endpoint coordonate)
+
+**Descoperire endpoint real (recomandat):**
+
+1. Deschide în browser site-ul oficial Catastro (Spania).
+2. Deschide **DevTools → Network** (F12 → Network).
+3. Folosește interfața lor pentru **căutare după coordonate** (dacă există).
+4. Identifică request-ul emis (URL, method, body, headere).
+5. Copiază 1:1 în backend: același URL, method, body și headere (inclusiv Cookie/Referer dacă sunt obligatorii).
+
+**Dacă nu mai există endpoint public pentru coordonate:**
+
+- **Opțiune A:** Accepti că Spania nu va mai avea „click pe hartă → Catastro” și rămâi doar cu fluxurile care nu depind de acest pas (căutare după adresă, referință introdusă manual etc.).
+- **Opțiune B:** Pui un **serviciu de fallback**: geocoding (ex. Nominatim) + căutare textuală după adresă + referință cadastrală introdusă manual de utilizator. Deja există parțial: `_identifica_imobil_fallback_adresa` (Nominatim → adresă → `cauta_imobil_spania`); poți extinde cu input manual RC și/sau alte surse de geocoding.
+
 ### Ce să observi după deploy (Railway)
 
 - **Logs la pornire:** Verifică în deployment logs dacă mai apare vreun **warning legat de fnmt_root.pem**. Dacă vezi **Succes SSL Catastro**, înseamnă că logica bazată pe BASE_DIR (și CATASTRO_CA_BUNDLE) a localizat corect certificatul și handshake-ul cu `www1.sedecatastro.gob.es` a reușit.

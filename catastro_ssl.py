@@ -10,8 +10,8 @@ import warnings
 import requests
 from requests.adapters import HTTPAdapter
 
-# Host oficial – domeniul nou cu certificate SSL la zi (migrare de la ovc.catastro.minhap.es)
-CATASTRO_HOST = "www1.sedecatastro.gob.es"
+# Host oficial – ovc.catastro.meh.es (Consulta_RCCOOR / Consulta_RCCOOR_Distancia / OVCCallejero)
+CATASTRO_HOST = "ovc.catastro.meh.es"
 
 # Calea către fnmt_root.pem: env CATASTRO_CA_BUNDLE sau, implicit, lângă acest fișier (nu getcwd)
 _SSL_DIR = os.path.dirname(os.path.abspath(__file__))

@@ -31,14 +31,14 @@ def test_imports():
 
 
 def test_catastro_url_constant():
-    """URL Catastro: folosește noul domeniu www1.sedecatastro.gob.es (certificate SSL la zi)."""
+    """URL Catastro: folosește ovc.catastro.meh.es (Consulta_RCCOOR)."""
     from main import CATASTRO_URL
     if "ovc.-" in CATASTRO_URL:
         fail("CATASTRO_URL", "URL conține ovc.- (cratimă greșită)")
-    elif "www1.sedecatastro.gob.es" in CATASTRO_URL:
-        ok("CATASTRO_URL corect (www1.sedecatastro.gob.es)")
+    elif "ovc.catastro.meh.es" in CATASTRO_URL:
+        ok("CATASTRO_URL corect (ovc.catastro.meh.es)")
     else:
-        fail("CATASTRO_URL", "URL trebuie să folosească www1.sedecatastro.gob.es: " + CATASTRO_URL[:60])
+        fail("CATASTRO_URL", "URL trebuie să folosească ovc.catastro.meh.es: " + CATASTRO_URL[:60])
 
 
 def test_coordonate_la_referinta_xml():

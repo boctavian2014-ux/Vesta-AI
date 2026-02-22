@@ -135,7 +135,7 @@ def run_catastro_ssl_check() -> None:
         fail(
             "Catastro SSL",
             str(e),
-            "Verifică conexiunea la internet și că www1.sedecatastro.gob.es este accesibil.",
+            "Verifică conexiunea la internet și că ovc.catastro.meh.es este accesibil.",
         )
 
 

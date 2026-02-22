@@ -66,10 +66,12 @@ from catastro_ssl import get_catastro_session
 
 ENV = os.getenv("ENV", "dev")  # dev (implicit) sau prod (setat în Railway)
 
-# API Catastro: POST form-urlencoded sau SOAP (application/soap+xml). URL bază pentru SOAP: fără /ConsultaCPMRC.
-CATASTRO_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/ConsultaCPMRC"
-CATASTRO_COORD_ASMX_BASE = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx"
-CATASTRO_DNPRC_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
+# API Catastro – host ovc.catastro.meh.es (GET Consulta_RCCOOR + fallback Consulta_RCCOOR_Distancia)
+CATASTRO_BASE = "https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC"
+CATASTRO_URL = f"{CATASTRO_BASE}/OVCCoordenadas.asmx/Consulta_RCCOOR"
+CATASTRO_RCCOOR_DISTANCIA = f"{CATASTRO_BASE}/OVCCoordenadas.asmx/Consulta_RCCOOR_Distancia"
+CATASTRO_COORD_ASMX_BASE = f"{CATASTRO_BASE}/OVCCoordenadas.asmx"
+CATASTRO_DNPRC_URL = f"{CATASTRO_BASE}/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
 
 
 def get_catastro_http_client() -> requests.Session:
@@ -122,7 +124,7 @@ def _coordonate_la_referinta_cu_buffer(lat: float, lon: float, catastro_url: str
     last_err = None
     for d_lat, d_lon in offsets:
         la, lo = lat + d_lat, lon + d_lon
-        data, err = coordonate_la_referinta(la, lo, srs="EPSG:4258", catastro_url=catastro_url, cert_path=cert_path)
+        data, err = coordonate_la_referinta(la, lo, srs="EPSG:4326", catastro_url=catastro_url, cert_path=cert_path)
         if err is None and data and (data.get("ref_catastral") or "").strip():
             if d_lat != 0 or d_lon != 0:
                 print(f"✅ Imobil găsit cu buffer la offset: d_lat={d_lat}, d_lon={d_lon}")
@@ -182,12 +184,16 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Verificare SSL la pornire - DOAR LOG informativ, nu blochează serverul
+# Verificare la pornire: host ovc.catastro.meh.es accesibil (GET pe .asmx)
 try:
-    # Temporar, nu mai apelăm direct Catastro la startup, ca să nu avem 404
-    print("⚠️ Verificarea live Catastro la startup este dezactivată (evitat 404).")
+    session = get_catastro_http_client()
+    r = session.get(CATASTRO_COORD_ASMX_BASE, timeout=10)
+    if r.status_code == 200:
+        print("✅ Catastro meh.es este ACTIV și accesibil!")
+    else:
+        print(f"⚠️ Catastro meh.es a răspuns: {r.status_code}")
 except Exception as e:
-    print(f"⚠️ Skip verificare SSL Catastro la startup: {e}")
+    print(f"⚠️ Atenție: Host-ul meh.es nu răspunde: {e}")
 
 # Model pentru cererea de la user (coordonate de pe hartă)
 class ClickLocation(BaseModel):
@@ -583,50 +589,19 @@ def _log_catastro_xml_response(response, max_chars: int = 4000):
 
 def get_catastro_data(lat: float, lon: float):
     """
-    Apelează Catastro (ConsultaCPMRC / coordonate) pe domeniul oficial www1.sedecatastro.gob.es.
-    POST cu application/x-www-form-urlencoded (GET dă adesea 404 pe .asmx).
+    Apelează Catastro (coordonate → referință) pe ovc.catastro.meh.es.
+    Folosește coordonate_la_referinta (GET Consulta_RCCOOR + fallback Consulta_RCCOOR_Distancia).
     """
-    payload = {
-        "SRS": "EPSG:4258",
-        "CoordenadaX": f"{lon:.8f}",
-        "CoordenadaY": f"{lat:.8f}",
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/xml, text/xml, */*",
-    }
-
     try:
-        session = get_catastro_http_client()
-        response = session.post(CATASTRO_URL, data=payload, headers=headers, timeout=10)
-        print(f"📡 Catastro – Status: {response.status_code}")
-        print(f"📡 Catastro – URL complet: {response.url}")
-        _log_catastro_xml_response(response)
-    except Exception as e:
-        print(f"❌ Eroare apel: {e}")
-        return {"status": "error", "message": f"Eroare rețea: {str(e)}"}
-
-    if response.status_code != 200:
-        return {"status": "error", "message": f"Catastro a returnat {response.status_code}"}
-
-    try:
-        data, err = proceseaza_xml_catastro(response.content)
-        if err is None and data and (data.get("ref_catastral") or "").strip():
-            return {"status": "success", "data": data}
-        if data is None and err:
+        data, err = coordonate_la_referinta(lat, lon, srs="EPSG:4326")
+        if err is not None:
             return {"status": "error", "message": err}
-        root = ET.fromstring(response.content)
-        ns = {"cat": "http://www.catastro.minhap.es/"}
-        des_error = root.find(".//cat:des", ns) or root.find(".//{http://www.catastro.meh.es/}des")
-        error_msg = (des_error.text or "").strip() if des_error is not None else "Locație fără referință"
-        if not error_msg:
-            error_msg = "Locație fără referință"
-        return {"status": "error", "message": error_msg}
-    except ET.ParseError as e:
-        return {"status": "error", "message": "Eroare parsare XML"}
+        if data and (data.get("ref_catastral") or "").strip():
+            return {"status": "success", "data": data}
+        return {"status": "error", "message": "Locație fără referință"}
     except Exception as e:
-        return {"status": "error", "message": "Eroare internă server la procesare"}
+        print(f"❌ Eroare get_catastro_data: {e}")
+        return {"status": "error", "message": f"Eroare rețea: {str(e)}"}
 
 
 def _data_for_mobile(d: dict) -> dict:
@@ -673,7 +648,7 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     try:
         data_coord, err = _coordonate_la_referinta_cu_buffer(
             location.lat, location.lon,
-            catastro_url=CATASTRO_COORD_ASMX_BASE,
+            catastro_url=CATASTRO_URL,
             cert_path=CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else None,
         )
         if err is not None:

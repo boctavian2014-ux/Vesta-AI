@@ -2,9 +2,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-# Helper-ul din main (sesiune securizată Catastro: prod = FNMT obligatoriu, dev = fallback verify=False)
-from main import CATASTRO_COORD_ASMX_BASE, get_catastro_http_client
-
+# Import din main la runtime (evită import circular când test_catastro_local importă acest modul)
 # Limita pentru log XML (evită flood în consolă)
 _CATASTRO_LOG_XML_MAX = 4000
 
@@ -28,45 +26,55 @@ def _extract_soap_body(content: bytes):
     return content
 
 
-def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_path=None):
+def _has_uerr_one(content: bytes) -> bool:
+    """True dacă XML conține <uerr>1</uerr> (punct în stradă – trebuie fallback Distancia)."""
+    try:
+        root = ET.fromstring(content)
+        for elem in root.iter():
+            if _tag_local(elem) == "uerr" and (elem.text or "").strip() == "1":
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală.
-    Folosește SOAP 1.2 la URL-ul rădăcină .asmx – singura metodă acceptată de www1.sedecatastro.gob.es
-    (GET/Form POST sunt blocate). Fără SOAP se primește 404 (HTML), parsarea XML eșuează → 422 către mobil.
+    GET Consulta_RCCOOR pe ovc.catastro.meh.es; dacă răspunsul are <uerr>1</uerr> (punct în stradă),
+    reîncearcă cu Consulta_RCCOOR_Distancia (rază 50 m).
     """
-    srs_val = (srs or "").strip() or "EPSG:4258"
-    # URL-ul de bază al serviciului, FĂRĂ metoda la final (pentru a evita 404)
-    url = catastro_url or CATASTRO_COORD_ASMX_BASE
-    # Header obligatoriu pentru SOAP 1.2
-    headers = {
-        "Content-Type": "application/soap+xml; charset=utf-8",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    }
+    from main import CATASTRO_URL, CATASTRO_RCCOOR_DISTANCIA, get_catastro_http_client
+    url = catastro_url or CATASTRO_URL
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0"}
+    srs_val = (srs or "").strip() or "EPSG:4326"
     lon_f = float(lon)
     lat_f = float(lat)
-    # Body-ul XML (Envelope) pe care îl așteaptă noul server – singurul format care nu returnează 404
-    soap_body = f"""<?xml version="1.0" encoding="utf-8"?>
-<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2001/soap-envelope">
-  <soap12:Body>
-    <ConsultaCPMRC xmlns="http://www.catastro.meh.es/">
-      <SRS>{srs_val}</SRS>
-      <CoordenadaX>{lon_f:.8f}</CoordenadaX>
-      <CoordenadaY>{lat_f:.8f}</CoordenadaY>
-    </ConsultaCPMRC>
-  </soap12:Body>
-</soap12:Envelope>"""
+    params = {
+        "SRS": srs_val,
+        "Coordenada_X": f"{lon_f:.14f}",
+        "Coordenada_Y": f"{lat_f:.14f}",
+    }
     try:
         session = get_catastro_http_client()
-        # Trimite bytes UTF-8 explicit; evită mismatch cu XML declaration și Content-Type charset
-        response = session.post(url, data=soap_body.encode("utf-8"), headers=headers, timeout=15)
+        response = session.get(url, params=params, headers=headers, timeout=15)
         response.raise_for_status()
         _log_catastro_request(response)
-        # Răspunsul e încapsulat în <soap12:Body>; extragem conținutul pentru parsare
-        xml_content = _extract_soap_body(response.content)
-        return _proceseaza_raspuns_catastro(xml_content)
+        content = response.content
+
+        # Fallback 1: punct în stradă (<uerr>1</uerr>) → Consulta_RCCOOR_Distancia (50 m)
+        if _has_uerr_one(content):
+            url_dist = CATASTRO_RCCOOR_DISTANCIA
+            params_dist = {**params, "Distancia": "50"}
+            response = session.get(url_dist, params=params_dist, headers=headers, timeout=15)
+            response.raise_for_status()
+            _log_catastro_request(response)
+            content = response.content
+
+        return _proceseaza_raspuns_catastro(content)
     except Exception as e:
-        print(f"❌ Eroare SOAP Catastro: {e}")
-        return None, "Catastro indisponibil sau endpoint neacceptat (404). Încearcă din nou mai târziu."
+        print(f"❌ Eroare Catastro (Consulta_RCCOOR): {e}")
+        return None, "Catastro indisponibil sau endpoint neacceptat. Încearcă din nou mai târziu."
 
 
 def _log_catastro_request(response):
