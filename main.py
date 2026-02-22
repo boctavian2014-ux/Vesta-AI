@@ -681,7 +681,7 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
     try:
         data_coord, err = _coordonate_la_referinta_cu_buffer(
             location.lat, location.lon,
-            catastro_url=CATASTRO_URL,
+            catastro_url=CATASTRO_COORD_ASMX_BASE,
             cert_path=CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else None,
         )
         if err is not None:
