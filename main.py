@@ -186,7 +186,7 @@ try:
     session = get_catastro_http_client()
     r = session.get(
         CATASTRO_URL,
-        params={"SRS": "EPSG:4326", "Coordenada_X": -3.70, "Coordenada_Y": 40.42},
+        params={"SRS": "EPSG:4326", "CoordenadaX": -3.70, "CoordenadaY": 40.42},
         timeout=10,
     )
     r.raise_for_status()
@@ -594,8 +594,8 @@ def get_catastro_data(lat: float, lon: float):
     """
     params = {
         "SRS": "EPSG:4326",  # WGS84; fără acest parametru Catastro interpretează ca ED50
-        "Coordenada_X": f"{lon:.8f}",   # Longitudine (X în EPSG:4326)
-        "Coordenada_Y": f"{lat:.8f}",   # Latitudine (Y în EPSG:4326)
+        "CoordenadaX": f"{lon:.8f}",   # Longitudine (X în EPSG:4326); ConsultaCPMRC nu acceptă underscore
+        "CoordenadaY": f"{lat:.8f}",   # Latitudine (Y în EPSG:4326)
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",

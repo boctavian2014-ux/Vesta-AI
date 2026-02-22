@@ -13,7 +13,7 @@ try:
     else:
         r = session.get(
             f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_CPMRC",
-            params={"SRS": "EPSG:4326", "Coordenada_X": -4.4, "Coordenada_Y": 36.7},
+            params={"SRS": "EPSG:4326", "CoordenadaX": -4.4, "CoordenadaY": 36.7},
             timeout=15,
         )
         print(f"   [OK] Request SSL: {r.status_code}")
