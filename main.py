@@ -66,8 +66,7 @@ from catastro_ssl import get_catastro_session
 
 ENV = os.getenv("ENV", "dev")  # dev (implicit) sau prod (setat în Railway)
 
-# API Catastro: serviciul .asmx este SOAP; folosim GET cu query (ConsultaCPMRC) ca interfață simplificată.
-# Pentru compatibilitate completă: folosește metoda REST documentată de ei sau implementează SOAP corect (zeep + envelope XML, nu parametri în URL).
+# API Catastro: serviciul .asmx acceptă parametri prin POST (application/x-www-form-urlencoded); GET dă adesea 404.
 CATASTRO_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/ConsultaCPMRC"
 CATASTRO_DNPRC_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
 
@@ -187,14 +186,11 @@ try:
     session = get_catastro_http_client()
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/xml, text/xml, */*",
     }
-    r = session.get(
-        CATASTRO_URL,
-        params={"SRS": "EPSG:4258", "CoordenadaX": -3.70, "CoordenadaY": 40.42},
-        headers=headers,
-        timeout=10,
-    )
+    payload = {"SRS": "EPSG:4258", "CoordenadaX": "-3.70", "CoordenadaY": "40.42"}
+    r = session.post(CATASTRO_URL, data=payload, headers=headers, timeout=10)
     r.raise_for_status()
     print("✅ Succes SSL Catastro (200 OK)")
 except Exception as e:
@@ -595,26 +591,22 @@ def _log_catastro_xml_response(response, max_chars: int = 4000):
 def get_catastro_data(lat: float, lon: float):
     """
     Apelează Catastro (ConsultaCPMRC / coordonate) pe domeniul oficial www1.sedecatastro.gob.es.
-    SRS=EPSG:4258 (ETRS89, standard oficial Spania). X = Longitudine, Y = Latitudine.
+    POST cu application/x-www-form-urlencoded (GET dă adesea 404 pe .asmx).
     """
-    params = {
-        "SRS": "EPSG:4258",  # ETRS89 (standard Spania); fără el serverul poate presupune ED50
+    payload = {
+        "SRS": "EPSG:4258",
         "CoordenadaX": f"{lon:.8f}",
         "CoordenadaY": f"{lat:.8f}",
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/xml, text/xml, */*",
     }
 
     try:
         session = get_catastro_http_client()
-        response = session.get(
-            CATASTRO_URL,
-            params=params,
-            headers=headers,
-            timeout=10,
-        )
+        response = session.post(CATASTRO_URL, data=payload, headers=headers, timeout=10)
         print(f"📡 Catastro – Status: {response.status_code}")
         print(f"📡 Catastro – URL complet: {response.url}")
         _log_catastro_xml_response(response)

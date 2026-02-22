@@ -12,26 +12,26 @@ _CATASTRO_LOG_XML_MAX = 4000
 def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală.
-    Endpoint-ul Catastro este SOAP (.asmx); folosim GET cu query (ConsultaCPMRC) ca interfață simplificată.
-    Pentru SOAP corect: zeep + envelope XML (parametri în body, nu în URL) sau metoda REST compatibilă documentată de ei.
-    Parametri actuali: SRS, CoordenadaX, CoordenadaY. SRS implicit EPSG:4258 (ETRS89).
+    Endpoint .asmx acceptă parametri prin POST (application/x-www-form-urlencoded); GET dă adesea 404.
+    Parametri: SRS, CoordenadaX, CoordenadaY. SRS implicit EPSG:4258 (ETRS89).
     """
     url = catastro_url or CATASTRO_URL
     srs_val = (srs or "").strip() or "EPSG:4258"  # sau EPSG:4326 dacă 4258 eșuează
-    params = {
+    payload = {
         "SRS": srs_val,
-        "CoordenadaX": f"{float(lon):.8f}",   # FĂRĂ underscore – ConsultaCPMRC acceptă doar CoordenadaX/CoordenadaY
+        "CoordenadaX": f"{float(lon):.8f}",
         "CoordenadaY": f"{float(lat):.8f}",
     }
-    # CRITIC: Simulează un browser real – altfel Catastro returnează pagină HTML de eroare (identifică automatismul).
+    # .asmx acceptă parametri prin POST (application/x-www-form-urlencoded); GET dă adesea 404.
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/xml, text/xml, */*",
         "Accept-Language": "es-ES,es;q=0.9",
     }
     try:
         session = get_catastro_http_client()
-        response = session.get(url, params=params, headers=headers, timeout=15)
+        response = session.post(url, data=payload, headers=headers, timeout=15)
         # Tratare explicită 404: Catastro returnează HTML "No se puede procesar..."; nu parsăm XML → evităm 422.
         if response.status_code == 404:
             try:
