@@ -70,23 +70,10 @@ export default function MapScreen({ navigation }: Props) {
       // Răspuns OK dar fără ref_catastral valid: nu afișăm proprietate invalidă
       setSelectedProp(null);
       setErrorProperty(FRIENDLY_ERROR);
-    } catch (err: unknown) {
-      const e = err as { body?: { data?: { ref_catastral?: string; id?: number }; ref_catastral?: string }; status?: number };
-      const rawRef = e?.body?.data?.ref_catastral ?? e?.body?.ref_catastral;
-      const refFromErr = (typeof rawRef === "string" ? rawRef : String(rawRef ?? "")).trim();
-      if (refFromErr) {
-        const property = buildCatastroProperty(
-          { ...e.body, data: e.body.data ?? e.body },
-          latitude,
-          longitude
-        );
-        setSelectedProp(property);
-        setErrorProperty(null);
-        navigation.navigate("Property", { property });
-      } else {
-        setSelectedProp(null);
-        setErrorProperty(FRIENDLY_ERROR);
-      }
+    } catch {
+      // Backend /identifica-imobil/ returns only { detail: "..." } on error (FastAPI HTTPException), never data.ref_catastral.
+      setSelectedProp(null);
+      setErrorProperty(FRIENDLY_ERROR);
     } finally {
       setIsLoadingProperty(false);
     }

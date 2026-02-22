@@ -11,14 +11,15 @@ _CATASTRO_LOG_XML_MAX = 4000
 
 def coordonate_la_referinta(lat, lon, srs="EPSG:4326", catastro_url=None, cert_path=None):
     """
-    Convertește coordonate (lat, lon) în referință cadastrală folosind Consulta_RCCOOR.
-    Folosește clientul securizat (context SSL FNMT în prod). Ordine WGS84: X=Longitudine, Y=Latitudine.
+    Convertește coordonate (lat, lon) în referință cadastrală.
+    Pentru ConsultaCPMRC (CATASTRO_URL curent): SRS, CoordenadaX, CoordenadaY (fără underscore).
+    Pentru Consulta_RCCOOR: SRS, Coordenada_X, Coordenada_Y. Ordine WGS84: X=Longitudine, Y=Latitudine.
     """
     url = catastro_url or CATASTRO_URL
     params = {
         "SRS": (srs or "").strip() or "EPSG:4326",
-        "Coordenada_X": f"{float(lon):.8f}",
-        "Coordenada_Y": f"{float(lat):.8f}",
+        "CoordenadaX": f"{float(lon):.8f}",
+        "CoordenadaY": f"{float(lat):.8f}",
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
@@ -92,7 +93,7 @@ def _find_all_recursive(root, tag_wanted):
 
 def _proceseaza_raspuns_catastro(xml_content):
     """
-    Procesează XML-ul de la Catastro (Consulta_RCCOOR).
+    Procesează XML-ul de la Catastro (ConsultaCPMRC / Consulta_RCCOOR).
     Returnează (dict, None) cu ref_catastral, address, year_built (dacă în XML), cmun_ine,
     sau (None, mesaj_eroare).
     """

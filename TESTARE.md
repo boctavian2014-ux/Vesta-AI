@@ -33,11 +33,24 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
   - `python test_catastro_local.py` — validează **catastro_ssl.py** și conexiunea la Catastro; așteptat: **OK Request SSL 200** (și OK Referință cadastrală dacă ai cert).
   - `python tests_e2e.py` — validează **întreg fluxul identifica-imobil** (importuri, CATASTRO_URL, parsare XML, GET /, POST /identifica-imobil/, handler erori). Pornește întâi backend-ul: `python -m uvicorn main:app --port 8000` (sau pe Windows `py -m uvicorn ...` dacă `python` nu e în PATH), sau setează `API_URL` pentru Railway.
 
-**Timeout-uri:** Sunt setate 15s pentru Consulta_RCCOOR (coordonate) și 10s pentru Consulta_DNPRC (date detaliate). Acestea sunt valori potrivite pentru API-urile guvernamentale spaniole, care pot răspunde lent în orele de vârf.
+**Timeout-uri:** Sunt setate 15s pentru ConsultaCPMRC (coordonate → referință) și 10s pentru Consulta_DNPRC (date detaliate). Dacă primești 404 pe coordonate, poți reveni la `Consulta_RCCOOR` în CATASTRO_URL (main.py). Acestea sunt valori potrivite pentru API-urile guvernamentale spaniole, care pot răspunde lent în orele de vârf.
+
+**Parametri case-sensitive (ConsultaCPMRC):** Serverul răspunde „No se puede procesar su petición” dacă cheile nu sunt exacte. Folosește `SRS`, `CoordenadaX`, `CoordenadaY` (fără underscore). Consulta_RCCOOR folosește `Coordenada_X` și `Coordenada_Y`.
+
+| Parametru | Valoare (fix) | Impact |
+|-----------|----------------|--------|
+| Metodă | ConsultaCPMRC | Endpoint stabil, interogări WGS84. |
+| Longitudine | CoordenadaX | Recunoscut de server (evită 404/400). |
+| Latitudine | CoordenadaY | Recunoscut de server (evită 404/400). |
+| Case sensitivity | SRS=EPSG:4326 | Majuscule obligatorii pentru proiecție corectă. |
+
+**Note pentru WSDL (cauta_imobil_spania.py):** Noul host nu servește mereu `?WSDL` prin GET; în cod se folosește URL-ul de bază `.asmx` (fără `?WSDL`). Dacă zeep cere definiția explicit: `.../OVCCallejero.asmx?handler=GenWSDL`. Clientul folosește `CATASTRO_HOST` și `get_catastro_http_client()`.
 
 **De ce dispare „Hostname mismatch”:** Toate apelurile Catastro trec prin `get_catastro_http_client()` (main.py), care folosește sesiunea din `catastro_ssl.py` (context SSL: sistem + fnmt_root.pem). Noul host `www1.sedecatastro.gob.es` are certificatele SSL la zi. În producție nu se folosește `verify=False`.
 
-**De ce 422 Unprocessable Entity:** Dacă un apel către Catastro eșuează cu SSLCertVerificationError (ex. host vechi `ovc.catastro.minhap.es`), excepția întrerupe handler-ul înainte să returneze JSON; FastAPI returnează 422. **Fix:** Folosește peste tot `www1.sedecatastro.gob.es` și asigură-te că fnmt_root.pem este prezent în Railway (CATASTRO_CA_BUNDLE).
+**De ce 422 Unprocessable Entity:** Când Catastro returnează o pagină HTML de eroare (în loc de XML), codul de parsare eșuează; FastAPI vede că handler-ul nu a returnat răspunsul așteptat și trimite 422 către mobil. Cu ConsultaCPMRC și CoordenadaX/CoordenadaY, serverul răspunde cu XML valid → handler-ul returnează JSON → 422 dispare. **Fix:** URL ConsultaCPMRC, parametri exacti (SRS, CoordenadaX, CoordenadaY), host `www1.sedecatastro.gob.es` și fnmt_root.pem în Railway (CATASTRO_CA_BUNDLE).
+
+**Verificare post-deploy:** (1) **Log-uri la pornire:** Caută **Succes SSL Catastro**. Dacă apare fără 404, testul automat cu coordonatele Madrid a reușit. (2) **Test identificare:** Rulează comanda `Invoke-RestMethod` din acest document (secțiunea cu coordonate Madrid). Dacă primești JSON cu `referinta`, lanțul complet este funcțional: SSL → host nou → parametri corecți → buffer 8 m.
 
 ### Validare finală a arhitecturii
 
@@ -47,6 +60,17 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 | SSL Trust Store | fnmt_root.pem injectat (catastro_ssl.py) | Rezolvă „unable to get local issuer certificate” (FNMT root). |
 | Health Check | Aliniat la noul host + get_catastro_http_client() | Monitorizarea nu mai raportează alerte false SSL. |
 | Namespace XML | Conservate (catastro.minhap.es / meh.es) | Corect: identificatori de structură în răspuns, nu URL-uri de rețea. |
+
+### Validare finală a modificărilor (ConsultaCPMRC)
+
+Trecerea la **ConsultaCPMRC** și la parametrii **CoordenadaX** / **CoordenadaY** (fără underscore) elimină mesajul „No se puede procesar su petición” care bloca procesarea datelor.
+
+| Componentă | Fix implementat | Rezultat în producție |
+|------------|------------------|------------------------|
+| **Endpoint REST** | `.../OVCCoordenadas.asmx/ConsultaCPMRC` | Serviciu stabil care acceptă interogări prin coordonate. |
+| **Parametri** | CoordenadaX, CoordenadaY, SRS | Sintaxă exactă (case-sensitive) care evită 404. |
+| **WSDL SOAP** | `.../OVCCallejero.asmx` (fără `?WSDL`) | Previne „Not Found” la descărcarea definiției. |
+| **Failover** | Buffer ~8 m (≈0.00008°) | Salvează click-urile imprecise în zone dense (ex. Madrid). |
 
 **Notă de siguranță înainte de push:** Rulează local `python tests_e2e.py` înainte de push-ul final pe Railway. Testul verifică că `CATASTRO_URL` folosește `www1.sedecatastro.gob.es` și că nu a rămas nicio referință activă către host-ul vechi în codul de testare.
 
@@ -60,6 +84,8 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 **Sfat Railway:** Fiindcă în cod folosim `os.environ.setdefault("CATASTRO_CA_BUNDLE", CATASTRO_CERT_PATH)`, variabila este setată doar dacă nu există deja. În panoul Railway, dacă setezi manual **CATASTRO_CA_BUNDLE**, asigură-te că indică calea reală unde se află `fnmt_root.pem` în container (ex. `/app/fnmt_root.pem` dacă fișierul e în rădăcina aplicației în image). Dacă nu setezi variabila, aplicația folosește calea din BASE_DIR (lângă main.py).
 
 **Curățare cache Railway (dacă persistă Hostname mismatch / 422):** Uneori Railway păstrează versiuni vechi în build. Forțează un deploy curat: fă un commit (ex. `git commit -am "FORCE: Remove all old catastro hosts"`), push (`git push railway main`), apoi în consola Railway dă click pe **Redeploy** la ultimul deployment.
+
+**Forțează Railway Rebuild (dacă log-urile arată tot varianta cu underscore):** Dacă fișierele locale sunt corecte (ConsultaCPMRC, CoordenadaX/CoordenadaY) dar în producție se vede încă comportamentul vechi, Railway folosește un build din cache. Pași: (1) `git commit -am "FORCE FIX: Use ConsultaCPMRC and remove underscores"` (2) `git push railway main` (sau `git push origin main` dacă branch-ul de deploy e main). (3) Dashboard Railway → Service → Deployments → cele 3 puncte la ultimul deploy → **Redeploy**.
 
 ### Pașii finali pentru stabilitate (după migrare WSDL/SSL)
 

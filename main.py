@@ -66,8 +66,8 @@ from catastro_ssl import get_catastro_session
 
 ENV = os.getenv("ENV", "dev")  # dev (implicit) sau prod (setat în Railway)
 
-# API Catastro: endpoint modern și stabil (Sede Catastro)
-CATASTRO_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/Consulta_RCCOOR"
+# API Catastro: endpoint modern și stabil (Sede Catastro). ConsultaCPMRC cere SRS, CoordenadaX, CoordenadaY (fără underscore); altfel serverul răspunde "No se puede procesar su petición".
+CATASTRO_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/ConsultaCPMRC"
 CATASTRO_DNPRC_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
 
 
@@ -588,7 +588,7 @@ def _log_catastro_xml_response(response, max_chars: int = 4000):
 
 def get_catastro_data(lat: float, lon: float):
     """
-    Apelează Catastro (Consulta_RCCOOR) pe domeniul oficial meh.es.
+    Apelează Catastro (ConsultaCPMRC / coordonate) pe domeniul oficial www1.sedecatastro.gob.es.
     Ordine coordonate pentru SRS=EPSG:4326 (WGS84): X = Longitudine, Y = Latitudine.
     Obligatoriu SRS=EPSG:4326 – fără el serverul presupune ED50 (sistem local spaniol) și nu găsește punctul.
     """
