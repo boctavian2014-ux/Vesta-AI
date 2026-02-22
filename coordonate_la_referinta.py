@@ -31,36 +31,37 @@ def _extract_soap_body(content: bytes):
 def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală.
-    Folosește SOAP 1.2 (application/soap+xml) – format obligatoriu pentru a evita 404.
-    URL de bază al serviciului, fără metoda la final.
+    Folosește SOAP 1.2 la URL-ul rădăcină .asmx – singura metodă acceptată de www1.sedecatastro.gob.es
+    (GET/Form POST sunt blocate). Fără SOAP se primește 404 (HTML), parsarea XML eșuează → 422 către mobil.
     """
     srs_val = (srs or "").strip() or "EPSG:4258"
+    # URL-ul de bază al serviciului, FĂRĂ metoda la final (pentru a evita 404)
     url = catastro_url or CATASTRO_COORD_ASMX_BASE
+    # Header obligatoriu pentru SOAP 1.2
     headers = {
         "Content-Type": "application/soap+xml; charset=utf-8",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     }
     lon_f = float(lon)
     lat_f = float(lat)
-    soap_body = (
-        '<?xml version="1.0" encoding="utf-8"?>'
-        '<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
-        'xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2001/soap-envelope">'
-        "<soap12:Body>"
-        '<ConsultaCPMRC xmlns="http://www.catastro.meh.es/">'
-        f"<SRS>{srs_val}</SRS>"
-        f"<CoordenadaX>{lon_f:.8f}</CoordenadaX>"
-        f"<CoordenadaY>{lat_f:.8f}</CoordenadaY>"
-        "</ConsultaCPMRC>"
-        "</soap12:Body>"
-        "</soap12:Envelope>"
-    )
+    # Body-ul XML (Envelope) pe care îl așteaptă noul server – singurul format care nu returnează 404
+    soap_body = f"""<?xml version="1.0" encoding="utf-8"?>
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2001/soap-envelope">
+  <soap12:Body>
+    <ConsultaCPMRC xmlns="http://www.catastro.meh.es/">
+      <SRS>{srs_val}</SRS>
+      <CoordenadaX>{lon_f:.8f}</CoordenadaX>
+      <CoordenadaY>{lat_f:.8f}</CoordenadaY>
+    </ConsultaCPMRC>
+  </soap12:Body>
+</soap12:Envelope>"""
     try:
         session = get_catastro_http_client()
+        # Trimite bytes UTF-8 explicit; evită mismatch cu XML declaration și Content-Type charset
         response = session.post(url, data=soap_body.encode("utf-8"), headers=headers, timeout=15)
         response.raise_for_status()
         _log_catastro_request(response)
-        # Răspunsul e înfășurat în <soap:Body>; extragem conținutul pentru parsare
+        # Răspunsul e încapsulat în <soap12:Body>; extragem conținutul pentru parsare
         xml_content = _extract_soap_body(response.content)
         return _proceseaza_raspuns_catastro(xml_content)
     except Exception as e:
