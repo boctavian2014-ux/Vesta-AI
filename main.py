@@ -197,7 +197,7 @@ try:
     r.raise_for_status()
     print("✅ Succes SSL Catastro (200 OK)")
 except Exception as e:
-    print(f"Eroare verificare SSL Catastro: {e}")
+    print(f"❌ Eroare verificare SSL Catastro: {e}")
 
 # Model pentru cererea de la user (coordonate de pe hartă)
 class ClickLocation(BaseModel):
