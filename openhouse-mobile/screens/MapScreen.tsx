@@ -72,7 +72,8 @@ export default function MapScreen({ navigation }: Props) {
       setErrorProperty(FRIENDLY_ERROR);
     } catch (err: unknown) {
       const e = err as { body?: { data?: { ref_catastral?: string; id?: number }; ref_catastral?: string }; status?: number };
-      const refFromErr = (e?.body?.data?.ref_catastral ?? e?.body?.ref_catastral ?? "")?.trim() ?? "";
+      const rawRef = e?.body?.data?.ref_catastral ?? e?.body?.ref_catastral;
+      const refFromErr = (typeof rawRef === "string" ? rawRef : String(rawRef ?? "")).trim();
       if (refFromErr) {
         const property = buildCatastroProperty(
           { ...e.body, data: e.body.data ?? e.body },

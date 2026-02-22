@@ -16,4 +16,4 @@ echo.
 echo Pornire server: http://0.0.0.0:8000
 echo Documentatie API: http://localhost:8000/docs
 echo.
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000

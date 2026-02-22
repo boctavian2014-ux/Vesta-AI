@@ -31,7 +31,7 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
   - `CATASTRO_CA_BUNDLE` = `/app/fnmt_root.pem` (sau calea unde Docker/image pune fișierul).
 - [ ] **Testare automată înainte de push-ul final** (rulează local):
   - `python test_catastro_local.py` — validează **catastro_ssl.py** și conexiunea la Catastro; așteptat: **OK Request SSL 200** (și OK Referință cadastrală dacă ai cert).
-  - `python tests_e2e.py` — validează **întreg fluxul identifica-imobil** (importuri, CATASTRO_URL, parsare XML, GET /, POST /identifica-imobil/, handler erori). Pornește întâi `uvicorn main:app --port 8000` sau setează `API_URL` pentru Railway.
+  - `python tests_e2e.py` — validează **întreg fluxul identifica-imobil** (importuri, CATASTRO_URL, parsare XML, GET /, POST /identifica-imobil/, handler erori). Pornește întâi backend-ul: `python -m uvicorn main:app --port 8000` (sau pe Windows `py -m uvicorn ...` dacă `python` nu e în PATH), sau setează `API_URL` pentru Railway.
 
 **Timeout-uri:** Sunt setate 15s pentru Consulta_RCCOOR (coordonate) și 10s pentru Consulta_DNPRC (date detaliate). Acestea sunt valori potrivite pentru API-urile guvernamentale spaniole, care pot răspunde lent în orele de vârf.
 
@@ -52,9 +52,39 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 
 ### Ce să observi după deploy (Railway)
 
-- **Logs la pornire:** În consola Railway ar trebui să apară **Succes SSL Catastro** (testul din main.py la startup). Dacă vezi erori aici, verifică imediat prezența `fnmt_root.pem` și `CATASTRO_CA_BUNDLE`.
+- **Logs la pornire:** Verifică în deployment logs dacă mai apare vreun **warning legat de fnmt_root.pem**. Dacă vezi **Succes SSL Catastro**, înseamnă că logica bazată pe BASE_DIR (și CATASTRO_CA_BUNDLE) a localizat corect certificatul și handshake-ul cu `www1.sedecatastro.gob.es` a reușit.
 - **Identificare imobil:** La un click în Madrid/Málaga, log-urile **nu** trebuie să conțină `SSLCertVerificationError`. În loc de 422 Unprocessable Entity: **200 OK** (cu date imobil) sau răspuns JSON de eroare controlată (ex. „Referință negăsită”).
+- **Dacă vezi 422 Unprocessable Entity:** Verifică dacă nu cumva există un apel rămas către vechiul host (`ovc.catastro.minhap.es`) într-un fișier secundar sau într-o bibliotecă externă care nu folosește `get_catastro_http_client()`. Toate apelurile Catastro trebuie să treacă prin helper-ul din main.
 - **Buffer 8 m:** Dacă utilizatorul dă click ușor pe lângă clădire, în log-uri apare **✅ Imobil găsit cu buffer la offset: ...**, confirmând că mecanismul de buffer a salvat cererea.
+
+**Sfat Railway:** Fiindcă în cod folosim `os.environ.setdefault("CATASTRO_CA_BUNDLE", CATASTRO_CERT_PATH)`, variabila este setată doar dacă nu există deja. În panoul Railway, dacă setezi manual **CATASTRO_CA_BUNDLE**, asigură-te că indică calea reală unde se află `fnmt_root.pem` în container (ex. `/app/fnmt_root.pem` dacă fișierul e în rădăcina aplicației în image). Dacă nu setezi variabila, aplicația folosește calea din BASE_DIR (lângă main.py).
+
+**Curățare cache Railway (dacă persistă Hostname mismatch / 422):** Uneori Railway păstrează versiuni vechi în build. Forțează un deploy curat: fă un commit (ex. `git commit -am "FORCE: Remove all old catastro hosts"`), push (`git push railway main`), apoi în consola Railway dă click pe **Redeploy** la ultimul deployment.
+
+### Pașii finali pentru stabilitate (după migrare WSDL/SSL)
+
+1. **Commit și Push**
+   - `git commit -am "FIX: Fully migrated WSDL to new host"`
+   - `git push railway main`
+
+2. **Railway Redeploy**
+   - În interfața Railway, apasă **Redeploy** la ultimul deployment. Este esențial ca noul cod să fie cel activ pe server.
+
+3. **Verificare log-uri la pornire**
+   - Caută în log-uri mesajul **Succes SSL Catastro**. Dacă apare, sistemul a trecut de testul SSL și este gata să proceseze click-urile pe hartă.
+
+4. **Dacă utilizatorul vede „Informații indisponibile” la click pe hartă**
+   - Verifică în log-uri dacă apare **✅ Imobil găsit cu buffer**. Dacă da, SSL-ul este în regulă; problema rămasă este precizia click-ului (punctul poate cădea pe stradă/trotuar în afara poligonului cadastral). Buffer-ul de ~8 m acoperă deja colțurile clădirilor; pentru zone foarte largi poți mări `CATASTRO_BUFFER_DEG` în `main.py`.
+
+### Checklist go-live (Railway)
+
+Când toate condițiile de mai jos sunt îndeplinite, aplicația Vesta OpenHouse este pregătită pentru utilizatori reali, cu conexiune stabilă și securizată la infrastructura cadastrală spaniolă.
+
+| Verificare | Cum | Semn că e OK |
+|------------|-----|----------------|
+| **Monitorizare Consola Railway** | Caută în deployment logs string-ul **Succes SSL Catastro**. | Apariția lui confirmă că `CATASTRO_CA_BUNDLE` indică fișierul corect și că serverul spaniol a acceptat conexiunea. |
+| **Test coordonate Madrid** | Folosește `Invoke-RestMethod` din secțiunea de mai jos (TESTARE.md) cu coordonatele Madrid: `40.4205`, `-3.7058` (sau `40.42056879131868`, `-3.705847207404546`). | Răspuns **JSON** cu `referinta` / `ref_catastral` – buffer 8 m și SSL funcționează corect. |
+| **Variabila ENV** | În panoul Railway, variabila de mediu **ENV** = **prod**. | Activează protecția `RuntimeError` care previne căderea accidentală în modul nesecurizat (`verify=False`). |
 
 ---
 
@@ -67,7 +97,7 @@ cd c:\Users\octav\Vesta-AI
 python tests_e2e.py
 ```
 
-Testează **împotriva backend-ului local** (presupune că ai pornit `uvicorn main:app --port 8000`).
+Testează **împotriva backend-ului local** (presupune că ai pornit `python -m uvicorn main:app --port 8000`).
 
 ### Testare împotriva Railway
 
@@ -101,7 +131,7 @@ Dacă click-ul cade pe stradă/trotuar, Catastro poate returna XML fără referi
 
 ```powershell
 $env:API_URL = "http://127.0.0.1:8000"
-# Pornește uvicorn main:app --port 8000, apoi:
+# Pornește: python -m uvicorn main:app --port 8000, apoi:
 Invoke-RestMethod -Uri "$env:API_URL/identifica-imobil/" -Method Post -Body '{"lat":40.42056879131868,"lon":-3.705847207404546}' -ContentType "application/json"
 ```
 
@@ -133,6 +163,26 @@ python tests_e2e.py
 ```
 
 Toate testele (inclusiv pentru `/identifica-imobil`) ar trebui să fie verzi.
+
+### Test ca utilizator (simulare un tap pe hartă)
+
+Simulează un singur „tap” pe hartă la Madrid; verifică că primești JSON cu referință cadastrală.
+
+1. Pornește backend-ul (dacă testezi local):
+   ```powershell
+   python -m uvicorn main:app --port 8000
+   ```
+   - Dacă apare **„Python was not found”**: Încearcă **`py -m uvicorn main:app --port 8000`** (launcher Windows). Sau instalează Python de pe python.org (bifează „Add Python to PATH”) sau folosește **run_backend.bat**.
+   - Dacă apare **„No module named uvicorn”**: Dependențele proiectului nu sunt instalate. Din rădăcina proiectului rulează **`py -m pip install -r requirements.txt`** (sau `python -m pip install -r requirements.txt`), apoi din nou `py -m uvicorn main:app --port 8000`. Alternativ, folosește **run_backend.bat** – creează venv și instalează automat din `requirements.txt`.
+   - Dacă `uvicorn` nu e recunoscut ca comandă, folosește `python -m uvicorn` sau `py -m uvicorn`.
+2. În alt terminal, rulează:
+   ```powershell
+   cd c:\Users\octav\Desktop\VESTA AI\Vesta-AI
+   python test_user_flow.py
+   ```
+   Pentru Railway: `$env:API_URL = "https://<railway-url>"; python test_user_flow.py`
+
+Așteptat: `[OK] Serverul răspunde`, apoi `[OK] Imobil identificat: referință ...` și la final `=== Test utilizator: SUCCES ===`.
 
 ---
 

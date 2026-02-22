@@ -31,11 +31,16 @@ from openai import OpenAI
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CATASTRO_CERT_PATH = os.path.join(BASE_DIR, "fnmt_root.pem")
 
+# Ca să rezolve fnmt_root.pem indiferent de cwd; Railway poate suprascrie cu CATASTRO_CA_BUNDLE
+os.environ.setdefault("CATASTRO_CA_BUNDLE", CATASTRO_CERT_PATH)
+
 
 def setup_ssl_bundle():
     """Creează vesta_bundle.pem (Standard + FNMT) în folderul app-ului și setează env. Evită PermissionError."""
     combined_bundle = os.path.join(BASE_DIR, "vesta_bundle.pem")
     fnmt_cert_path = os.path.join(BASE_DIR, "fnmt_root.pem")
+    # Ca get_catastro_http_client() să găsească fnmt_root.pem indiferent de cwd (ex. Railway)
+    os.environ.setdefault("CATASTRO_CA_BUNDLE", fnmt_cert_path)
     original_bundle = certifi.where()
     try:
         with open(combined_bundle, "wb") as outfile:

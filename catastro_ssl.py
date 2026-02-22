@@ -13,9 +13,11 @@ from requests.adapters import HTTPAdapter
 # Host oficial – domeniul nou cu certificate SSL la zi (migrare de la ovc.catastro.minhap.es)
 CATASTRO_HOST = "www1.sedecatastro.gob.es"
 
+# Calea către fnmt_root.pem: env CATASTRO_CA_BUNDLE sau, implicit, lângă acest fișier (nu getcwd)
+_SSL_DIR = os.path.dirname(os.path.abspath(__file__))
 _FNMT_PEM = os.environ.get(
     "CATASTRO_CA_BUNDLE",
-    os.path.join(os.getcwd(), "fnmt_root.pem"),
+    os.path.join(_SSL_DIR, "fnmt_root.pem"),
 )
 
 

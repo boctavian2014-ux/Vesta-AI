@@ -6,9 +6,12 @@ from catastro_ssl import CATASTRO_HOST
 # Sesiune securizată Catastro (din main)
 from main import get_catastro_http_client
 
+# WSDL: obligatoriu www1.sedecatastro.gob.es (certificat SSL). NU folosi ovc.catastro.minhap.es (hostname mismatch).
+WSDL_URL = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
+
 
 def cauta_imobil_spania(provincie, municipiu, strada, numar):
-    wsdl_url = f"https://{CATASTRO_HOST}/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx?WSDL"
+    wsdl_url = WSDL_URL
 
     try:
         session = get_catastro_http_client()
