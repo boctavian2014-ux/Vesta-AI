@@ -35,6 +35,8 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 
 **Timeout-uri:** Sunt setate 15s pentru ConsultaCPMRC (coordonate → referință) și 10s pentru Consulta_DNPRC (date detaliate). Dacă primești 404 pe coordonate, poți reveni la `Consulta_RCCOOR` în CATASTRO_URL (main.py). Acestea sunt valori potrivite pentru API-urile guvernamentale spaniole, care pot răspunde lent în orele de vârf.
 
+**SOAP vs GET:** SSL, host și headere sunt OK; endpoint-ul .asmx este însă **SOAP**, nu REST JSON/XML simplu. Pentru GET cu query trebuie folosită metoda REST compatibilă documentată de Catastro, sau implementare SOAP corectă (zeep cu envelope XML, parametri în body nu în URL). Actual: folosim GET pe ConsultaCPMRC ca interfață simplificată.
+
 **Parametri case-sensitive (ConsultaCPMRC):** Serverul răspunde „No se puede procesar su petición” dacă cheile nu sunt exacte. Folosește `SRS`, `CoordenadaX`, `CoordenadaY` (fără underscore). Consulta_RCCOOR folosește `Coordenada_X` și `Coordenada_Y`.
 
 | Parametru | Valoare (fix) | Impact |

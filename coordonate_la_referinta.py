@@ -12,8 +12,9 @@ _CATASTRO_LOG_XML_MAX = 4000
 def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală.
-    Pentru ConsultaCPMRC (CATASTRO_URL curent): SRS, CoordenadaX, CoordenadaY (fără underscore).
-    SRS implicit EPSG:4258 (ETRS89, standard oficial Spania); dacă 4258 dă 404, poți încerca fără SRS (lăsând serverul pe default).
+    Endpoint-ul Catastro este SOAP (.asmx); folosim GET cu query (ConsultaCPMRC) ca interfață simplificată.
+    Pentru SOAP corect: zeep + envelope XML (parametri în body, nu în URL) sau metoda REST compatibilă documentată de ei.
+    Parametri actuali: SRS, CoordenadaX, CoordenadaY. SRS implicit EPSG:4258 (ETRS89).
     """
     url = catastro_url or CATASTRO_URL
     srs_val = (srs or "").strip() or "EPSG:4258"  # sau EPSG:4326 dacă 4258 eșuează
@@ -31,6 +32,15 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_p
     try:
         session = get_catastro_http_client()
         response = session.get(url, params=params, headers=headers, timeout=15)
+        # Tratare explicită 404: Catastro returnează HTML "No se puede procesar..."; nu parsăm XML → evităm 422.
+        if response.status_code == 404:
+            try:
+                body = response.text or response.content.decode("utf-8", errors="replace")
+            except Exception:
+                body = ""
+            if "No se puede procesar" in body or "no se puede procesar" in body.lower():
+                print(f"❌ Catastro 404: {response.url}")
+                return None, "Catastro nu poate procesa coordonatele"
         response.raise_for_status()
         _log_catastro_request(response)
         return _proceseaza_raspuns_catastro(response.content)

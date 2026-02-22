@@ -66,7 +66,8 @@ from catastro_ssl import get_catastro_session
 
 ENV = os.getenv("ENV", "dev")  # dev (implicit) sau prod (setat în Railway)
 
-# API Catastro: endpoint modern și stabil (Sede Catastro). ConsultaCPMRC cere SRS, CoordenadaX, CoordenadaY (fără underscore); altfel serverul răspunde "No se puede procesar su petición".
+# API Catastro: serviciul .asmx este SOAP; folosim GET cu query (ConsultaCPMRC) ca interfață simplificată.
+# Pentru compatibilitate completă: folosește metoda REST documentată de ei sau implementează SOAP corect (zeep + envelope XML, nu parametri în URL).
 CATASTRO_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/ConsultaCPMRC"
 CATASTRO_DNPRC_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
 
@@ -690,7 +691,9 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
             catastro_url=CATASTRO_URL,
             cert_path=CATASTRO_CERT_PATH if os.path.isfile(CATASTRO_CERT_PATH) else None,
         )
-        if err is None and data_coord and (data_coord.get("ref_catastral") or "").strip():
+        if err is not None:
+            result = {"status": "error", "message": err}
+        elif data_coord and (data_coord.get("ref_catastral") or "").strip():
             data_block = {
                 "ref_catastral": (data_coord.get("ref_catastral") or "").strip(),
                 "address": data_coord.get("address") or "",
