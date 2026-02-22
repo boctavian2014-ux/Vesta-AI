@@ -52,18 +52,29 @@ def _image_to_base64(content: bytes, mime: str = "image/png") -> str:
     return base64.standard_b64encode(content).decode("ascii")
 
 
+def _clean_json_markdown(text: str) -> str:
+    """
+    Extrage conținutul JSON dintr-un singur bloc Markdown (```json sau ```).
+    Evită tăierile multiple care pot corupe JSON-ul intern (ex. backticks în stringuri).
+    """
+    text = (text or "").strip()
+    start_tokens = ["```json", "```"]
+    found_start = False
+    for token in start_tokens:
+        if token in text:
+            text = text.split(token, 1)[1]
+            found_start = True
+            break
+    if found_start and "```" in text:
+        text = text.rsplit("```", 1)[0]
+    return text.strip()
+
+
 def _parse_extraction(text: str) -> dict[str, str]:
     """Extrage JSON din răspunsul modelului (poate conține markdown)."""
     text = (text or "").strip()
-    # Încercare JSON direct
     try:
-        # Elimină blocuri markdown ```json ... ```
-        for start in ("```json", "```"):
-            if start in text:
-                idx = text.find(start)
-                text = text[idx + len(start) :].strip()
-            if text.endswith("```"):
-                text = text[:-3].strip()
+        text = _clean_json_markdown(text)
         obj = json.loads(text)
         out = {
             "titular": (obj.get("titular") or "").strip(),

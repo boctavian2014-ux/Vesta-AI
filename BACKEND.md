@@ -33,7 +33,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ## Variabile de mediu (opțional)
 
-Copiază `.env.example` în `.env` și ajustează doar ce folosești:
+**Securitate:** Nu comita niciodată fișierul `.env` (conține chei live: Stripe, OpenAI, etc.). Este listat în `.gitignore`. **Dacă `.env` a fost comis din greșeală:** revocă imediat toate cheile (Stripe Dashboard, OpenAI, Mapbox), rotește parolele, apoi elimină fișierul din tracking: `git rm --cached .env` și fă commit; asigură-te că `.env` rămâne în `.gitignore`.
+
+Copiază `.env.example` în `.env` (sau creează `.env` manual) și ajustează doar ce folosești:
 
 | Variabilă | Obligatoriu | Descriere |
 |-----------|-------------|-----------|
