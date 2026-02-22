@@ -184,13 +184,18 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Verificare SSL la pornire: sesiune comună (prod = CA obligatoriu, dev/staging = fallback verify=False)
 try:
     session = get_catastro_http_client()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "application/xml, text/xml, */*",
+    }
     r = session.get(
         CATASTRO_URL,
         params={"SRS": "EPSG:4258", "CoordenadaX": -3.70, "CoordenadaY": 40.42},
+        headers=headers,
         timeout=10,
     )
     r.raise_for_status()
-    print("Succes SSL Catastro")
+    print("✅ Succes SSL Catastro (200 OK)")
 except Exception as e:
     print(f"Eroare verificare SSL Catastro: {e}")
 
