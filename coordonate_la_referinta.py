@@ -16,10 +16,10 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_p
     SRS implicit EPSG:4258 (ETRS89, standard oficial Spania); dacă 4258 dă 404, poți încerca fără SRS (lăsând serverul pe default).
     """
     url = catastro_url or CATASTRO_URL
-    srs_val = (srs or "").strip() or "EPSG:4258"
+    srs_val = (srs or "").strip() or "EPSG:4258"  # sau EPSG:4326 dacă 4258 eșuează
     params = {
         "SRS": srs_val,
-        "CoordenadaX": f"{float(lon):.8f}",
+        "CoordenadaX": f"{float(lon):.8f}",   # FĂRĂ underscore – ConsultaCPMRC acceptă doar CoordenadaX/CoordenadaY
         "CoordenadaY": f"{float(lat):.8f}",
     }
     headers = {

@@ -50,7 +50,9 @@ Fără `fnmt_root.pem` valid în **prod**, la primul request Catastro aplicația
 
 **De ce dispare „Hostname mismatch”:** Toate apelurile Catastro trec prin `get_catastro_http_client()` (main.py), care folosește sesiunea din `catastro_ssl.py` (context SSL: sistem + fnmt_root.pem). Noul host `www1.sedecatastro.gob.es` are certificatele SSL la zi. În producție nu se folosește `verify=False`.
 
-**De ce 422 Unprocessable Entity:** Când Catastro răspunde cu 404 (pagină HTML, nu XML), `ET.fromstring(response.content)` aruncă excepție; FastAPI vede că procesarea a eșuat și returnează 422 către mobil. **Fix:** SRS=EPSG:4258 (ETRS89), CoordenadaX/CoordenadaY, User-Agent și Accept corecte, URL ConsultaCPMRC, fnmt_root.pem în Railway. După fix, verifică în log **📡 Catastro – Status: 200**; apoi intră în funcțiune buffer-ul de 8 m.
+**De ce 422 Unprocessable Entity:** Când Catastro răspunde cu 404 (pagină HTML, nu XML), `ET.fromstring(response.content)` aruncă excepție; FastAPI vede că procesarea a eșuat și returnează 422 către mobil. **Fix:** SRS=EPSG:4258 (ETRS89), CoordenadaX/CoordenadaY (fără underscore), User-Agent și Accept corecte, URL ConsultaCPMRC, fnmt_root.pem în Railway. După fix, verifică în log **📡 Catastro – Status: 200**; apoi intră în funcțiune buffer-ul de 8 m.
+
+**Analiză flux 422:** (1) Request: mobilul trimite POST /identifica-imobil/. (2) Backend: apelează Catastro. (3) Serverul spaniol răspunde cu pagină HTML de eroare (404) în loc de XML. (4) Parser: funcția încearcă să citească XML din HTML și aruncă excepție. (5) FastAPI: detectează excepția neprinsă și returnează automat 422 Unprocessable Entity către mobil.
 
 **Verificare post-deploy:** (1) **Log-uri la pornire:** Caută **Succes SSL Catastro**. Dacă apare fără 404, testul automat cu coordonatele Madrid a reușit. (2) **Test identificare:** Rulează comanda `Invoke-RestMethod` din acest document (secțiunea cu coordonate Madrid). Dacă primești JSON cu `referinta`, lanțul complet este funcțional: SSL → host nou → parametri corecți → buffer 8 m.
 
