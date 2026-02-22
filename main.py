@@ -66,8 +66,9 @@ from catastro_ssl import get_catastro_session
 
 ENV = os.getenv("ENV", "dev")  # dev (implicit) sau prod (setat în Railway)
 
-# API Catastro: serviciul .asmx acceptă parametri prin POST (application/x-www-form-urlencoded); GET dă adesea 404.
+# API Catastro: POST form-urlencoded sau SOAP (application/soap+xml). URL bază pentru SOAP: fără /ConsultaCPMRC.
 CATASTRO_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx/ConsultaCPMRC"
+CATASTRO_COORD_ASMX_BASE = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCoordenadas.asmx"
 CATASTRO_DNPRC_URL = "https://www1.sedecatastro.gob.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejeroCodigos.asmx/Consulta_DNPRC_Codigos"
 
 

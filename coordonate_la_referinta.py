@@ -3,27 +3,44 @@ import xml.etree.ElementTree as ET
 import requests
 
 # Helper-ul din main (sesiune securizată Catastro: prod = FNMT obligatoriu, dev = fallback verify=False)
-from main import CATASTRO_URL, get_catastro_http_client
+from main import CATASTRO_URL, CATASTRO_COORD_ASMX_BASE, get_catastro_http_client
 
 # Limita pentru log XML (evită flood în consolă)
 _CATASTRO_LOG_XML_MAX = 4000
 
 
+def _extract_soap_body(content: bytes):
+    """Extrage conținutul din interiorul răspunsului SOAP (Body) pentru parsare; dacă nu e SOAP, returnează content."""
+    try:
+        root = ET.fromstring(content)
+        for elem in root.iter():
+            if _tag_local(elem) == "Body":
+                children = list(elem)
+                if children:
+                    inner = children[0]
+                    for c in inner.iter():
+                        if "Result" in _tag_local(c):
+                            return ET.tostring(c, encoding="unicode", method="xml").encode("utf-8")
+                    return ET.tostring(inner, encoding="unicode", method="xml").encode("utf-8")
+                break
+    except Exception:
+        pass
+    return content
+
+
 def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_path=None):
     """
     Convertește coordonate (lat, lon) în referință cadastrală.
-    Endpoint .asmx acceptă parametri prin POST (application/x-www-form-urlencoded); GET dă adesea 404.
-    Parametri: SRS, CoordenadaX, CoordenadaY. SRS implicit EPSG:4258 (ETRS89).
+    Încearcă POST form-urlencoded; dacă 404, reîncearcă cu SOAP 1.2 (application/soap+xml).
     """
     url = catastro_url or CATASTRO_URL
-    srs_val = (srs or "").strip() or "EPSG:4258"  # sau EPSG:4326 dacă 4258 eșuează
+    srs_val = (srs or "").strip() or "EPSG:4258"
     payload = {
         "SRS": srs_val,
         "CoordenadaX": f"{float(lon):.8f}",
         "CoordenadaY": f"{float(lat):.8f}",
     }
-    # .asmx acceptă parametri prin POST (application/x-www-form-urlencoded); GET dă adesea 404.
-    headers = {
+    headers_form = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/xml, text/xml, */*",
@@ -31,16 +48,36 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_p
     }
     try:
         session = get_catastro_http_client()
-        response = session.post(url, data=payload, headers=headers, timeout=15)
-        # Tratare explicită 404: Catastro returnează HTML "No se puede procesar..."; nu parsăm XML → evităm 422.
+        response = session.post(url, data=payload, headers=headers_form, timeout=15)
         if response.status_code == 404:
-            try:
-                body = response.text or response.content.decode("utf-8", errors="replace")
-            except Exception:
-                body = ""
-            if "No se puede procesar" in body or "no se puede procesar" in body.lower():
-                print(f"❌ Catastro 404: {response.url}")
-                return None, "Catastro nu poate procesa coordonatele"
+            # Reîncercare cu SOAP: serverul poate accepta doar SOAP, nu POST form
+            soap_url = CATASTRO_COORD_ASMX_BASE
+            soap_headers = {
+                "Content-Type": "text/xml; charset=utf-8",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "application/xml, text/xml, */*",
+            }
+            lon_f = float(lon)
+            lat_f = float(lat)
+            soap_body = (
+                '<?xml version="1.0" encoding="utf-8"?>'
+                '<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+                'xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2001/12/soap-envelope">'
+                "<soap12:Body>"
+                '<ConsultaCPMRC xmlns="http://www.catastro.meh.es/">'
+                f"<SRS>{srs_val}</SRS>"
+                f"<CoordenadaX>{lon_f:.8f}</CoordenadaX>"
+                f"<CoordenadaY>{lat_f:.8f}</CoordenadaY>"
+                "</ConsultaCPMRC>"
+                "</soap12:Body>"
+                "</soap12:Envelope>"
+            )
+            response = session.post(soap_url, data=soap_body.encode("utf-8"), headers=soap_headers, timeout=15)
+            if response.status_code != 200:
+                return None, f"Catastro SOAP a returnat {response.status_code}"
+            _log_catastro_request(response)
+            xml_content = _extract_soap_body(response.content)
+            return _proceseaza_raspuns_catastro(xml_content)
         response.raise_for_status()
         _log_catastro_request(response)
         return _proceseaza_raspuns_catastro(response.content)
