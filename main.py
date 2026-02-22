@@ -182,20 +182,12 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Verificare SSL la pornire: sesiune comună (prod = CA obligatoriu, dev/staging = fallback verify=False)
+# Verificare SSL la pornire - DOAR LOG informativ, nu blochează serverul
 try:
-    session = get_catastro_http_client()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/xml, text/xml, */*",
-    }
-    payload = {"SRS": "EPSG:4258", "CoordenadaX": "-3.70", "CoordenadaY": "40.42"}
-    r = session.post(CATASTRO_URL, data=payload, headers=headers, timeout=10)
-    r.raise_for_status()
-    print("✅ Succes SSL Catastro (200 OK)")
+    # Temporar, nu mai apelăm direct Catastro la startup, ca să nu avem 404
+    print("⚠️ Verificarea live Catastro la startup este dezactivată (evitat 404).")
 except Exception as e:
-    print(f"❌ Eroare verificare SSL Catastro: {e}")
+    print(f"⚠️ Skip verificare SSL Catastro la startup: {e}")
 
 # Model pentru cererea de la user (coordonate de pe hartă)
 class ClickLocation(BaseModel):
@@ -733,10 +725,9 @@ async def identifica_imobil(location: ClickLocation, db: Session = Depends(get_d
         if fallback and fallback.get("status") == "success":
             result = fallback
         else:
-            raise HTTPException(
-                status_code=422,
-                detail=result.get("message") or "Referință indisponibilă pe hartă, te rugăm să folosești opțiunea de căutare după adresă.",
-            )
+            # Întoarcem 200 cu JSON controlat; evităm 422 ca UX (Catastro poate fi temporar indisponibil)
+            msg = result.get("message") or "Catastro nu a putut identifica imobilul acum. Te rugăm să încerci alt punct sau mai târziu."
+            return JSONResponse(status_code=200, content={"status": "error", "message": msg})
 
     data_block = result.get("data")
     if not data_block or not isinstance(data_block, dict):

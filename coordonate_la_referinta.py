@@ -66,7 +66,7 @@ def coordonate_la_referinta(lat, lon, srs="EPSG:4258", catastro_url=None, cert_p
         return _proceseaza_raspuns_catastro(xml_content)
     except Exception as e:
         print(f"❌ Eroare SOAP Catastro: {e}")
-        return None, f"Eroare Catastro: {str(e)}"
+        return None, "Catastro indisponibil sau endpoint neacceptat (404). Încearcă din nou mai târziu."
 
 
 def _log_catastro_request(response):
