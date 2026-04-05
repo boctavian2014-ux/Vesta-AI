@@ -1,5 +1,5 @@
 /**
- * Ecran hartă cu Mapbox (StyleURL.SatelliteStreet + pitch 3D).
+ * Ecran hartă cu Mapbox (satellite-streets-v11; pitch 0 Android / 45 iOS pentru stabilitate GPU).
  * Folosește acest fișier după ce instalezi: npm install @rnmapbox/maps
  * și setezi token-ul în config (ex. MAPBOX_ACCESS_TOKEN).
  * Vezi MAPBOX_SETUP.md pentru migrare de la react-native-maps.
@@ -8,7 +8,7 @@ import React, { useRef, useState, useCallback, useEffect } from "react";
 import { View, StyleSheet, TouchableOpacity, Text, ActivityIndicator, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import Mapbox from "@rnmapbox/maps";
+import Mapbox, { setAccessToken } from "@rnmapbox/maps";
 import { useTranslation } from "react-i18next";
 import { identificaImobil } from "../api";
 import { colors, spacing } from "../theme";
@@ -17,6 +17,9 @@ import type { CatastroProperty } from "./PropertyScreen";
 // Expo: doar variabile EXPO_PUBLIC_* sunt incluse în bundle — folosește EXPO_PUBLIC_MAPBOX_TOKEN în .env
 const MAPBOX_TOKEN =
   process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || "";
+
+/** URL explicit — același stil ca StyleURL.SatelliteStreet din SDK (evită valori undefined la import). */
+const SATELLITE_STREETS_STYLE = "mapbox://styles/mapbox/satellite-streets-v11";
 
 const MADRID: [number, number] = [-3.70379, 40.41678];
 
@@ -60,16 +63,32 @@ export default function MapScreenMapbox({ navigation }: Props) {
   const { t } = useTranslation();
   const cameraRef = useRef<Mapbox.Camera>(null);
   const [mapLoadError, setMapLoadError] = useState<string | null>(null);
+  /** Native setAccessToken este async; MapView nu trebuie montat înainte ca tokenul să fie setat pe UI thread. */
+  const [mapTokenReady, setMapTokenReady] = useState(false);
   const [isLoadingProperty, setIsLoadingProperty] = useState(false);
-
-  useEffect(() => {
-    if (MAPBOX_TOKEN) {
-      Mapbox.setAccessToken(MAPBOX_TOKEN);
-    }
-  }, []);
   const [selectedProp, setSelectedProp] = useState<CatastroProperty | null>(null);
   const [errorProperty, setErrorProperty] = useState<string | null>(null);
   const [centerCoord, setCenterCoord] = useState<[number, number]>(MADRID);
+
+  useEffect(() => {
+    if (!MAPBOX_TOKEN) {
+      setMapTokenReady(false);
+      return;
+    }
+    let cancelled = false;
+    Promise.resolve(setAccessToken(MAPBOX_TOKEN))
+      .then(() => {
+        if (!cancelled) setMapTokenReady(true);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setMapLoadError(e instanceof Error ? e.message : "setAccessToken failed");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const propertyCoords: [number, number] | null =
     selectedProp != null && selectedProp.lat != null && selectedProp.lon != null
@@ -111,7 +130,7 @@ export default function MapScreenMapbox({ navigation }: Props) {
         setIsLoadingProperty(false);
       }
     },
-    [navigation, t]
+    [t]
   );
 
   const onMarkerPress = useCallback(() => {
@@ -125,49 +144,63 @@ export default function MapScreenMapbox({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
-        <Mapbox.MapView
-          style={styles.map}
-          styleURL={Mapbox.StyleURL.SatelliteStreet}
-          logoEnabled={false}
-          attributionEnabled
-          surfaceView={Platform.OS === "android" ? false : undefined}
-          onMapLoadingError={() => {
-            setMapLoadError("Map style or tiles failed to load (check token & network).");
-            if (__DEV__) {
-              console.warn("[Mapbox] onMapLoadingError");
-            }
-          }}
-          onDidFinishLoadingMap={() => setMapLoadError(null)}
-          onPress={onMapPress}
-        >
-          <Mapbox.Camera
-            ref={cameraRef}
-            zoomLevel={16}
-            centerCoordinate={initialCoords}
-            pitch={45}
-            animationDuration={1000}
-          />
-          {propertyCoords && (
-            <Mapbox.PointAnnotation
-              id="propertyMarker"
-              coordinate={propertyCoords}
-              onSelected={onMarkerPress}
+        {MAPBOX_TOKEN && mapTokenReady ? (
+          <View
+            style={styles.map}
+            {...(Platform.OS === "android" ? { collapsable: false } : {})}
+          >
+            <Mapbox.MapView
+              style={StyleSheet.absoluteFillObject}
+              styleURL={SATELLITE_STREETS_STYLE}
+              logoEnabled={false}
+              attributionEnabled
+              surfaceView={Platform.OS === "android" ? false : undefined}
+              onMapLoadingError={() => {
+                setMapLoadError("Map style or tiles failed to load (check token & network).");
+                if (__DEV__) {
+                  console.warn("[Mapbox] onMapLoadingError");
+                }
+              }}
+              onDidFinishLoadingMap={() => setMapLoadError(null)}
+              onPress={onMapPress}
             >
-              <View style={styles.markerContainer}>
-                <View
-                  style={[
-                    styles.markerInner,
-                    (selectedProp?.scor_oportunitate ?? 0) >= 50
-                      ? styles.markerRed
-                      : (selectedProp?.scor_oportunitate ?? 0) >= 20
-                        ? styles.markerOrange
-                        : styles.markerGreen,
-                  ]}
-                />
-              </View>
-            </Mapbox.PointAnnotation>
-          )}
-        </Mapbox.MapView>
+              <Mapbox.Camera
+                ref={cameraRef}
+                zoomLevel={16}
+                centerCoordinate={initialCoords}
+                pitch={Platform.OS === "android" ? 0 : 45}
+                animationDuration={1000}
+              />
+              {propertyCoords && (
+                <Mapbox.PointAnnotation
+                  id="propertyMarker"
+                  coordinate={propertyCoords}
+                  onSelected={onMarkerPress}
+                >
+                  <View style={styles.markerContainer}>
+                    <View
+                      style={[
+                        styles.markerInner,
+                        (selectedProp?.scor_oportunitate ?? 0) >= 50
+                          ? styles.markerRed
+                          : (selectedProp?.scor_oportunitate ?? 0) >= 20
+                            ? styles.markerOrange
+                            : styles.markerGreen,
+                      ]}
+                    />
+                  </View>
+                </Mapbox.PointAnnotation>
+              )}
+            </Mapbox.MapView>
+          </View>
+        ) : MAPBOX_TOKEN ? (
+          <View style={[styles.map, styles.mapBooting]}>
+            <ActivityIndicator size="large" color={colors.gold} />
+            <Text style={styles.mapBootingText}>Loading map…</Text>
+          </View>
+        ) : (
+          <View style={[styles.map, styles.mapBooting]} />
+        )}
 
         {!MAPBOX_TOKEN ? (
           <View style={styles.tokenBanner}>
@@ -229,6 +262,12 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   container: { flex: 1 },
   map: { flex: 1 },
+  mapBooting: {
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#e2e8f0",
+  },
+  mapBootingText: { marginTop: 12, fontSize: 14, color: colors.textMuted },
   tokenBanner: {
     position: "absolute",
     top: 48,
