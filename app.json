@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "9714e241-0f37-4015-896c-519b29d3fde1"
+      }
+    },
+    "owner": "devaieoodltd1",
+    "android": {
+      "package": "com.devaieoodltd1.vestaai"
+    },
+    "ios": {
+      "bundleIdentifier": "y",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}

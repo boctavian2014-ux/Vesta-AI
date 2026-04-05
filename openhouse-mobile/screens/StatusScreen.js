@@ -13,17 +13,22 @@ import {
   Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
 import { getStatusRaport, getCartaOferta } from "../api";
+import { generateProfessionalPDF, buildReportData } from "../utils/pdfReport";
 import { colors, spacing } from "../theme";
 
-export default function StatusScreen({ route }) {
+export default function StatusScreen({ route, navigation }) {
+  const { t } = useTranslation();
   const initialRequestId = route.params?.requestId ?? "";
+  const addressFromParams = route.params?.address ?? "";
   const [requestId, setRequestId] = useState(initialRequestId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
   const [cartaOferta, setCartaOferta] = useState(null);
   const [cartaLoading, setCartaLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const onCheck = async () => {
     const id = requestId.trim();
@@ -80,6 +85,23 @@ export default function StatusScreen({ route }) {
     }).catch(() => {});
   };
 
+  const onGeneratePDF = async () => {
+    setPdfLoading(true);
+    try {
+      const reportPayload = data?.expert_report || {};
+      const reportData = buildReportData(
+        reportPayload,
+        data?.address || addressFromParams || "Property",
+        data?.request_id || requestId || ""
+      );
+      await generateProfessionalPDF(reportData);
+    } catch (err) {
+      Alert.alert("Error", err?.message || "Could not generate PDF.");
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -119,6 +141,31 @@ export default function StatusScreen({ route }) {
                   <Text style={styles.linkText}>Carta de ofertă</Text>
                 )}
               </TouchableOpacity>
+            )}
+            {data.status === "completed" && (
+              <>
+                <TouchableOpacity
+                  style={styles.dashboardButton}
+                  onPress={() => navigation.navigate("Dashboard", {
+                    requestId: data.request_id || initialRequestId,
+                    address: data.address || addressFromParams,
+                    reportData: data.expert_report || null,
+                  })}
+                >
+                  <Text style={styles.dashboardButtonText}>📊 {t("view_dashboard")}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pdfButton, pdfLoading && styles.pdfButtonDisabled]}
+                  onPress={onGeneratePDF}
+                  disabled={pdfLoading}
+                >
+                  {pdfLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.pdfButtonText}>{t("generate_executive_summary")}</Text>
+                  )}
+                </TouchableOpacity>
+              </>
             )}
           </View>
         )}
@@ -174,6 +221,23 @@ const styles = StyleSheet.create({
   resultText: { color: colors.text, marginBottom: spacing.sm },
   link: { marginTop: spacing.sm },
   linkText: { color: colors.primary, fontWeight: "600" },
+  dashboardButton: {
+    marginTop: spacing.lg,
+    backgroundColor: "#c6a227",
+    padding: spacing.md,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  dashboardButtonText: { color: "#0f172a", fontWeight: "700", fontSize: 15 },
+  pdfButton: {
+    marginTop: spacing.md,
+    backgroundColor: colors.primaryPremium ?? "#1e3a8a",
+    padding: spacing.md,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  pdfButtonDisabled: { opacity: 0.7 },
+  pdfButtonText: { color: "#fff", fontWeight: "600" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

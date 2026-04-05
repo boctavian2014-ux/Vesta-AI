@@ -1,4 +1,3 @@
-import { useStripe } from "@stripe/stripe-react-native";
 import PropertyScreenInner from "./PropertyScreenInner";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CatastroProperty, PropertyScreenParams } from "./PropertyScreenInner";
@@ -8,14 +7,5 @@ export type { CatastroProperty, PropertyScreenParams };
 type Props = NativeStackScreenProps<PropertyScreenParams, "Property">;
 
 export default function PropertyScreen(props: Props) {
-  const stripe = useStripe();
-  return (
-    <PropertyScreenInner
-      {...props}
-      stripe={{
-        initPaymentSheet: (opts) => stripe.initPaymentSheet(opts),
-        presentPaymentSheet: () => stripe.presentPaymentSheet(),
-      }}
-    />
-  );
+  return <PropertyScreenInner {...props} stripe={null} />;
 }

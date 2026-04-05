@@ -6,17 +6,24 @@
     "scheme": "vesta",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": { "backgroundColor": "#ffffff" },
-    "ios": { "supportsTablet": true, "bundleIdentifier": "com.vesta.ai" },
-    "android": { "package": "com.vesta.ai" },
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vesta.ai"
+    },
+    "android": {
+      "package": "com.vesta.ai"
+    },
     "plugins": [
-      [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.com.vesta.ai",
-          "enableGooglePay": true
-        }
-      ]
-    ]
+      "expo-localization",
+      "@rnmapbox/maps"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "25667fd9-af3a-4710-b833-2afd215d04a6"
+      }
+    }
   }
 }

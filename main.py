@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 import os
@@ -63,6 +64,12 @@ setup_ssl_bundle()
 
 # --- Helper global Catastro (motor pentru toate cererile către infrastructura spaniolă) ---
 from catastro_ssl import get_catastro_session
+
+# --- Date piață imobiliară (INE Spain – IPV) ---
+from market_data import get_market_trend, get_capital_appreciation, get_trend_summary
+
+# --- Motor financiar deterministic ---
+from financial_analysis import VestaFinancialEngine
 
 ENV = os.getenv("ENV", "dev")  # dev (implicit) sau prod (setat în Railway)
 
@@ -1285,7 +1292,133 @@ async def verifica_raport(request_id: str, db: Session = Depends(get_db)):
         "extracted_owner": report.extracted_owner,
     }
     result["report_id"] = report.id
+    if report.property_id:
+        prop = db.query(Property).filter(Property.id == report.property_id).first()
+        if prop and prop.address:
+            result["address"] = prop.address
     return result
+
+
+@app.post("/financial-analysis")
+async def financial_analysis_endpoint(data: dict):
+    """
+    Motor financiar deterministic (<500ms). Nu necesită AI.
+
+    Body JSON:
+      {
+        "property_data": { "listing_price": 200000, "sqm": 85 },
+        "market_data":   { "avg_sqm_price": 2500, "avg_rent_sqm": 12, "city": "Madrid" }
+      }
+
+    Returnează: gross_yield, net_yield, roi_5y, valuation_status, opportunity_score, etc.
+    Scenarii what-if: trimite "what_if_price" în body pentru recalculare cu preț alternativ.
+    """
+    property_data = data.get("property_data", {})
+    market_data = data.get("market_data", {})
+    what_if_price = data.get("what_if_price")
+
+    ine_trend = get_market_trend()
+    engine = VestaFinancialEngine(
+        property_data=property_data,
+        market_data=market_data,
+        ine_trend=ine_trend,
+    )
+
+    result = engine.generate_full_metrics()
+
+    if what_if_price and float(what_if_price) > 0:
+        result["what_if"] = engine.what_if(float(what_if_price))
+
+    result["ine_capital_appreciation_pct"] = get_capital_appreciation(ine_trend)
+    return result
+
+
+@app.get("/market-trend")
+async def market_trend_endpoint():
+    """
+    Returnează datele IPV (Indicele Prețurilor Locuințelor) din INE Spain.
+    Cache TTL 24h. Folosit de dashboard-ul mobil și de PDF pentru graficul de trend.
+    """
+    data = get_market_trend()
+    appreciation = get_capital_appreciation(data)
+    return {
+        "source": "INE Spain – Índice de Precios de Vivienda (IPV)",
+        "data": data,
+        "capital_appreciation_pct": appreciation,
+        "points": len(data),
+        "start_period": data[0]["quarter"] if data else None,
+        "end_period": data[-1]["quarter"] if data else None,
+    }
+
+
+# ── Async Report Generation – Retry & Notify ──────────────────────────────────
+from retry_notify import create_job, get_job, run_report_job, get_public_job_status
+
+
+class AsyncReportRequest(BaseModel):
+    """
+    Body pentru POST /report/generate-async.
+
+    Fields:
+        inputs: Dict cu nota_simple_text, cadastral_json, satellite_notes, market_data
+        language: Codul limbii (en / ro / de / es)
+        expo_push_token: Token-ul Expo al utilizatorului (pentru push notification)
+        max_retries: Număr maxim de reîncercări (default 2)
+    """
+    inputs: dict = {}
+    language: str = "en"
+    expo_push_token: str | None = None
+    max_retries: int = 2
+
+
+@app.post("/report/generate-async", tags=["async-report"])
+async def report_generate_async(body: AsyncReportRequest):
+    """
+    Pornește generarea raportului expert în background (non-blocking).
+
+    Utilizare:
+      1. Apelați acest endpoint imediat după confirmarea plății.
+      2. Salvați job_id-ul returnat.
+      3. Faceți polling pe GET /report/async-status/{job_id} la fiecare 3-5 secunde.
+      4. Când status == "completed", raportul complet este în câmpul "report".
+      5. Utilizatorul primește și o notificare push automată la finalizare.
+
+    Dacă AI-ul eșuează (timeout / eroare), retry-ul se face automat (max 2 ori,
+    cu delay exponențial 30s / 90s). La eșec definitiv, utilizatorul primește
+    un push cu mesaj de rambursare.
+    """
+    job_id = await create_job(
+        request_data={"inputs": body.inputs, "language": body.language},
+        expo_push_token=body.expo_push_token,
+        max_retries=body.max_retries,
+    )
+    # Pornim task-ul în background (nu blocăm răspunsul HTTP)
+    asyncio.create_task(run_report_job(job_id))
+
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Generarea raportului a pornit. Faceți polling pe /report/async-status/{job_id}.",
+        "poll_url": f"/report/async-status/{job_id}",
+        "estimated_seconds": 10,
+    }
+
+
+@app.get("/report/async-status/{job_id}", tags=["async-report"])
+async def report_async_status(job_id: str):
+    """
+    Returnează statusul curent al unui job de generare raport.
+
+    Răspuns:
+      - status: queued | processing | completed | failed
+      - report: raportul complet (doar când status == completed)
+      - elapsed_seconds: cât timp a trecut de la creare
+      - attempt / max_retries: câte reîncercări au fost / sunt planificate
+    """
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' negăsit. Poate a expirat sau job_id este greșit.")
+    return get_public_job_status(job)
 
 
 @app.post("/webhook/registru-update")

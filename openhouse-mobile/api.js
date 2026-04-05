@@ -72,6 +72,34 @@ export async function getCartaOferta(reportId) {
   });
 }
 
+/**
+ * POST /financial-analysis – VestaFinancialEngine (deterministic, <500ms).
+ * @param {object} propertyData  { listing_price, sqm }
+ * @param {object} marketData    { avg_sqm_price, avg_rent_sqm, city? }
+ * @param {number} [whatIfPrice] Optional alternative purchase price for what-if scenario
+ * Răspuns: { gross_yield_pct, net_yield_pct, roi_5y_pct, valuation_status,
+ *            valuation_diff_pct, opportunity_score, negotiation_note, ... }
+ */
+export async function getFinancialAnalysis(propertyData = {}, marketData = {}, whatIfPrice = null) {
+  const body = { property_data: propertyData, market_data: marketData };
+  if (whatIfPrice != null && whatIfPrice > 0) body.what_if_price = whatIfPrice;
+  return json({
+    url: `${API_BASE_URL}/financial-analysis`,
+    method: "POST",
+    body,
+  });
+}
+
+/**
+ * GET /market-trend – returnează datele IPV (INE Spain) pentru graficul de trend.
+ * Răspuns: { source, data: [{date,value,year,quarter}], capital_appreciation_pct, points }
+ */
+export async function getMarketTrend() {
+  return json({
+    url: `${API_BASE_URL}/market-trend`,
+  });
+}
+
 /** POST /creeaza-plata/ – returnează { clientSecret }; tip=standard|premium, optional email, property_id. */
 export async function creeazaPlata(body = {}) {
   return json({

@@ -81,6 +81,52 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+
+// Optional: GOOGLE_MAPS_API_KEY next to package.json (openhouse-mobile/.env).
+// Note: projectRoot above is the android/ folder, not the Expo app root — do not use it for .env.
+def expoAppRoot = rootDir.getAbsoluteFile().getParentFile().getParentFile()
+def dotEnvMapsKey = ""
+def dotEnvFile = new File(expoAppRoot, ".env")
+if (!dotEnvFile.exists()) {
+    dotEnvFile = new File(projectRoot, ".env")
+}
+if (dotEnvFile.exists()) {
+    dotEnvFile.eachLine { line ->
+        def t = line.trim()
+        if (t.isEmpty() || t.startsWith("#")) return
+        def eq = t.indexOf("=")
+        if (eq < 1) return
+        def k = t.substring(0, eq).trim()
+        if (k != "GOOGLE_MAPS_API_KEY") return
+        def v = t.substring(eq + 1).trim()
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+            v = v.substring(1, v.length() - 1)
+        }
+        dotEnvMapsKey = v
+    }
+}
+
+def googleMapsApiKeyCandidates = [
+    System.getenv("GOOGLE_MAPS_API_KEY"),
+    project.findProperty("GOOGLE_MAPS_API_KEY")?.toString(),
+    localProperties.getProperty("GOOGLE_MAPS_API_KEY"),
+    dotEnvMapsKey,
+]
+def googleMapsApiKey = googleMapsApiKeyCandidates.find { it != null && !it.toString().trim().isEmpty() }?.toString()?.trim() ?: ""
+
+if (googleMapsApiKey.isEmpty()) {
+    logger.lifecycle("")
+    logger.lifecycle("*** Vesta: GOOGLE_MAPS_API_KEY is empty — react-native-maps will crash on Android.")
+    logger.lifecycle("*** Set it in openhouse-mobile/.env, android/local.properties, env GOOGLE_MAPS_API_KEY, or EAS secret; then clean rebuild.")
+    logger.lifecycle("*** .env checked at: ${new File(expoAppRoot, ".env").absolutePath}")
+    logger.lifecycle("")
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -94,6 +140,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+
+        manifestPlaceholders = [GOOGLE_MAPS_API_KEY: googleMapsApiKey]
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

@@ -1,5 +1,7 @@
 export const colors = {
   primary: "#6772e5",
+  /** Premium CTA (49€): Royal Blue - inspirează încredere */
+  primaryPremium: "#1e3a8a",
   gold: "#c6a227",
   background: "#ffffff",
   backgroundMuted: "#f1f5f9",
