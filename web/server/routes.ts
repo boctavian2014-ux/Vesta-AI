@@ -5,9 +5,14 @@ import session from "express-session";
 import MemoryStore from "memorystore";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import { registerSchema, loginSchema } from "@shared/schema";
+import { registerSchema, loginSchema, type Report } from "@shared/schema";
+import { buildFinancialAnalysisUpstreamBody } from "./financialPayload";
 
 const SessionStore = MemoryStore(session);
+
+const PYTHON_API_BASE = (
+  process.env.VEST_PYTHON_API_URL || "https://web-production-34c2a5.up.railway.app"
+).replace(/\/$/, "");
 
 function hashPassword(password: string): string {
   // Simple hash for demo — use bcrypt in production
@@ -24,6 +29,47 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Callback intern din API Python (fără sesiune utilizator)
+  app.post("/api/internal/sync-registro-report", async (req, res) => {
+    const secret = (process.env.VESTA_INTERNAL_SYNC_SECRET || "").trim();
+    const hdr = (req.get("X-Vesta-Internal-Secret") || "").trim();
+    if (!secret || hdr !== secret) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const body = req.body as Record<string, unknown>;
+    const stripeId = typeof body.stripe_payment_intent_id === "string" ? body.stripe_payment_intent_id : "";
+    if (!stripeId) {
+      return res.status(400).json({ message: "Missing stripe_payment_intent_id" });
+    }
+
+    const updates: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId">> = {};
+
+    if (body.status === "failed") {
+      updates.status = "failed";
+    }
+    const rjs = body.report_json_string;
+    if (typeof rjs === "string" && rjs.length > 0) {
+      updates.reportJson = rjs;
+      updates.status = "completed";
+    } else if (body.report_json != null && typeof body.report_json === "object") {
+      updates.reportJson = JSON.stringify(body.report_json);
+      updates.status = "completed";
+    }
+    if (body.nota_simple_json != null) {
+      updates.notaSimpleJson =
+        typeof body.nota_simple_json === "string"
+          ? body.nota_simple_json
+          : JSON.stringify(body.nota_simple_json);
+    }
+    if (body.status === "completed" && updates.status !== "failed" && !updates.reportJson) {
+      updates.status = "completed";
+    }
+
+    const report = await storage.updateReportByStripeSessionId(stripeId, updates);
+    if (!report) return res.status(404).json({ message: "Report not found" });
+    return res.json({ ok: true, id: report.id });
+  });
+
   // Session
   app.use(
     session({
@@ -116,7 +162,7 @@ export async function registerRoutes(
     try {
       const { lat, lon } = req.body;
       const response = await fetch(
-        "https://web-production-34c2a5.up.railway.app/identifica-imobil/",
+        `${PYTHON_API_BASE}/identifica-imobil/`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -148,18 +194,24 @@ export async function registerRoutes(
     }
   });
 
-  // Proxy — Financial Analysis
+  // Proxy — Financial Analysis (adapts identify-shaped bodies → property_data / market_data)
   app.post("/api/property/financial-analysis", async (req, res) => {
     try {
+      const upstreamBody = buildFinancialAnalysisUpstreamBody(
+        req.body as Record<string, unknown>
+      );
       const response = await fetch(
-        "https://web-production-34c2a5.up.railway.app/financial-analysis",
+        `${PYTHON_API_BASE}/financial-analysis`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(req.body),
+          body: JSON.stringify(upstreamBody),
         }
       );
       const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json(data);
+      }
       return res.json(data);
     } catch (err: any) {
       return res.status(500).json({ message: "Failed to get financial analysis", error: err.message });
@@ -170,7 +222,7 @@ export async function registerRoutes(
   app.get("/api/market-trend", async (_req, res) => {
     try {
       const response = await fetch(
-        "https://web-production-34c2a5.up.railway.app/market-trend"
+        `${PYTHON_API_BASE}/market-trend`
       );
       const data = await response.json();
       return res.json(data);
@@ -207,14 +259,20 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const response = await fetch(
-        "https://web-production-34c2a5.up.railway.app/creeaza-plata/",
+        `${PYTHON_API_BASE}/creeaza-plata/`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: user.email ?? "",
             property_id: req.body.property_id ?? 0,
-            tip: req.body.tip ?? "standard",
+            tip: req.body.tip ?? "nota_simple",
+            referencia_catastral: req.body.referencia_catastral ?? "",
+            address: req.body.address ?? "",
+            lat: req.body.lat,
+            lon: req.body.lon,
+            context_json:
+              typeof req.body.context_json === "string" ? req.body.context_json : undefined,
           }),
         }
       );
@@ -232,13 +290,14 @@ export async function registerRoutes(
       const { property_id, success_url, cancel_url } = req.body;
       const user = req.user as any;
       const response = await fetch(
-        "https://web-production-34c2a5.up.railway.app/create-checkout-session",
+        `${PYTHON_API_BASE}/create-checkout-session`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             property_id: property_id ?? 0,
             user_id: user.id,
+            product: req.body.product ?? "nota_simple",
             success_url: success_url ?? "https://www.perplexity.ai/computer/a/vesta-ai-dXVERI0mRBaIDCn.9K69dw/#/reports",
             cancel_url: cancel_url ?? "https://www.perplexity.ai/computer/a/vesta-ai-dXVERI0mRBaIDCn.9K69dw/#/map",
           }),
@@ -256,7 +315,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     try {
       const response = await fetch(
-        "https://web-production-34c2a5.up.railway.app/report/generate-async",
+        `${PYTHON_API_BASE}/report/generate-async`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -275,12 +334,28 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     try {
       const response = await fetch(
-        `https://web-production-34c2a5.up.railway.app/report/async-status/${req.params.jobId}`
+        `${PYTHON_API_BASE}/report/async-status/${req.params.jobId}`
       );
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
       return res.status(500).json({ message: "Status check failed", error: err.message });
+    }
+  });
+
+  // Proxy — Plată → Nota Simple → AI: stare agregată după PaymentIntent
+  app.get("/api/payment-flow/status/:paymentIntentId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    try {
+      const id = encodeURIComponent(req.params.paymentIntentId);
+      const response = await fetch(`${PYTHON_API_BASE}/payment-flow/status/${id}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return res.status(response.status).json(data);
+      }
+      return res.json(data);
+    } catch (err: any) {
+      return res.status(500).json({ message: "Payment flow status failed", error: err.message });
     }
   });
 

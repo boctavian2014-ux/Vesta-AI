@@ -3,6 +3,7 @@ const mapboxgl = (window as any).mapboxgl;
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { detectBrowserLocale } from "@/lib/locale";
 import { useHashLocation } from "wouter/use-hash-location";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,14 @@ import {
 } from "lucide-react";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
+
+/** Aliniat cu PRET_NOTA_SIMPLE_EUR / PRET_RAPORT_EXPERT_EUR pe API Python (Railway). */
+const PRET_NOTA_SIMPLE_EUR =
+  Number(import.meta.env.VITE_PRET_NOTA_SIMPLE_EUR) || 19;
+const PRET_EXPERT_EUR =
+  Number(import.meta.env.VITE_PRET_RAPORT_EXPERT_EUR) ||
+  Number(import.meta.env.VITE_PRET_EXPERT_EUR) ||
+  49;
 
 // Stiluri hartă
 const STYLES = {
@@ -76,54 +85,113 @@ function ScoreBadge({ score }: { score?: number | string }) {
 
 // ── Payment Modal ──────────────────────────────────────────────────────────
 
+type ProductTier = "nota_simple" | "expert_report";
+
 function PaymentModal({
-  open, onClose, onSuccess, propertyInfo, financialData,
+  open, onClose, onSuccess, propertyInfo, financialData, selectedCoords,
 }: {
   open: boolean;
   onClose: () => void;
   onSuccess: (reportId: number) => void;
   propertyInfo: PropertyInfo | null;
   financialData: FinancialAnalysis | null;
+  selectedCoords: { lat: number; lon: number } | null;
 }) {
   const { toast } = useToast();
   const [step, setStep] = useState<"confirm" | "paying" | "processing" | "done">("confirm");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [reportId, setReportId] = useState<number | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
+  const [tier, setTier] = useState<ProductTier>("nota_simple");
   const qc = useQueryClient();
+
+  const priceForTier = tier === "expert_report" ? PRET_EXPERT_EUR : PRET_NOTA_SIMPLE_EUR;
 
   // Reset when opened
   useEffect(() => {
-    if (open) { setStep("confirm"); setClientSecret(null); setReportId(null); setJobId(null); setPollCount(0); }
+    if (open) {
+      setStep("confirm");
+      setClientSecret(null);
+      setPollCount(0);
+      setTier("nota_simple");
+    }
   }, [open]);
 
   // Step 1: create payment intent
   const startPayment = async () => {
     if (!propertyInfo) return;
+    if (!selectedCoords) {
+      toast({ title: "Coordonate lipsă", description: "Selectează din nou imobilul pe hartă.", variant: "destructive" });
+      return;
+    }
     setStep("paying");
     try {
-      const res = await apiRequest("POST", "/api/payment/create", {
-        email: "", // will be filled server-side from session
+      const payload: Record<string, unknown> = {
+        email: "",
         property_id: 0,
-        tip: "standard",
-      });
+        tip: tier,
+        referencia_catastral: propertyInfo.referenciaCatastral ?? "",
+        address: propertyInfo.address ?? "",
+        lat: selectedCoords.lat,
+        lon: selectedCoords.lon,
+      };
+      if (tier === "expert_report") {
+        payload.context_json = JSON.stringify({
+          cadastral_json: propertyInfo ?? {},
+          financial_data: financialData ?? {},
+          market_data: {},
+          output_language: detectBrowserLocale(),
+        });
+      }
+      const res = await apiRequest("POST", "/api/payment/create", payload);
       const data = await res.json();
       if (!data.clientSecret) throw new Error("No client secret");
       setClientSecret(data.clientSecret);
-      // We use Stripe Elements — but for now we simulate confirm with the secret
-      // In production you'd mount CardElement. Here we go straight to processing.
-      await confirmAndProcess(data.clientSecret);
+      await confirmAndProcess(
+        data.clientSecret,
+        tier,
+        typeof data.paymentIntentId === "string" ? data.paymentIntentId : undefined
+      );
     } catch (err: any) {
       toast({ title: "Eroare la plată", description: err.message, variant: "destructive" });
       setStep("confirm");
     }
   };
 
-  const confirmAndProcess = async (secret: string) => {
-    setStep("processing");
+  const confirmAndProcess = async (
+    _secret: string,
+    productTier: ProductTier,
+    paymentIntentId?: string
+  ) => {
     try {
-      // Create local report record
+      if (productTier === "nota_simple") {
+        setStep("processing");
+        const reportRes = await apiRequest("POST", "/api/reports", {
+          type: "nota_simple",
+          status: "pending",
+          referenciaCatastral: propertyInfo?.referenciaCatastral ?? "",
+          address: propertyInfo?.address ?? "",
+          cadastralJson: JSON.stringify(propertyInfo ?? {}),
+          financialJson: JSON.stringify(financialData ?? {}),
+        });
+        const report = await reportRes.json();
+        await apiRequest("PATCH", `/api/reports/${report.id}`, { status: "processing" });
+        setStep("done");
+        qc.invalidateQueries({ queryKey: ["/api/reports"] });
+        onSuccess(report.id);
+        return;
+      }
+
+      if (!paymentIntentId) {
+        toast({
+          title: "Plată incompletă",
+          description: "Lipsește identificatorul plății. Reîncearcă.",
+          variant: "destructive",
+        });
+        setStep("confirm");
+        return;
+      }
+
+      setStep("processing");
       const reportRes = await apiRequest("POST", "/api/reports", {
         type: "expert_report",
         status: "processing",
@@ -133,67 +201,88 @@ function PaymentModal({
         financialJson: JSON.stringify(financialData ?? {}),
       });
       const report = await reportRes.json();
-      setReportId(report.id);
 
-      // Start async AI report generation
-      const genRes = await apiRequest("POST", "/api/report/generate", {
-        inputs: {
-          cadastral_json: propertyInfo ?? {},
-          nota_simple_text: "",
-          financial_data: financialData ?? {},
-          market_data: {},
-        },
-        language: "es",
-        max_retries: 2,
+      await apiRequest("PATCH", `/api/reports/${report.id}`, {
+        stripeSessionId: paymentIntentId,
       });
-      const genData = await genRes.json();
-      const jid = genData.job_id;
-
-      if (jid) {
-        await apiRequest("PATCH", `/api/reports/${report.id}`, { stripeJobId: jid });
-        setJobId(jid);
-        // poll for completion
-        pollStatus(jid, report.id);
-      } else {
-        await apiRequest("PATCH", `/api/reports/${report.id}`, { status: "completed" });
-        setStep("done");
-        qc.invalidateQueries({ queryKey: ["/api/reports"] });
-        onSuccess(report.id);
-      }
+      pollPaymentFlowStatus(paymentIntentId, report.id);
     } catch (err: any) {
       toast({ title: "Eroare la generare", description: err.message, variant: "destructive" });
       setStep("confirm");
     }
   };
 
-  const pollStatus = async (jid: string, rid: number) => {
+  /** Așteaptă webhook Stripe → Nota Simple → job AI (backend Python), nu /report/generate-async gol. */
+  const pollPaymentFlowStatus = async (paymentIntentId: string, rid: number) => {
     let attempts = 0;
-    const maxAttempts = 40;
+    const maxAttempts = 120;
     const interval = setInterval(async () => {
       attempts++;
       setPollCount(attempts);
       try {
-        const res = await apiRequest("GET", `/api/report/status/${jid}`);
+        const res = await apiRequest("GET", `/api/payment-flow/status/${paymentIntentId}`);
+        if (res.status === 404) {
+          if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
+            toast({
+              title: "Timeout",
+              description: "Plata nu e încă înregistrată sau raportul nu e disponibil.",
+              variant: "destructive",
+            });
+            onClose();
+          }
+          return;
+        }
         const data = await res.json();
-        if (data.status === "completed" && data.report) {
-          clearInterval(interval);
-          await apiRequest("PATCH", `/api/reports/${rid}`, {
-            status: "completed",
-            reportJson: JSON.stringify(data.report),
-          });
-          qc.invalidateQueries({ queryKey: ["/api/reports"] });
-          qc.invalidateQueries({ queryKey: ["/api/reports", rid] });
-          setStep("done");
-          onSuccess(rid);
-        } else if (data.status === "failed" || attempts >= maxAttempts) {
+        if (data.status === "failed" || data.ai_job_status === "failed") {
           clearInterval(interval);
           await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
           toast({ title: "Raport eșuat", description: "Încearcă din nou.", variant: "destructive" });
           onClose();
+          return;
         }
-      } catch {}
+        if (data.report) {
+          clearInterval(interval);
+          const patch: Record<string, string> = {
+            status: "completed",
+            reportJson: JSON.stringify(data.report),
+          };
+          if (typeof data.ai_job_id === "string" && data.ai_job_id) {
+            patch.stripeJobId = data.ai_job_id;
+          }
+          await apiRequest("PATCH", `/api/reports/${rid}`, patch);
+          qc.invalidateQueries({ queryKey: ["/api/reports"] });
+          qc.invalidateQueries({ queryKey: ["/api/reports", rid] });
+          setStep("done");
+          onSuccess(rid);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
+          toast({ title: "Timeout raport", description: "Încearcă din nou.", variant: "destructive" });
+          onClose();
+        }
+      } catch {
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
+          toast({ title: "Eroare rețea", variant: "destructive" });
+          onClose();
+        }
+      }
     }, 4000);
   };
+
+  const notaBullets = [
+    "Nota Simple oficială solicitată la colaboratori autorizați (Registro)",
+    "Titular, sarcini, ipoteci — document în format PDF",
+    "Notificare când documentul e disponibil",
+  ];
+  const expertBullets = [
+    "Tot ce include pachetul Nota Simple (oficial)",
+    "Raport expert AI: analiză financiară, riscuri, rezumat investitor",
+    "Due diligence extinsă pe baza cadastrului și pieței",
+  ];
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && step === "confirm" && onClose()}>
@@ -201,15 +290,14 @@ function PaymentModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
-            Raport Complet Proprietate
+            Comandă documente & raport
           </DialogTitle>
           <DialogDescription>
-            Analiză completă: Nota Simplă, date proprietar, situație juridică și financiară
+            Două pachete: Nota Simple oficială sau raport expert complet cu analiză AI.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Property summary */}
           {propertyInfo?.referenciaCatastral && (
             <div className="rounded-lg bg-muted/50 border border-border px-3 py-2.5 space-y-1">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Referință Catastro</p>
@@ -218,30 +306,57 @@ function PaymentModal({
             </div>
           )}
 
-          {/* What you get */}
           {step === "confirm" && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ce include raportul</p>
-              {[
-                "Nota Simplă — proprietar, ipoteci, sarcini",
-                "Situație juridică completă din Registro",
-                "Analiza financiară AI (randament, ROI, valoare)",
-                "Riscuri urbanistice și discrepanțe",
-                "Rezumat executiv pentru investitori",
-              ].map((item) => (
-                <div key={item} className="flex items-center gap-2 text-xs text-foreground">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  {item}
-                </div>
-              ))}
-              <div className="flex items-center justify-between pt-3 border-t border-border">
-                <span className="text-sm text-muted-foreground">Preț</span>
-                <span className="text-lg font-bold text-foreground">19 €</span>
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Alege pachetul</p>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTier("nota_simple")}
+                  className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                    tier === "nota_simple"
+                      ? "border-primary bg-primary/10 ring-1 ring-primary"
+                      : "border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-foreground">Nota Simple oficială</span>
+                    <span className="text-sm font-bold text-primary">{PRET_NOTA_SIMPLE_EUR} €</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">De la colaboratori autorizați ai registrului spaniol</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTier("expert_report")}
+                  className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                    tier === "expert_report"
+                      ? "border-primary bg-primary/10 ring-1 ring-primary"
+                      : "border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-foreground">Raport expert complet</span>
+                    <span className="text-sm font-bold text-primary">{PRET_EXPERT_EUR} €</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Nota Simple + analiză AI și due diligence</p>
+                </button>
+              </div>
+              <div className="space-y-2 pt-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ce include</p>
+                {(tier === "nota_simple" ? notaBullets : expertBullets).map((item) => (
+                  <div key={item} className="flex items-center gap-2 text-xs text-foreground">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    {item}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-border">
+                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="text-lg font-bold text-foreground">{priceForTier} €</span>
               </div>
             </div>
           )}
 
-          {/* Paying state */}
           {step === "paying" && (
             <div className="flex flex-col items-center gap-3 py-4">
               <Loader2 className="h-8 w-8 text-primary animate-spin" />
@@ -249,45 +364,56 @@ function PaymentModal({
             </div>
           )}
 
-          {/* Processing state */}
           {step === "processing" && (
             <div className="flex flex-col items-center gap-4 py-4">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 text-primary animate-spin" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-semibold text-foreground">Se generează raportul</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {tier === "nota_simple" ? "Înregistrăm comanda" : "Se generează raportul"}
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Cerere Nota Simplă · Analiză AI · Situație financiară
+                  {tier === "nota_simple"
+                    ? "Transmitem cererea către colaboratorii oficiali pentru Nota Simple"
+                    : "După plată: Nota Simple de la colaboratori, apoi analiză AI — poate dura câteva minute"}
                 </p>
               </div>
-              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-1000"
-                  style={{ width: `${Math.min(95, (pollCount / 40) * 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">{pollCount * 4}s elapsed…</p>
+              {tier === "expert_report" && (
+                <>
+                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-1000"
+                      style={{ width: `${Math.min(95, (pollCount / 120) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{pollCount * 4}s elapsed…</p>
+                </>
+              )}
             </div>
           )}
 
-          {/* Done */}
           {step === "done" && (
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <CheckCircle2 className="h-12 w-12 text-emerald-400" />
-              <p className="text-sm font-semibold text-foreground">Raport generat cu succes!</p>
-              <p className="text-xs text-muted-foreground">Redirecționare automată…</p>
+              <p className="text-sm font-semibold text-foreground">
+                {tier === "nota_simple" ? "Comandă înregistrată" : "Raport în curs / generat"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {tier === "nota_simple"
+                  ? "Nota Simple oficială va fi livrată prin fluxul colaboratorilor. Urmărești în Rapoarte."
+                  : "Redirecționare către detalii raport…"}
+              </p>
             </div>
           )}
         </div>
 
-        {/* Actions */}
         {step === "confirm" && (
           <div className="flex gap-2 pt-2">
             <Button variant="outline" onClick={onClose} className="flex-1">Anulează</Button>
             <Button onClick={startPayment} className="flex-1 gap-2">
               <CreditCard className="h-4 w-4" />
-              Plătește 19 €
+              Plătește {priceForTier} €
             </Button>
           </div>
         )}
@@ -727,7 +853,7 @@ export default function MapPage() {
                         data-testid="order-full-report"
                       >
                         <FileText className="mr-2 h-4 w-4" />
-                        Raport Complet — Nota Simplă
+                        Comandă — Nota Simple sau raport expert
                       </Button>
                     </div>
                   </div>
@@ -748,6 +874,7 @@ export default function MapPage() {
         }}
         propertyInfo={propertyInfo}
         financialData={financialData}
+        selectedCoords={selectedCoords}
       />
 
       {/* Street View Modal — fullscreen iframe 360° */}

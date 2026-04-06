@@ -20,12 +20,15 @@ Stocare:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import time
 import uuid
 from typing import Any
 
 import httpx
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -107,10 +110,79 @@ async def send_expo_push_notification(
 
 # ── Job CRUD ───────────────────────────────────────────────────────────────────
 
+def _persist_detailed_report_and_sync(
+    detailed_report_id: int,
+    stripe_payment_intent_id: str | None,
+    result: dict | None,
+    success: bool,
+    error_message: str | None,
+) -> None:
+    """Actualizează DetailedReport în Postgres/SQLite și notifică app web (opțional)."""
+    from database import DetailedReport, SessionLocal
+
+    db = SessionLocal()
+    try:
+        row = db.query(DetailedReport).filter(DetailedReport.id == detailed_report_id).first()
+        if not row:
+            return
+        if success and result:
+            row.report_json = json.dumps(result, ensure_ascii=False)
+            row.status = "completed"
+        else:
+            row.status = "failed"
+        db.commit()
+
+        if success and result:
+            try:
+                from database import Property, User
+                from vesta_email import send_report_ready_notification
+
+                user = db.query(User).filter(User.id == row.user_id).first()
+                prop = db.query(Property).filter(Property.id == row.property_id).first()
+                if user and user.email:
+                    addr = prop.address if prop else None
+                    owner = (result.get("property") or {}).get("registered_owner") or row.extracted_owner
+                    send_report_ready_notification(
+                        user.email,
+                        addr,
+                        owner,
+                        prop.ref_catastral if prop else None,
+                    )
+            except Exception as exc:
+                logger.warning("Email după raport AI: %s", exc)
+
+        sync_url = os.getenv("VESTA_WEB_INTERNAL_SYNC_URL", "").strip()
+        sync_secret = os.getenv("VESTA_INTERNAL_SYNC_SECRET", "").strip()
+        if sync_url and sync_secret and stripe_payment_intent_id:
+            try:
+                requests.post(
+                    sync_url.rstrip("/"),
+                    json={
+                        "stripe_payment_intent_id": stripe_payment_intent_id,
+                        "report_json": result if success else None,
+                        "report_json_string": json.dumps(result, ensure_ascii=False) if success and result else None,
+                        "status": "completed" if success else "failed",
+                        "error": error_message,
+                    },
+                    headers={
+                        "X-Vesta-Internal-Secret": sync_secret,
+                        "Content-Type": "application/json",
+                    },
+                    timeout=45,
+                )
+            except Exception as exc:
+                logger.error("VESTA_WEB_INTERNAL_SYNC_URL failed: %s", exc)
+    finally:
+        db.close()
+
+
 async def create_job(
     request_data: dict,
     expo_push_token: str | None = None,
     max_retries: int = 2,
+    *,
+    detailed_report_id: int | None = None,
+    stripe_payment_intent_id: str | None = None,
 ) -> str:
     """Creează un nou job și returnează job_id."""
     job_id = uuid.uuid4().hex
@@ -127,6 +199,8 @@ async def create_job(
             "error": None,
             "expo_push_token": expo_push_token,
             "request_data": request_data,
+            "detailed_report_id": detailed_report_id,
+            "stripe_payment_intent_id": stripe_payment_intent_id,
         }
     return job_id
 
@@ -168,6 +242,8 @@ async def run_report_job(job_id: str) -> None:
     request_data = job["request_data"]
     expo_token = job["expo_push_token"]
     language = request_data.get("language", "en")
+    detailed_report_id = job.get("detailed_report_id")
+    stripe_payment_intent_id = job.get("stripe_payment_intent_id")
 
     # Importăm local pentru a evita circular imports la nivel de modul
     from expert_report import generate_expert_report
@@ -191,6 +267,16 @@ async def run_report_job(job_id: str) -> None:
             # Succes
             await _update_job(job_id, status="completed", result=result, error=None)
             logger.info("Job %s completat cu succes (attempt %d).", job_id, attempt)
+
+            if detailed_report_id:
+                await asyncio.to_thread(
+                    _persist_detailed_report_and_sync,
+                    detailed_report_id,
+                    stripe_payment_intent_id,
+                    result,
+                    True,
+                    None,
+                )
 
             # Push notification: raportul e gata
             if expo_token:
@@ -227,6 +313,15 @@ async def run_report_job(job_id: str) -> None:
             else:
                 # Eșec definitiv după toate reîncercările
                 await _update_job(job_id, status="failed")
+                if detailed_report_id:
+                    await asyncio.to_thread(
+                        _persist_detailed_report_and_sync,
+                        detailed_report_id,
+                        stripe_payment_intent_id,
+                        None,
+                        False,
+                        error_msg,
+                    )
                 logger.error("Job %s – eșec definitiv după %d încercări.", job_id, attempt)
 
                 if expo_token:

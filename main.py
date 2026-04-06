@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import logging
 import os
 import shutil
@@ -102,7 +103,8 @@ def get_catastro_http_client() -> requests.Session:
     return session
 
 
-from database import DetailedReport, Property, SessionLocal, User
+from database import DetailedReport, PaymentContext, Property, SessionLocal, User
+from registro_partner import build_order_payload, normalize_registro_webhook
 from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
 from carta_oferta import genera_carta_oferta
@@ -154,7 +156,10 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # pentru imagini satelit (analiză piscină)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-PRET_RAPORT_EUR = 19  # 19€ per Nota Simple
+# Prețuri în EUR (Stripe folosește cenți). Suprascrie din Railway Variables.
+PRET_NOTA_SIMPLE_EUR = int(os.getenv("PRET_NOTA_SIMPLE_EUR", "19"))
+PRET_RAPORT_EXPERT_EUR = int(os.getenv("PRET_RAPORT_EXPERT_EUR", "49"))
+PRET_RAPORT_EUR = PRET_NOTA_SIMPLE_EUR  # alias pentru compatibilitate (checkout implicit)
 
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
@@ -215,6 +220,7 @@ class CheckoutRequest(BaseModel):
     user_id: int
     success_url: str = "https://platforma-ta.ro/success"
     cancel_url: str = "https://platforma-ta.ro/cancel"
+    product: str = "nota_simple"  # nota_simple | expert_report
 
 
 # Guest: obține sau creează user după email (fără cont obligatoriu)
@@ -226,7 +232,41 @@ class GuestEmail(BaseModel):
 class CreeazaPlataRequest(BaseModel):
     email: Optional[str] = None
     property_id: Optional[int] = None
-    tip: Optional[str] = "standard"  # "standard" 19€ | "premium" 50€
+    # nota_simple | standard → Nota Simple prin colaboratori oficiali; expert | premium → raport expert complet
+    tip: Optional[str] = "nota_simple"
+    referencia_catastral: Optional[str] = None
+    address: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    # JSON string: { cadastral_json, financial_data, market_data } pentru flux NS → AI
+    context_json: Optional[str] = None
+
+
+def normalize_product_tier(tip: Optional[str]) -> str:
+    t = (tip or "nota_simple").strip().lower()
+    if t in ("expert", "premium", "expert_report", "full", "raport_expert"):
+        return "expert_report"
+    return "nota_simple"
+
+
+def tier_amount_eur(tier: str) -> int:
+    return PRET_RAPORT_EXPERT_EUR if tier == "expert_report" else PRET_NOTA_SIMPLE_EUR
+
+
+_EXPERT_REPORT_LANGS = frozenset({"en", "ro", "es", "de"})
+
+
+def normalize_expert_report_language(code: Optional[str]) -> str:
+    """
+    Limba pentru generate_expert_report (en|ro|es|de).
+    Dacă lipsește sau e invalidă, păstrăm 'es' ca default istoric (piață ES).
+    """
+    if not code or not isinstance(code, str):
+        return "es"
+    primary = code.strip().lower().split("-")[0].split("_")[0]
+    if primary in _EXPERT_REPORT_LANGS:
+        return primary
+    return "en"
 
 
 def get_db():
@@ -237,26 +277,59 @@ def get_db():
         db.close()
 
 
+def ensure_property_from_meta(db: Session, meta: dict) -> tuple[int, Optional[Property]]:
+    """
+    Rezolvă property_id din metadata Stripe: id direct, sau creează proprietate după ref + coordonate.
+    """
+    try:
+        pid = int(meta.get("property_id") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    ref = (meta.get("referencia_catastral") or "").strip()
+    address = (meta.get("address") or "").strip() or None
+    lat_s, lon_s = str(meta.get("lat") or ""), str(meta.get("lon") or "")
+    try:
+        lat = float(lat_s) if lat_s else None
+        lon = float(lon_s) if lon_s else None
+    except (TypeError, ValueError):
+        lat, lon = None, None
+
+    if pid > 0:
+        prop = db.query(Property).filter(Property.id == pid).first()
+        return pid, prop
+    if not ref:
+        return 0, None
+    existing = db.query(Property).filter(Property.ref_catastral == ref).first()
+    if existing:
+        return existing.id, existing
+    if lat is None or lon is None:
+        return 0, None
+    scor_initial = calculeaza_scor_oportunitate({"year_built": None}, None)
+    p = Property(
+        ref_catastral=ref,
+        address=address,
+        lat=lat,
+        lon=lon,
+        year_built=None,
+        sq_meters=None,
+        scor_oportunitate=scor_initial,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p.id, p
+
+
 def trimite_email_notificare(
     user_email: str,
     adresa_imobil: Optional[str],
     nume_proprietar: Optional[str],
     ref_catastral: Optional[str] = None,
 ):
-    """Trimite notificare când raportul este finalizat. MVP: log; producție: SMTP/SendGrid."""
-    adresa_afis = adresa_imobil or (f"Ref. cadastrală {ref_catastral}" if ref_catastral else "proprietate")
-    proprietar_afis = nume_proprietar or "Nu s-a putut extrage"
+    """Trimite notificare când raportul este finalizat (SMTP din env sau log MVP)."""
+    from vesta_email import send_report_ready_notification
 
-    # Producție: deblochează și configurează SMTP (Gmail, SendGrid, etc.)
-    # msg = MIMEText(corp)
-    # msg["Subject"] = f"✅ Raport Finalizat: {adresa_afis}"
-    # msg["From"] = "notificari@platforma-ta.ro"
-    # msg["To"] = user_email
-    # with smtplib.SMTP("smtp.gmail.com", 587) as server: ...
-    print(
-        f"📧 [MVP] Notificare către {user_email} – proprietate: {adresa_afis}, "
-        f"proprietar: {proprietar_afis}"
-    )
+    send_report_ready_notification(user_email, adresa_imobil, nume_proprietar, ref_catastral)
 
 
 def notifica_admin_plata_orfana(subject: str, detail: str) -> None:
@@ -281,21 +354,163 @@ def solicita_raport_registru(
     property_id: int,
     external_request_id: str,
     ref_catastral: str,
+    product_tier: str = "nota_simple",
 ):
     """
-    Declanșează cererea la API-ul intermediar (Registru / Nota Simple).
-    API-ul va apela înapoi POST /webhook/registru-update când PDF-ul e gata.
+    Declanșează cererea de Nota Simple la colaboratori oficiali (API intermediar).
+    Setează REGISTRO_PARTNER_ORDER_URL (+ opțional REGISTRO_PARTNER_API_KEY) în Railway.
+    Partenerul apelează înapoi POST /webhook/registru-update când PDF-ul e gata.
     """
-    # TODO: apel real către API-ul intermediar, ex.:
-    # requests.post("https://api-registru.example.com/solicitar", json={
-    #     "request_id": external_request_id,
-    #     "ref_catastral": ref_catastral,
-    #     "callback_url": "https://api-ta.ro/webhook/registru-update",
-    # })
+    base = os.getenv("PUBLIC_API_BASE_URL", "").strip().rstrip("/")
+    callback = f"{base}/webhook/registru-update" if base else ""
+    partner_url = os.getenv("REGISTRO_PARTNER_ORDER_URL", "").strip()
+
     print(
-        f"📄 [MVP] Cerere Registru – report_id={report_id}, property_id={property_id}, "
-        f"request_id={external_request_id}, ref={ref_catastral}"
+        f"📄 Cerere Nota Simple (tier={product_tier}) – report_id={report_id}, "
+        f"property_id={property_id}, request_id={external_request_id}, ref={ref_catastral}, "
+        f"callback={'OK' if callback else 'LIPSEȘTE PUBLIC_API_BASE_URL'}"
     )
+
+    if not partner_url:
+        print("   → REGISTRO_PARTNER_ORDER_URL nesetat: fără apel HTTP (mod MVP).")
+        return
+
+    payload, headers = build_order_payload(
+        partner_url=partner_url,
+        external_request_id=external_request_id,
+        ref_catastral=ref_catastral,
+        report_id=report_id,
+        property_id=property_id,
+        product_tier=product_tier,
+        callback_url=callback,
+    )
+    try:
+        r = requests.post(partner_url, json=payload, headers=headers, timeout=45)
+        r.raise_for_status()
+        print(f"   ✅ Partener Nota Simple: HTTP {r.status_code}")
+    except Exception as e:
+        logger.exception("Eșec apel colaborator Nota Simple: %s", e)
+
+
+MAX_NOTA_PDF_BYTES = 15 * 1024 * 1024
+
+
+def _download_pdf_bytes(url: str) -> Optional[bytes]:
+    if not url or not str(url).lower().startswith(("http://", "https://")):
+        return None
+    try:
+        with requests.get(url, timeout=90, stream=True) as r:
+            r.raise_for_status()
+            total = 0
+            parts: list[bytes] = []
+            for chunk in r.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_NOTA_PDF_BYTES:
+                    logger.warning("PDF prea mare de la URL")
+                    return None
+                parts.append(chunk)
+        return b"".join(parts)
+    except Exception as e:
+        logger.warning("Descărcare PDF eșuată: %s", e)
+        return None
+
+
+def _nota_text_from_extraction(ext: dict) -> str:
+    if not ext or ext.get("error"):
+        return ""
+    parts = [
+        ext.get("titular") or "",
+        ext.get("descripcion") or "",
+        ext.get("cargas") or "",
+        ext.get("caducidad_cargas") or "",
+        ext.get("direccion") or "",
+    ]
+    return "\n\n".join(p.strip() for p in parts if p and str(p).strip())
+
+
+def _verify_registro_partner_webhook(request: Request) -> bool:
+    secret = os.getenv("REGISTRO_PARTNER_WEBHOOK_SECRET", "").strip()
+    if not secret:
+        return True
+    got = (
+        request.headers.get("X-Vesta-Partner-Secret")
+        or request.headers.get("X-Registro-Partner-Secret")
+        or ""
+    ).strip()
+    return got == secret
+
+
+def _call_vesta_internal_sync(body: dict) -> None:
+    url = os.getenv("VESTA_WEB_INTERNAL_SYNC_URL", "").strip()
+    secret = os.getenv("VESTA_INTERNAL_SYNC_SECRET", "").strip()
+    if not url or not secret:
+        return
+    try:
+        requests.post(
+            url.rstrip("/"),
+            json=body,
+            headers={"X-Vesta-Internal-Secret": secret, "Content-Type": "application/json"},
+            timeout=45,
+        )
+    except Exception as exc:
+        logger.warning("VESTA_WEB_INTERNAL_SYNC_URL: %s", exc)
+
+
+async def _enqueue_expert_report_after_nota(
+    db: Session,
+    report: DetailedReport,
+    prop: Property,
+    nota_text: str,
+    payment_intent_id: str,
+) -> None:
+    extras: dict = {}
+    if report.extras_json:
+        try:
+            extras = json.loads(report.extras_json)
+        except json.JSONDecodeError:
+            extras = {}
+    cadastral = extras.get("cadastral_json")
+    if isinstance(cadastral, str):
+        try:
+            cadastral = json.loads(cadastral)
+        except json.JSONDecodeError:
+            cadastral = {}
+    if not isinstance(cadastral, dict):
+        cadastral = {}
+    financial = extras.get("financial_data") or extras.get("financial") or {}
+    market = extras.get("market_data") or extras.get("market") or {}
+    if not isinstance(financial, dict):
+        financial = {}
+    if not isinstance(market, dict):
+        market = {}
+
+    out_lang = normalize_expert_report_language(
+        extras.get("output_language") or extras.get("language")
+    )
+
+    inputs = {
+        "nota_simple_text": nota_text,
+        "cadastral_json": cadastral,
+        "financial_data": financial,
+        "market_data": market,
+        "address": prop.address or "",
+        "country": "ES",
+        "lat": prop.lat,
+        "lng": prop.lon,
+    }
+    job_id = await create_job(
+        request_data={"inputs": inputs, "language": out_lang},
+        expo_push_token=None,
+        max_retries=2,
+        detailed_report_id=report.id,
+        stripe_payment_intent_id=payment_intent_id,
+    )
+    report.ai_job_id = job_id
+    report.status = "processing"
+    db.commit()
+    asyncio.create_task(run_report_job(job_id))
 
 
 def _score_for_property(prop: Property) -> int:
@@ -818,7 +1033,7 @@ async def create_checkout_session(
     body: CheckoutRequest,
     db: Session = Depends(get_db),
 ):
-    """Creează sesiune Stripe Checkout 19€; metadata leagă plata de proprietate și user."""
+    """Creează sesiune Stripe Checkout — Nota Simple oficială sau raport expert (preț din env)."""
     if not STRIPE_SECRET_KEY:
         raise HTTPException(
             status_code=503,
@@ -831,6 +1046,15 @@ async def create_checkout_session(
     if not user or not user.is_active:
         raise HTTPException(status_code=404, detail="Utilizator negăsit sau inactiv")
 
+    tier = normalize_product_tier(body.product)
+    amount_eur = tier_amount_eur(tier)
+    if tier == "expert_report":
+        prod_name = "Raport expert Vesta (Nota Simple + analiză AI)"
+        prod_desc = f"Proprietate: {prop.address or prop.ref_catastral} — pachet complet"
+    else:
+        prod_name = "Nota Simple — colaboratori oficiali Registro"
+        prod_desc = f"Proprietate: {prop.address or prop.ref_catastral} — document oficial"
+
     try:
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
@@ -839,11 +1063,11 @@ async def create_checkout_session(
                     "price_data": {
                         "currency": "eur",
                         "product_data": {
-                            "name": "Raport Nota Simple",
-                            "description": f"Proprietate: {prop.address or prop.ref_catastral}",
-                            "metadata": {"property_id": str(prop.id)},
+                            "name": prod_name,
+                            "description": prod_desc,
+                            "metadata": {"property_id": str(prop.id), "product_tier": tier},
                         },
-                        "unit_amount": PRET_RAPORT_EUR * 100,  # 19€ în centi
+                        "unit_amount": amount_eur * 100,
                     },
                     "quantity": 1,
                 }
@@ -854,42 +1078,78 @@ async def create_checkout_session(
             metadata={
                 "property_id": str(body.property_id),
                 "user_id": str(body.user_id),
+                "product_tier": tier,
             },
         )
-        return {"checkout_url": session.url, "session_id": session.id}
+        return {"checkout_url": session.url, "session_id": session.id, "product_tier": tier, "amount_eur": amount_eur}
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/creeaza-plata/")
-async def creeaza_plata(body: CreeazaPlataRequest):
+async def creeaza_plata(body: CreeazaPlataRequest, db: Session = Depends(get_db)):
     """
-    Creează un PaymentIntent Stripe: 19€ (standard) sau 50€ (premium).
-    Primește property_id și email; le pune în metadata pentru webhook (payment_intent.succeeded)
-    ca să creeze raportul cu status 'processing'.
+    Creează un PaymentIntent Stripe: preț după tier (Nota Simple oficială vs raport expert).
+    Metadata include ref. catastrală + coordonate ca să poată fi creată proprietatea la webhook dacă lipsește property_id.
     """
     if not STRIPE_SECRET_KEY:
         raise HTTPException(
             status_code=503,
             detail="Stripe nu este configurat (STRIPE_SECRET_KEY lipsește).",
         )
-    tip = body.tip or "standard"
-    suma = 5000 if tip == "premium" else 1900
+    tier = normalize_product_tier(body.tip)
+    suma = tier_amount_eur(tier) * 100
     email = (body.email or "necunoscut@email.com").strip().lower()
-    property_id = body.property_id if body.property_id is not None else 0
+    property_id = int(body.property_id or 0)
+    ref = (body.referencia_catastral or "").strip()
+    addr = (body.address or "").strip()
+
+    if property_id == 0 and ref and body.lat is not None and body.lon is not None:
+        pid, _ = ensure_property_from_meta(
+            db,
+            {
+                "property_id": "0",
+                "referencia_catastral": ref,
+                "address": addr,
+                "lat": str(body.lat),
+                "lon": str(body.lon),
+            },
+        )
+        property_id = pid
+
+    snapshot_id = ""
+    ctx = (body.context_json or "").strip()
+    if ctx:
+        snapshot_id = f"ctx_{uuid.uuid4().hex}"
+        db.add(PaymentContext(id=snapshot_id, payload_json=ctx))
+        db.commit()
+
+    meta = {
+        "tip_raport": tier,
+        "product_tier": tier,
+        "email": email,
+        "property_id": str(property_id),
+        "referencia_catastral": ref,
+        "address": addr,
+        "lat": str(body.lat) if body.lat is not None else "",
+        "lon": str(body.lon) if body.lon is not None else "",
+    }
+    if snapshot_id:
+        meta["snapshot_id"] = snapshot_id
 
     try:
         intent = stripe.PaymentIntent.create(
             amount=suma,
             currency="eur",
             automatic_payment_methods={"enabled": True},
-            metadata={
-                "tip_raport": tip,
-                "email": email,
-                "property_id": str(property_id),
-            },
+            metadata=meta,
         )
-        return {"clientSecret": intent.client_secret}
+        return {
+            "clientSecret": intent.client_secret,
+            "paymentIntentId": intent.id,
+            "amount_eur": suma // 100,
+            "product_tier": tier,
+        }
     except stripe.error.StripeError as e:
         print(f"Eroare Stripe: {e}")
         return JSONResponse(status_code=400, content={"error": str(e)})
@@ -920,20 +1180,18 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         print(f"💰 Plată confirmată pentru: {amount} EUR")
         meta = payment_intent.get("metadata") or {}
         email = (meta.get("email") or "").strip().lower()
-        try:
-            property_id = int(meta.get("property_id", 0))
-        except (TypeError, ValueError):
-            property_id = 0
+        tier = normalize_product_tier(meta.get("product_tier") or meta.get("tip_raport"))
 
-        # Logging critic: plată orfană (property_id lipsă sau 0)
-        if not property_id:
+        property_id, prop = ensure_property_from_meta(db, meta)
+
+        if not email or not property_id or not prop:
             msg = (
-                f"ALERTA PLATA ORFANA: S-a incasat plata de la {email}, dar property_id lipseste! "
-                f"payment_intent_id={pi_id}"
+                f"ALERTA PLATA ORFANA: plată de la {email or '(fără email)'} fără proprietate rezolvabilă "
+                f"(property_id={property_id}, ref în metadata?). payment_intent_id={pi_id}"
             )
             logger.error(msg)
-            notifica_admin_plata_orfana("Plată orfană (property_id lipsă)", f"email={email}, payment_intent_id={pi_id}")
-            return JSONResponse(content={"status": "success", "warning": "property_id_missing"})
+            notifica_admin_plata_orfana("Plată orfană (fără proprietate/ref)", f"email={email}, payment_intent_id={pi_id}, meta={meta}")
+            return JSONResponse(content={"status": "success", "warning": "property_unresolved"})
 
         if email and property_id:
             # Idempotență: evităm duplicate la retrimitere Stripe
@@ -952,16 +1210,13 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 db.commit()
                 db.refresh(user)
 
-            # Validare: property_id trebuie să existe în DB; nu returnăm 500/404 ca să nu retrimită Stripe
-            prop = db.query(Property).filter(Property.id == property_id).first()
-            if not prop:
-                msg = (
-                    f"ALERTA: Plată reușită dar proprietatea id={property_id} nu există în DB. "
-                    f"email={email}, payment_intent_id={pi_id}"
-                )
-                logger.error(msg)
-                notifica_admin_plata_orfana("Proprietate negăsită la plată", f"property_id={property_id}, email={email}, payment_intent_id={pi_id}")
-                return JSONResponse(content={"status": "success", "warning": "property_not_found"})
+            extras_payload = None
+            snap_id = (meta.get("snapshot_id") or "").strip()
+            if snap_id:
+                snap = db.query(PaymentContext).filter(PaymentContext.id == snap_id).first()
+                if snap:
+                    extras_payload = snap.payload_json
+                    db.delete(snap)
 
             external_request_id = f"req_{uuid.uuid4().hex[:16]}"
             report = DetailedReport(
@@ -970,12 +1225,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 status="processing",
                 external_request_id=external_request_id,
                 stripe_session_id=pi_id,
+                product_tier=tier,
+                extras_json=extras_payload,
             )
             db.add(report)
             db.commit()
             db.refresh(report)
-            solicita_raport_registru(db, report.id, property_id, external_request_id, prop.ref_catastral)
-            print(f"📄 Raport creat: report_id={report.id}, request_id={external_request_id}")
+            solicita_raport_registru(
+                db, report.id, property_id, external_request_id, prop.ref_catastral or "", product_tier=tier
+            )
+            print(f"📄 Raport creat: report_id={report.id}, request_id={external_request_id}, tier={tier}")
 
     return JSONResponse(content={"status": "success"})
 
@@ -1065,6 +1324,8 @@ async def webhook_stripe(request: Request, db: Session = Depends(get_db)):
         )
         return JSONResponse(content={"received": True, "warning": "user_not_found"})
 
+    tier = normalize_product_tier(metadata.get("product_tier") or metadata.get("product"))
+
     external_request_id = f"req_{uuid.uuid4().hex[:16]}"
     report = DetailedReport(
         property_id=property_id,
@@ -1072,13 +1333,14 @@ async def webhook_stripe(request: Request, db: Session = Depends(get_db)):
         status="processing",
         external_request_id=external_request_id,
         stripe_session_id=session_id,
+        product_tier=tier,
     )
     db.add(report)
     db.commit()
     db.refresh(report)
 
     solicita_raport_registru(
-        db, report.id, property_id, external_request_id, prop.ref_catastral
+        db, report.id, property_id, external_request_id, prop.ref_catastral or "", product_tier=tier
     )
 
     return JSONResponse(content={"received": True, "report_id": report.id})
@@ -1421,13 +1683,52 @@ async def report_async_status(job_id: str):
     return get_public_job_status(job)
 
 
+@app.get("/payment-flow/status/{payment_intent_id}", tags=["payment-flow"])
+async def payment_flow_status(payment_intent_id: str, db: Session = Depends(get_db)):
+    """Stare agregată: DetailedReport + job AI pentru polling din app web."""
+    row = (
+        db.query(DetailedReport)
+        .filter(DetailedReport.stripe_session_id == payment_intent_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Plată / raport negăsit")
+
+    out: dict = {
+        "detailed_report_id": row.id,
+        "status": row.status,
+        "product_tier": row.product_tier,
+        "external_request_id": row.external_request_id,
+        "ai_job_id": row.ai_job_id,
+        "pdf_url": row.pdf_url,
+    }
+    if row.ai_job_id:
+        job = await get_job(row.ai_job_id)
+        if job:
+            out["ai_job_status"] = job.get("status")
+            if job.get("status") == "completed" and job.get("result"):
+                out["report"] = job["result"]
+    if row.report_json and not out.get("report"):
+        try:
+            out["report"] = json.loads(row.report_json)
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
 @app.post("/webhook/registru-update")
-async def webhook_registru(data: dict, db: Session = Depends(get_db)):
+async def webhook_registru(request: Request, data: dict, db: Session = Depends(get_db)):
     """
-    Apelat de API-ul intermediar (Registru / Nota Simple) când PDF-ul este gata.
-    Actualizează raportul și trimite notificarea utilizatorului.
+    Apelat de intermediarul Nota Simple când există actualizare / PDF.
+    PDF → OCR → pentru expert_report pornește job AI; pentru nota_simple finalizează și notifică.
     """
-    external_id = data.get("request_id")
+    import base64
+
+    if not _verify_registro_partner_webhook(request):
+        raise HTTPException(status_code=401, detail="Invalid partner webhook secret")
+
+    norm = normalize_registro_webhook(data)
+    external_id = norm.get("request_id")
     if not external_id:
         raise HTTPException(status_code=400, detail="Lipsește request_id")
 
@@ -1440,23 +1741,92 @@ async def webhook_registru(data: dict, db: Session = Depends(get_db)):
     if not report:
         return {"error": "Raport negăsit", "request_id": external_id}
 
-    # Actualizăm datele cu ce a trimis API-ul
-    report.status = data.get("status", "completed")
-    report.extracted_owner = data.get("owner_name") or report.extracted_owner
-    report.pdf_url = data.get("pdf_link") or report.pdf_url
-    report.cargas_resumen = data.get("cargas_resumen") or report.cargas_resumen
+    st = (norm.get("status") or "completed").strip().lower()
+    if st in ("pending", "processing", "completed", "failed"):
+        report.status = st
+    report.extracted_owner = norm.get("owner_name") or report.extracted_owner
+    report.pdf_url = norm.get("pdf_link") or report.pdf_url
+    report.cargas_resumen = norm.get("cargas_resumen") or report.cargas_resumen
     db.commit()
 
-    # Notificare doar când statusul devine completed
-    if report.status == "completed":
-        user = db.query(User).filter(User.id == report.user_id).first()
-        prop = db.query(Property).filter(Property.id == report.property_id).first()
-        if user and user.is_active:
-            trimite_email_notificare(
-                user.email,
-                prop.address if prop else None,
-                report.extracted_owner,
-                prop.ref_catastral if prop else None,
-            )
+    if st == "failed":
+        pi_fail = (report.stripe_session_id or "").strip()
+        _call_vesta_internal_sync(
+            {"stripe_payment_intent_id": pi_fail, "status": "failed", "error": "Registro / partner a marcat cererea ca eșuată"}
+        )
+        return {"message": "Status failed înregistrat", "request_id": external_id}
+
+    pdf_bytes: Optional[bytes] = None
+    b64 = norm.get("pdf_base64")
+    if b64:
+        try:
+            pdf_bytes = base64.b64decode(b64)
+        except Exception:
+            pdf_bytes = None
+    if not pdf_bytes and norm.get("pdf_link"):
+        pdf_bytes = _download_pdf_bytes(str(norm["pdf_link"]))
+
+    extracted: dict = {}
+    nota_text = ""
+    if pdf_bytes:
+        extracted = extrage_nota_simple(pdf_bytes, "nota_simple.pdf")
+        if not extracted.get("error"):
+            report.extracted_owner = extracted.get("titular") or report.extracted_owner
+            report.cargas_resumen = extracted.get("cargas") or report.cargas_resumen
+            nota_text = _nota_text_from_extraction(extracted)
+        db.commit()
+
+    prop = db.query(Property).filter(Property.id == report.property_id).first()
+    pi_id = (report.stripe_session_id or "").strip()
+    tier = (report.product_tier or "nota_simple").strip()
+
+    if st != "completed":
+        return {"message": "Actualizare parțială", "request_id": external_id}
+
+    if not nota_text:
+        report.status = "failed"
+        db.commit()
+        _call_vesta_internal_sync(
+            {
+                "stripe_payment_intent_id": pi_id,
+                "status": "failed",
+                "error": "PDF lipsă sau OCR Nota Simple a eșuat",
+            }
+        )
+        return {"message": "Fără text Nota Simple", "request_id": external_id}
+
+    if tier == "expert_report":
+        if prop and pi_id:
+            await _enqueue_expert_report_after_nota(db, report, prop, nota_text, pi_id)
+            db.refresh(report)
+            return {
+                "message": "AI job queued",
+                "request_id": external_id,
+                "ai_job_id": report.ai_job_id,
+            }
+        report.status = "failed"
+        db.commit()
+        _call_vesta_internal_sync(
+            {"stripe_payment_intent_id": pi_id, "status": "failed", "error": "Lipsesc date proprietate / plată"}
+        )
+        return {"message": "Eroare: fără proprietate sau payment intent", "request_id": external_id}
+
+    report.status = "completed"
+    db.commit()
+    user = db.query(User).filter(User.id == report.user_id).first()
+    if user and user.is_active:
+        trimite_email_notificare(
+            user.email,
+            prop.address if prop else None,
+            report.extracted_owner,
+            prop.ref_catastral if prop else None,
+        )
+    _call_vesta_internal_sync(
+        {
+            "stripe_payment_intent_id": pi_id,
+            "status": "completed",
+            "nota_simple_json": json.dumps(extracted, ensure_ascii=False) if extracted else None,
+        }
+    )
 
     return {"message": "Actualizare înregistrată", "request_id": external_id}

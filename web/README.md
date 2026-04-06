@@ -51,7 +51,7 @@ Edit `.env` and fill in your values:
 | Variable | Description |
 |---|---|
 | `VITE_MAPBOX_TOKEN` | Your Mapbox public token — get it at [account.mapbox.com](https://account.mapbox.com) |
-| `VITE_API_URL` | URL of the Railway backend API |
+| `VITE_API_URL` | (Opțional) Nu e folosit de proxy-ul Express; URL-ul API Python e în `server/routes.ts`. Poți folosi variabila doar dacă adaugi tu logică client-side către alt host. |
 | `PORT` | Server port (default: 5000) |
 
 ### 4. Run in development

@@ -25,6 +25,11 @@ export interface IStorage {
   createReport(report: InsertReport): Promise<Report>;
   updateReport(id: number, userId: number, data: Partial<Report>): Promise<Report | undefined>;
   updateReportStatus(id: number, status: string): Promise<void>;
+  /** Legătură cu PaymentIntent Python (`stripe_session_id` pe DetailedReport). */
+  updateReportByStripeSessionId(
+    stripeSessionId: string,
+    data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId">>
+  ): Promise<Report | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -86,6 +91,20 @@ export class DatabaseStorage implements IStorage {
 
   async updateReportStatus(id: number, status: string): Promise<void> {
     db.update(reports).set({ status }).where(eq(reports.id, id)).run();
+  }
+
+  async updateReportByStripeSessionId(
+    stripeSessionId: string,
+    data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId">>
+  ): Promise<Report | undefined> {
+    const row = db.select().from(reports).where(eq(reports.stripeSessionId, stripeSessionId)).get();
+    if (!row) return undefined;
+    const cleaned = Object.fromEntries(
+      Object.entries(data).filter(([, v]) => v !== undefined)
+    ) as Partial<Report>;
+    if (Object.keys(cleaned).length === 0) return row;
+    db.update(reports).set(cleaned).where(eq(reports.id, row.id)).run();
+    return db.select().from(reports).where(eq(reports.id, row.id)).get();
   }
 }
 
