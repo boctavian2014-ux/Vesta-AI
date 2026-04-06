@@ -103,7 +103,7 @@ def get_catastro_http_client() -> requests.Session:
     return session
 
 
-from database import DetailedReport, PaymentContext, Property, SessionLocal, User
+from database import DetailedReport, PaymentContext, Property, SessionLocal, User, init_db
 from registro_partner import build_order_payload, normalize_registro_webhook
 from red_flags import calculeaza_scor_oportunitate
 from vision_abandon import analizeaza_stare_piscina, fetch_google_static_satellite
@@ -195,6 +195,16 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Eroare internă server", "error": str(exc)},
     )
+
+
+@app.on_event("startup")
+async def on_startup():
+    """Inițializează baza de date la pornirea aplicației (creează tabelele dacă nu există)."""
+    try:
+        init_db()
+        print("✅ Baza de date inițializată cu succes.")
+    except Exception as e:
+        print(f"⚠️ Eroare la inițializarea bazei de date: {e}")
 
 
 # Verificare la pornire: host ovc.catastro.meh.es accesibil (GET pe .asmx)
