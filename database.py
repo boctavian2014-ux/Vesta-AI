@@ -103,5 +103,6 @@ class DetailedReport(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-# Creăm tabelele la import
-Base.metadata.create_all(bind=engine)
+def init_db():
+    """Creează tabelele în baza de date. Apelat la startup-ul aplicației."""
+    Base.metadata.create_all(bind=engine)
