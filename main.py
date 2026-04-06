@@ -202,12 +202,29 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.on_event("startup")
 async def on_startup():
-    """Inițializează baza de date la pornirea aplicației (creează tabelele dacă nu există)."""
-    try:
-        init_db()
-        print("✅ Baza de date inițializată cu succes.")
-    except Exception as e:
-        print(f"⚠️ Eroare la inițializarea bazei de date: {e}")
+    """Inițializează baza de date la pornirea aplicației (creează tabelele dacă nu există).
+    Reîncearcă de până la 5 ori cu backoff exponențial dacă Postgres nu este încă disponibil.
+    """
+    max_retries = 5
+    base_delay = 2  # secunde
+    for attempt in range(1, max_retries + 1):
+        try:
+            init_db()
+            print("✅ Baza de date inițializată cu succes.")
+            return
+        except Exception as e:
+            delay = base_delay * (2 ** (attempt - 1))  # 2, 4, 8, 16, 32 secunde
+            if attempt < max_retries:
+                print(
+                    f"⚠️ Eroare la inițializarea bazei de date (încercare {attempt}/{max_retries}): {e}. "
+                    f"Reîncerc în {delay}s..."
+                )
+                await asyncio.sleep(delay)
+            else:
+                print(
+                    f"⚠️ Eroare la inițializarea bazei de date după {max_retries} încercări: {e}. "
+                    f"Aplicația continuă — va reîncerca la prima cerere."
+                )
 
 
 # Verificare la pornire: host ovc.catastro.meh.es accesibil (GET pe .asmx)
