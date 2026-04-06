@@ -104,5 +104,6 @@ class DetailedReport(Base):
 
 
 def init_db():
+    # Cache invalidation: force rebuild
     """Creează tabelele în baza de date. Apelat la startup-ul aplicației."""
     Base.metadata.create_all(bind=engine)
