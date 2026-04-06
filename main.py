@@ -1,4 +1,6 @@
-# Force rebuild - cache invalidation
+# Cache-bust: 2025-01-31T00:00:00Z — force full rebuild, lazy DB init only
+# database.py: Base.metadata.create_all() is called ONLY inside init_db(),
+# which is invoked by the FastAPI startup event — never at module import time.
 import asyncio
 import datetime
 import json
