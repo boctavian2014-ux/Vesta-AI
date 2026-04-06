@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import shutil
+import threading
+import time
 import uuid
 import xml.etree.ElementTree as ET
 import urllib3
@@ -204,20 +206,20 @@ async def global_exception_handler(request: Request, exc: Exception):
 # needs it, not at startup. This allows the app to start immediately even when
 # Postgres is not yet available (e.g. slow cold-start on Railway).
 _db_initialized = False
-_db_init_lock = asyncio.Lock()
+_db_init_lock = threading.Lock()
 
 
-async def ensure_db_initialized():
+def ensure_db_initialized():
     """Initialize the database on the first request that needs it.
 
-    Uses an asyncio lock to prevent concurrent initialization races.
+    Uses a threading lock to prevent concurrent initialization races.
     Retries up to 5 times with exponential backoff so transient Postgres
     unavailability (e.g. container cold-start) is handled gracefully.
     """
     global _db_initialized
     if _db_initialized:
         return
-    async with _db_init_lock:
+    with _db_init_lock:
         if _db_initialized:
             return
         max_retries = 5
@@ -235,7 +237,7 @@ async def ensure_db_initialized():
                         f"⚠️ Eroare la inițializarea bazei de date (încercare {attempt}/{max_retries}): {e}. "
                         f"Reîncerc în {delay}s..."
                     )
-                    await asyncio.sleep(delay)
+                    time.sleep(delay)
                 else:
                     print(
                         f"❌ Eroare la inițializarea bazei de date după {max_retries} încercări: {e}. "
@@ -316,8 +318,8 @@ def normalize_expert_report_language(code: Optional[str]) -> str:
     return "en"
 
 
-async def get_db():
-    await ensure_db_initialized()
+def get_db():
+    ensure_db_initialized()
     db = SessionLocal()
     try:
         yield db
