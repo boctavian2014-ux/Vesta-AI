@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 # Railway / Supabase: DATABASE_URL (postgres://...). SQLAlchemy 2 preferă postgresql://
 _raw_url = os.getenv("DATABASE_URL", "").strip()
+print(f"[database.py] DATABASE_URL resolved to: {_raw_url!r}", flush=True)
 if _raw_url:
     if _raw_url.startswith("postgres://"):
         _raw_url = _raw_url.replace("postgres://", "postgresql://", 1)
