@@ -1,4 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, type FormEvent } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 const mapboxgl = (window as any).mapboxgl;
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +35,9 @@ const PRET_EXPERT_EUR =
   49;
 const MAP_UI_LOCALE_KEY = "vesta_map_ui_locale";
 type UiLocale = "en" | "es";
+
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 // Mapbox doar satelit; modul „Map” = Google Maps roadmap.
 const MAPBOX_SATELLITE_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
@@ -107,6 +112,55 @@ function ScoreBadge({ score }: { score?: number | string }) {
 
 type ProductTier = "nota_simple" | "expert_report";
 
+function PaymentModalStripeForm({
+  onPaid,
+  onError,
+  submitLabel,
+}: {
+  onPaid: () => void;
+  onError: (msg: string) => void;
+  submitLabel: string;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [busy, setBusy] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setBusy(true);
+    try {
+      const base = `${window.location.origin}${window.location.pathname || "/"}`;
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: `${base}#/map`,
+        },
+        redirect: "if_required",
+      });
+      if (error) {
+        onError(error.message || "Payment failed");
+        setBusy(false);
+        return;
+      }
+      onPaid();
+    } catch (err: unknown) {
+      onError(err instanceof Error ? err.message : "Payment failed");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement />
+      <Button type="submit" className="w-full gap-2" disabled={!stripe || busy}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : null}
+        {submitLabel}
+      </Button>
+    </form>
+  );
+}
+
 function PaymentModal({
   open, onClose, onSuccess, propertyInfo, financialData, selectedCoords, uiLocale,
 }: {
@@ -160,6 +214,9 @@ function PaymentModal({
         redirecting: "Redirigiendo al detalle del informe...",
         cancel: "Cancelar",
         payNow: "Pagar",
+        missingStripePk: "Falta VITE_STRIPE_PUBLISHABLE_KEY en el build. Anade la clave publica de Stripe.",
+        securePay: "Pagar con tarjeta",
+        backToPacks: "Volver a paquetes",
       }
     : {
         missingCoords: "Missing coordinates",
@@ -202,24 +259,33 @@ function PaymentModal({
         redirecting: "Redirecting to report details...",
         cancel: "Cancel",
         payNow: "Pay",
+        missingStripePk: "Missing VITE_STRIPE_PUBLISHABLE_KEY in the build. Add your Stripe publishable key.",
+        securePay: "Pay securely",
+        backToPacks: "Back to packages",
       };
 
   const { toast } = useToast();
-  const [step, setStep] = useState<"confirm" | "paying" | "processing" | "done">("confirm");
+  const [step, setStep] = useState<"confirm" | "paying" | "payment" | "processing" | "done">("confirm");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
   const [tier, setTier] = useState<ProductTier>("nota_simple");
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qc = useQueryClient();
 
   const priceForTier = tier === "expert_report" ? PRET_EXPERT_EUR : PRET_NOTA_SIMPLE_EUR;
 
-  // Reset when opened
+  // Reset when opened; clear poll timer when modal closes
   useEffect(() => {
     if (open) {
       setStep("confirm");
       setClientSecret(null);
+      setPaymentIntentId(null);
       setPollCount(0);
       setTier("nota_simple");
+    } else if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
   }, [open]);
 
@@ -252,55 +318,28 @@ function PaymentModal({
       const res = await apiRequest("POST", "/api/payment/create", payload);
       const data = await res.json();
       if (!data.clientSecret) throw new Error("No client secret");
+      const pi =
+        typeof data.paymentIntentId === "string" ? data.paymentIntentId : undefined;
+      if (!pi) throw new Error(tr.missingPaymentId);
+      if (!stripePromise) {
+        toast({ title: tr.payError, description: tr.missingStripePk, variant: "destructive" });
+        setStep("confirm");
+        return;
+      }
       setClientSecret(data.clientSecret);
-      await confirmAndProcess(
-        data.clientSecret,
-        tier,
-        typeof data.paymentIntentId === "string" ? data.paymentIntentId : undefined
-      );
+      setPaymentIntentId(pi);
+      setStep("payment");
     } catch (err: any) {
       toast({ title: tr.payError, description: err.message, variant: "destructive" });
       setStep("confirm");
     }
   };
 
-  const confirmAndProcess = async (
-    _secret: string,
-    productTier: ProductTier,
-    paymentIntentId?: string
-  ) => {
+  const confirmAndProcess = async (productTier: ProductTier, pi: string) => {
     try {
-      if (productTier === "nota_simple") {
-        setStep("processing");
-        const reportRes = await apiRequest("POST", "/api/reports", {
-          type: "nota_simple",
-          status: "pending",
-          referenciaCatastral: propertyInfo?.referenciaCatastral ?? "",
-          address: propertyInfo?.address ?? "",
-          cadastralJson: JSON.stringify(propertyInfo ?? {}),
-          financialJson: JSON.stringify(financialData ?? {}),
-        });
-        const report = await reportRes.json();
-        await apiRequest("PATCH", `/api/reports/${report.id}`, { status: "processing" });
-        setStep("done");
-        qc.invalidateQueries({ queryKey: ["/api/reports"] });
-        onSuccess(report.id);
-        return;
-      }
-
-      if (!paymentIntentId) {
-        toast({
-          title: tr.incompletePayment,
-          description: tr.missingPaymentId,
-          variant: "destructive",
-        });
-        setStep("confirm");
-        return;
-      }
-
       setStep("processing");
       const reportRes = await apiRequest("POST", "/api/reports", {
-        type: "expert_report",
+        type: productTier === "nota_simple" ? "nota_simple" : "expert_report",
         status: "processing",
         referenciaCatastral: propertyInfo?.referenciaCatastral ?? "",
         address: propertyInfo?.address ?? "",
@@ -310,27 +349,34 @@ function PaymentModal({
       const report = await reportRes.json();
 
       await apiRequest("PATCH", `/api/reports/${report.id}`, {
-        stripeSessionId: paymentIntentId,
+        stripeSessionId: pi,
       });
-      pollPaymentFlowStatus(paymentIntentId, report.id);
+      pollPaymentFlowStatus(pi, report.id);
     } catch (err: any) {
       toast({ title: tr.generationError, description: err.message, variant: "destructive" });
-      setStep("confirm");
+      setStep("payment");
     }
   };
 
   /** Așteaptă webhook Stripe → Nota Simple → job AI (backend Python), nu /report/generate-async gol. */
-  const pollPaymentFlowStatus = async (paymentIntentId: string, rid: number) => {
+  const pollPaymentFlowStatus = async (pi: string, rid: number) => {
     let attempts = 0;
     const maxAttempts = 120;
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
     const interval = setInterval(async () => {
       attempts++;
       setPollCount(attempts);
       try {
-        const res = await apiRequest("GET", `/api/payment-flow/status/${paymentIntentId}`);
+        const res = await fetch(`/api/payment-flow/status/${encodeURIComponent(pi)}`, {
+          credentials: "include",
+        });
         if (res.status === 404) {
           if (attempts >= maxAttempts) {
             clearInterval(interval);
+            pollTimerRef.current = null;
             await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
             toast({
               title: tr.timeout,
@@ -341,20 +387,26 @@ function PaymentModal({
           }
           return;
         }
+        if (!res.ok) return;
         const data = await res.json();
         if (data.status === "failed" || data.ai_job_status === "failed") {
           clearInterval(interval);
+          pollTimerRef.current = null;
           await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
           toast({ title: tr.reportFailed, description: tr.retry, variant: "destructive" });
           onClose();
           return;
         }
-        if (data.report) {
+        if (data.report || data.client_ready) {
           clearInterval(interval);
-          const patch: Record<string, string> = {
-            status: "completed",
-            reportJson: JSON.stringify(data.report),
-          };
+          pollTimerRef.current = null;
+          const patch: Record<string, string> = { status: "completed" };
+          if (data.report) {
+            patch.reportJson = JSON.stringify(data.report);
+          }
+          if (data.nota_simple_extracted && typeof data.nota_simple_extracted === "object") {
+            patch.notaSimpleJson = JSON.stringify(data.nota_simple_extracted);
+          }
           if (typeof data.ai_job_id === "string" && data.ai_job_id) {
             patch.stripeJobId = data.ai_job_id;
           }
@@ -365,6 +417,7 @@ function PaymentModal({
           onSuccess(rid);
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
+          pollTimerRef.current = null;
           await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
           toast({ title: tr.reportTimeout, description: tr.retry, variant: "destructive" });
           onClose();
@@ -372,12 +425,14 @@ function PaymentModal({
       } catch {
         if (attempts >= maxAttempts) {
           clearInterval(interval);
+          pollTimerRef.current = null;
           await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
           toast({ title: tr.networkError, variant: "destructive" });
           onClose();
         }
       }
     }, 4000);
+    pollTimerRef.current = interval;
   };
 
   const notaBullets = [
@@ -392,8 +447,8 @@ function PaymentModal({
   ];
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && step === "confirm" && onClose()}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className={step === "payment" ? "sm:max-w-lg" : "sm:max-w-md"}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
@@ -471,6 +526,38 @@ function PaymentModal({
             </div>
           )}
 
+          {step === "payment" && clientSecret && stripePromise && paymentIntentId && (
+            <div className="space-y-3 py-1">
+              <Elements
+                stripe={stripePromise}
+                options={{
+                  clientSecret,
+                  appearance: { theme: "stripe", variables: { colorPrimary: "hsl(38, 70%, 50%)" } },
+                }}
+              >
+                <PaymentModalStripeForm
+                  submitLabel={`${tr.securePay} · ${priceForTier} €`}
+                  onPaid={() => void confirmAndProcess(tier, paymentIntentId)}
+                  onError={(msg) => {
+                    toast({ title: tr.payError, description: msg, variant: "destructive" });
+                  }}
+                />
+              </Elements>
+              <Button
+                variant="outline"
+                type="button"
+                className="w-full"
+                onClick={() => {
+                  setStep("confirm");
+                  setClientSecret(null);
+                  setPaymentIntentId(null);
+                }}
+              >
+                {tr.backToPacks}
+              </Button>
+            </div>
+          )}
+
           {step === "processing" && (
             <div className="flex flex-col items-center gap-4 py-4">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
@@ -486,17 +573,13 @@ function PaymentModal({
                     : tr.waitingAI}
                 </p>
               </div>
-              {tier === "expert_report" && (
-                <>
-                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-1000"
-                      style={{ width: `${Math.min(95, (pollCount / 120) * 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">{pollCount * 4}s {tr.elapsed}...</p>
-                </>
-              )}
+              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-1000"
+                  style={{ width: `${Math.min(95, (pollCount / 120) * 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{pollCount * 4}s {tr.elapsed}...</p>
             </div>
           )}
 
@@ -524,6 +607,7 @@ function PaymentModal({
             </Button>
           </div>
         )}
+
       </DialogContent>
     </Dialog>
   );

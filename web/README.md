@@ -20,7 +20,7 @@ AI-powered property analysis platform for Spanish real estate. Click any buildin
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
 - **Backend**: Express + TypeScript + Drizzle ORM + SQLite
 - **Map**: Mapbox GL JS v3 (loaded via CDN)
-- **Payments**: Stripe
+- **Payments**: Stripe (Payment Element pe hartă — `VITE_STRIPE_PUBLISHABLE_KEY` la build; confirmarea plății declanșează `payment_intent.succeeded` pe API la `/stripe-webhook/`)
 - **AI Reports**: Custom Railway backend
 
 ---

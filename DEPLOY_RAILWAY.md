@@ -46,10 +46,12 @@ uvicorn main:app --host 0.0.0.0 --port $PORT
 - Evenimente: `checkout.session.completed`
 - Copiază **Signing secret** și pune-l în Railway ca `STRIPE_WEBHOOK_SECRET`.
 
-Dacă folosești **PaymentIntent** (Payment Sheet / `/creeaza-plata/`), adaugă un al doilea endpoint sau aceleași evenimente pe același secret:
-- URL: `https://<domeniul-tau>.up.railway.app/stripe-webhook/`
+**App web (vesta-asset.com):** checkout-ul din hartă folosește **PaymentIntent** (`POST /creeaza-plata/` prin proxy). Este **obligatoriu** un endpoint care lovește **`/stripe-webhook/`** (nu doar `/webhook/stripe`):
+- URL: `https://<vesta-api-public>.up.railway.app/stripe-webhook/`
 - Eveniment: `payment_intent.succeeded`
-- Același `STRIPE_WEBHOOK_SECRET` trebuie să corespundă endpoint-ului configurat pentru această rută (în Stripe poți avea două endpoint-uri cu secrete diferite — pune fiecare în variabile separate dacă e cazul).
+- Signing secret → `STRIPE_WEBHOOK_SECRET` pentru acest endpoint (dacă ai și Checkout Session pe `/webhook/stripe`, poți folosi **două endpoint-uri Stripe** cu **două secrete** și două variabile în Railway, sau un singur endpoint care ascultă ambele evenimente, după cum ai configurat în Stripe).
+
+Fără `payment_intent.succeeded` pe `/stripe-webhook/`, plata reușește în browser dar **nu** se creează `DetailedReport` și nu pornește comanda Nota Simple la colaborator.
 
 ## 5. Tabele în DB
 
@@ -140,6 +142,8 @@ Serviciul **vesta-web** (React + Express) e separat de API-ul Python de mai sus.
 | Variabilă | Când | Rol |
 |-----------|------|-----|
 | `VITE_MAPBOX_TOKEN` | **Build** (`npm run build`) | Token public Mapbox; fără el, harta nu inițializează Mapbox GL în client. Setează în Railway → Variables **înainte** de deploy (Vite îl bake-uiește în bundle). |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | **Build** | **Obligatoriu pentru plată pe hartă** — cheia publică Stripe (`pk_live_…` / `pk_test_…`); aliniază-o cu `STRIPE_SECRET_KEY` de pe **vesta-api**. Fără ea, modalul „Order Nota Simple / expert” afișează eroare la pasul de plată. |
+| `VITE_GOOGLE_MAPS_JS_API_KEY` | **Build** | Opțional dacă folosești modul străzi Google + Street View (vezi codul). |
 | `VITE_PRET_NOTA_SIMPLE_EUR` | **Build** | Opțional — afișare preț Nota Simple în UI (implicit 19). Aliniază cu `PRET_NOTA_SIMPLE_EUR` pe API. |
 | `VITE_PRET_RAPORT_EXPERT_EUR` | **Build** | Opțional — afișare preț raport expert (implicit 49). Aliniază cu `PRET_RAPORT_EXPERT_EUR` pe API. |
 | `PORT` | Runtime | Railway injectează automat; nu forța alt port dacă platforma cere altul. |

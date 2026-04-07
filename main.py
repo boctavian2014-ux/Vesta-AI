@@ -1772,6 +1772,8 @@ async def payment_flow_status(payment_intent_id: str, db: Session = Depends(get_
     if not row:
         raise HTTPException(status_code=404, detail="Plată / raport negăsit")
 
+    tier = (row.product_tier or "nota_simple").strip().lower()
+
     out: dict = {
         "detailed_report_id": row.id,
         "status": row.status,
@@ -1780,6 +1782,11 @@ async def payment_flow_status(payment_intent_id: str, db: Session = Depends(get_
         "ai_job_id": row.ai_job_id,
         "pdf_url": row.pdf_url,
     }
+    if row.nota_simple_json:
+        try:
+            out["nota_simple_extracted"] = json.loads(row.nota_simple_json)
+        except json.JSONDecodeError:
+            out["nota_simple_extracted"] = None
     if row.ai_job_id:
         job = await get_job(row.ai_job_id)
         if job:
@@ -1791,6 +1798,15 @@ async def payment_flow_status(payment_intent_id: str, db: Session = Depends(get_
             out["report"] = json.loads(row.report_json)
         except json.JSONDecodeError:
             pass
+
+    st = (row.status or "").strip().lower()
+    if tier == "expert_report" and out.get("report"):
+        out["client_ready"] = True
+    elif tier == "nota_simple" and st == "completed" and bool(row.nota_simple_json):
+        out["client_ready"] = True
+    else:
+        out["client_ready"] = False
+
     return out
 
 
