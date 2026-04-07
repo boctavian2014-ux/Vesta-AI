@@ -163,7 +163,6 @@ Verificări:
 - Parsare XML cu `ET.fromstring` (nu `.json()`)
 - Răspuns JSON cu `referinta` și `data`
 - Handler global de excepții (returnează JSON)
-- `api.js` citește text înainte de parse (evită „JSON Parse error”)
 - **GET /** (health)
 - **POST /identifica-imobil/** returnează JSON (nu XML)
 
@@ -267,24 +266,9 @@ Așteptat: `[OK] Serverul răspunde`, apoi `[OK] Imobil identificat: referință
 
 ---
 
-## 4. Testare app mobilă (Expo Go)
+## 4. App mobilă
 
-1. **Pornire**
-   ```powershell
-   cd openhouse-mobile
-   npx expo start
-   ```
-2. Deschide pe telefon cu **Expo Go** (scan QR); același Wi‑Fi sau `--tunnel`.
-3. **Config**: `config.js` → `API_BASE_URL` = URL Railway (implicit deja setat).
-
-### Checklist în app
-- [ ] Harta se încarcă (satelit, regiune Spania).
-- [ ] Tap pe un punct **pe uscat în Spania** (ex. Málaga, Madrid).
-- [ ] Apare „Se identifică imobilul…” apoi **marker** pe hartă (fără fereastră „Eroare”).
-- [ ] Titlul markerului = referință cadastrală (ex. 2906701VG3807N0001AB).
-- [ ] Buton „Detalii & Raport 19€” duce la ecranul de proprietate.
-- [ ] **Nu** apare „JSON Parse error” sau „Unexpected character: I / <”.
-- [ ] La punct în mare sau în afara Spaniei: mesaj de eroare clar (Catastro / 422), nu crash.
+Folderul **openhouse-mobile** a fost scos din acest repo. Testarea manuală se face prin **web** ([vesta-asset.com](https://vesta-asset.com/) sau `cd web && npm run dev`).
 
 ---
 
@@ -294,9 +278,8 @@ Așteptat: `[OK] Serverul răspunde`, apoi `[OK] Imobil identificat: referință
 |-------------------------|-----------|
 | `CATASTRO_URL`          | Fără ovc.-catastro |
 | Răspuns Catastro        | XML parsat cu `ET.fromstring`, nu `.json()` |
-| Răspuns către mobil     | Mereu JSON cu `referinta` + `data` |
+| Răspuns API identificare | Mereu JSON cu `referinta` + `data` |
 | Erori server            | Handler global → JSON (nu HTML/text) |
-| `api.js` la erori       | `r.text()` apoi `JSON.parse`; fallback text dacă nu e JSON |
 | GET / (Railway)         | Returnează JSON health |
 
-După orice modificare relevantă: rulează `python tests_e2e.py` (local sau cu `API_URL` Railway) și parcurge checklist-ul din secțiunea 4 în Expo Go.
+După orice modificare relevantă: rulează `python tests_e2e.py` (local sau cu `API_URL` Railway) și verifică fluxul în browser pe app-ul web.

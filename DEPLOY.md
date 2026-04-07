@@ -18,7 +18,6 @@ Ai două variante: **totul pe Railway** sau **Supabase (baza de date) + Railway/
    `uvicorn main:app --host 0.0.0.0 --port $PORT`  
    (sau folosește **Procfile**: `web: uvicorn main:app --host 0.0.0.0 --port $PORT`.)
 6. După deploy, notează **URL-ul** (ex. `https://vesta-api.up.railway.app`).
-7. În **openhouse-mobile**: setează `EXPO_PUBLIC_API_URL=https://vesta-api.up.railway.app` (sau în **config.js** / build).
 
 Tabelele se creează la prima pornire (`database.py` → `create_all`).
 
@@ -66,13 +65,6 @@ Backend-ul este deja configurat pentru Supabase: folosește SSL și pooler (vezi
    - Opțional: Stripe, `CORS_ORIGINS`.
 6. Deploy → notează URL-ul (ex. `https://vesta-api.onrender.com`).
 
-### Pas 3: App mobilă
-
-În **openhouse-mobile** setezi URL-ul API-ului (Railway sau Render):
-
-- Build / env: `EXPO_PUBLIC_API_URL=https://vesta-api.up.railway.app`  
-  (sau `https://vesta-api.onrender.com`).
-
 ---
 
 ## Rezumat
@@ -82,4 +74,4 @@ Backend-ul este deja configurat pentru Supabase: folosește SSL și pooler (vezi
 | **1. Railway** | PostgreSQL Railway | FastAPI pe Railway | Un singur provider, setup rapid. |
 | **2. Supabase + Railway/Render** | PostgreSQL Supabase | FastAPI pe Railway sau Render | Vrei Supabase (Dashboard, Auth ulterior, etc.) și API separat. |
 
-În ambele variante **nu mai rulezi nimic local**: DB și API sunt în cloud; app-ul mobil doar schimbă `EXPO_PUBLIC_API_URL` la URL-ul tău de producție.
+În ambele variante poți rula doar în cloud: DB și API pe hosting; clientul web (`web/`) folosește proxy-ul Express sau URL-ul API configurat acolo.

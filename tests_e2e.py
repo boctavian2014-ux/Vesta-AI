@@ -130,18 +130,6 @@ def test_global_exception_handler():
         fail("main.py", "Lipsește handler global care returnează JSON la erori")
 
 
-def test_mobile_api_parse_safe():
-    """App mobil: la eroare nu face .json() direct (evită Unexpected character)."""
-    with open("openhouse-mobile/api.js", "r", encoding="utf-8") as f:
-        code = f.read()
-    if "await r.text()" in code or "r.text()" in code:
-        ok("api.js: citește text înainte de parse (evită JSON Parse error)")
-    elif "!r.ok" in code and "text" in code:
-        ok("api.js: tratare erori cu text")
-    else:
-        fail("api.js", "La răspuns eroare se face .json() direct (risc XML/text)")
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # BLOC 2 – E2E Golden Path (Fluxul Premium de 49€)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -292,42 +280,6 @@ def test_e2e_report_response_time():
 
     except Exception as e:
         fail("Timp răspuns /market-trend", str(e))
-
-
-def test_e2e_translations_accuracy():
-    """
-    Pasul 5 – Acuratețe traduceri: verifică că termenii financiari cheie
-    sunt definiți corect în toate cele 4 limbi (EN / RO / DE / ES).
-    """
-    try:
-        with open("openhouse-mobile/i18n.js", "r", encoding="utf-8") as f:
-            code = f.read()
-
-        checks = [
-            # (termen_cautat, limba, mesaj_eroare)
-            ("Gross Yield",       "EN", "Termenul 'Gross Yield' lipsește în EN"),
-            ("Randament Brut",    "RO", "Termenul 'Randament Brut' lipsește în RO"),
-            ("Bruttorendite",     "DE", "Termenul 'Bruttorendite' lipsește în DE"),
-            ("Rentabilidad Bruta","ES", "Termenul 'Rentabilidad Bruta' lipsește în ES"),
-            ("5-Year ROI",        "EN", "Termenul '5-Year ROI' lipsește în EN"),
-            ("ROI 5 Ani",         "RO", "Termenul 'ROI 5 Ani' lipsește în RO"),
-            ("5-Jahres-ROI",      "DE", "Termenul '5-Jahres-ROI' lipsește în DE"),
-            ("ROI a 5 Años",      "ES", "Termenul 'ROI a 5 Años' lipsește în ES"),
-        ]
-
-        all_ok = True
-        for term, lang, msg in checks:
-            if term not in code:
-                fail(f"Traducere [{lang}]", msg)
-                all_ok = False
-
-        if all_ok:
-            ok("Traduceri financiare corecte în EN / RO / DE / ES ✓")
-
-    except FileNotFoundError:
-        fail("Traduceri", "Fișierul openhouse-mobile/i18n.js nu a fost găsit")
-    except Exception as e:
-        fail("Traduceri", str(e))
 
 
 def test_e2e_pdf_chart_integrity():
@@ -543,7 +495,7 @@ def test_e2e_live_full_flow():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    print("=== Testare completă Vesta / OpenHouse ===\n")
+    print("=== Testare completă Vesta (backend + API) ===\n")
 
     print("1. Cod (importuri, constante, XML vs JSON)")
     test_imports()
@@ -551,7 +503,6 @@ def main():
     test_coordonate_la_referinta_xml()
     test_identifica_returns_json_structure()
     test_global_exception_handler()
-    test_mobile_api_parse_safe()
 
     print("\n2. API (URL =", API_URL, ")")
     test_api_health()
@@ -561,7 +512,6 @@ def main():
     test_e2e_geocoding()
     test_e2e_payment_simulation()
     test_e2e_report_quality()
-    test_e2e_translations_accuracy()
     test_e2e_pdf_chart_integrity()
     test_e2e_async_report_endpoints()
     test_e2e_vesta_financial_engine()

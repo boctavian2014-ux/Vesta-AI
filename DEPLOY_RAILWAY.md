@@ -75,8 +75,7 @@ Tabela `payment_contexts` stochează JSON mare între `/creeaza-plata/` și `pay
 
 ## 6. App mobilă
 
-În app mobilă **Vesta** (`openhouse-mobile/config.js` sau `.env` cu `EXPO_PUBLIC_API_URL`) setează:
-`API_BASE_URL = "https://<domeniul-tau>.up.railway.app"`.
+Nu mai există în acest repository. Orice client mobil nou trebuie să pointeze la același API FastAPI public (URL-ul serviciului **vesta-api** / `https://<...>.up.railway.app`) pentru rute precum `/identifica-imobil/`.
 
 ---
 
