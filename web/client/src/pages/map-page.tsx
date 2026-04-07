@@ -335,7 +335,16 @@ function PaymentModal({
     }
   };
 
-  const confirmAndProcess = async (productTier: ProductTier, pi: string) => {
+  const confirmAndProcess = async (productTier: ProductTier, pi: string | null) => {
+    if (!pi) {
+      toast({
+        title: tr.incompletePayment,
+        description: tr.missingPaymentId,
+        variant: "destructive",
+      });
+      setStep("confirm");
+      return;
+    }
     try {
       setStep("processing");
       const reportRes = await apiRequest("POST", "/api/reports", {
@@ -354,7 +363,7 @@ function PaymentModal({
       pollPaymentFlowStatus(pi, report.id);
     } catch (err: any) {
       toast({ title: tr.generationError, description: err.message, variant: "destructive" });
-      setStep("payment");
+      setStep("confirm");
     }
   };
 
@@ -374,17 +383,15 @@ function PaymentModal({
           credentials: "include",
         });
         if (res.status === 404) {
-          if (attempts >= maxAttempts) {
-            clearInterval(interval);
-            pollTimerRef.current = null;
-            await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
-            toast({
-              title: tr.timeout,
-              description: tr.timeoutDescription,
-              variant: "destructive",
-            });
-            onClose();
-          }
+          clearInterval(interval);
+          pollTimerRef.current = null;
+          await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
+          toast({
+            title: tr.timeout,
+            description: tr.timeoutDescription,
+            variant: "destructive",
+          });
+          onClose();
           return;
         }
         if (!res.ok) return;
@@ -957,9 +964,24 @@ export default function MapPage() {
           zoom: googleMapRef.current.getZoom(),
         });
       }
-      if (marker.current && selectedCoords && map.current) {
-        marker.current.setLngLat([selectedCoords.lon, selectedCoords.lat]);
-        marker.current.addTo(map.current);
+      if (googleMarkerRef.current) {
+        googleMarkerRef.current.setMap(null);
+      }
+      if (selectedCoords && map.current) {
+        if (marker.current) {
+          marker.current.setLngLat([selectedCoords.lon, selectedCoords.lat]);
+          marker.current.addTo(map.current);
+        } else {
+          const el = document.createElement("div");
+          el.style.cssText =
+            "width:24px;height:24px;border-radius:50%;background:hsl(38,70%,50%);border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.6);cursor:pointer;";
+          marker.current = new mapboxgl.Marker({ element: el })
+            .setLngLat([selectedCoords.lon, selectedCoords.lat])
+            .addTo(map.current);
+        }
+      } else if (marker.current) {
+        marker.current.remove();
+        marker.current = null;
       }
       setMapMode("satellite");
       map.current?.easeTo?.({ pitch: 45, bearing: -20, duration: 600 });
