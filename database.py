@@ -97,6 +97,7 @@ class DetailedReport(Base):
     extras_json = Column(Text, nullable=True)  # snapshot plată: cadastral_json, financial_data, market_data
     ai_job_id = Column(String, nullable=True, index=True)  # job async raport expert
     report_json = Column(Text, nullable=True)  # rezultat AI (schema expert_report)
+    nota_simple_json = Column(Text, nullable=True)  # extras structurate din Nota Simple (owner/property/debts/risk)
     pdf_url = Column(String, nullable=True)
     extracted_owner = Column(String, nullable=True)
     cargas_resumen = Column(String, nullable=True)  # rezumat Cargas din OCR (ex. "Embargo 2023, Hipoteca...")

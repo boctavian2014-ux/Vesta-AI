@@ -1,4 +1,5 @@
 import { useState, FormEvent } from "react";
+import { Link } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -235,8 +236,22 @@ export default function AuthPage() {
           </Tabs>
         </Card>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          By continuing, you agree to Vesta AI's Terms of Service.
+        <p className="text-center text-xs text-muted-foreground mt-6 leading-relaxed">
+          Continuând, confirmi că ai citit{" "}
+          <Link
+            href="/legal/terms"
+            className="text-primary underline underline-offset-2 hover:text-primary/90"
+          >
+            Termenii și condițiile
+          </Link>{" "}
+          și{" "}
+          <Link
+            href="/legal/privacy"
+            className="text-primary underline underline-offset-2 hover:text-primary/90"
+          >
+            Politica de confidențialitate
+          </Link>
+          .
         </p>
       </div>
     </div>

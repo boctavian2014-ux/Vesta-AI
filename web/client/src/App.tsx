@@ -3,6 +3,7 @@ import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
+import { UiLocaleProvider } from "@/lib/ui-locale";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
@@ -17,6 +18,8 @@ import MarketTrends from "@/pages/market-trends";
 import SavedProperties from "@/pages/saved-properties";
 import Reports from "@/pages/reports";
 import ReportDetail from "@/pages/report-detail";
+import LegalTermsPage from "@/pages/legal-terms";
+import LegalPrivacyPage from "@/pages/legal-privacy";
 import NotFound from "@/pages/not-found";
 
 // Apply dark mode by default
@@ -26,6 +29,10 @@ function applyDefaultTheme() {
 
 function AppRouter() {
   const { user, isLoading } = useAuth();
+  const [location] = useHashLocation();
+
+  const isLegalRoute =
+    location === "/legal/terms" || location === "/legal/privacy";
 
   if (isLoading) {
     return (
@@ -54,6 +61,14 @@ function AppRouter() {
   }
 
   if (!user) {
+    if (isLegalRoute) {
+      return (
+        <Switch>
+          <Route path="/legal/terms" component={LegalTermsPage} />
+          <Route path="/legal/privacy" component={LegalPrivacyPage} />
+        </Switch>
+      );
+    }
     return <AuthPage />;
   }
 
@@ -75,6 +90,8 @@ function AppRouter() {
             <Route path="/properties" component={SavedProperties} />
             <Route path="/reports" component={Reports} />
             <Route path="/reports/:id" component={ReportDetail} />
+            <Route path="/legal/terms" component={LegalTermsPage} />
+            <Route path="/legal/privacy" component={LegalPrivacyPage} />
             <Route component={NotFound} />
           </Switch>
         </main>
@@ -90,14 +107,16 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router hook={useHashLocation}>
-            <AppRouter />
-          </Router>
-        </TooltipProvider>
-      </AuthProvider>
+      <UiLocaleProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router hook={useHashLocation}>
+              <AppRouter />
+            </Router>
+          </TooltipProvider>
+        </AuthProvider>
+      </UiLocaleProvider>
     </QueryClientProvider>
   );
 }

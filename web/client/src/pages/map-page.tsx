@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 const mapboxgl = (window as any).mapboxgl;
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { detectBrowserLocale } from "@/lib/locale";
 import { useHashLocation } from "wouter/use-hash-location";
+import { StreetViewModal } from "@/components/StreetViewModal";
+import { PropertyBottomCard } from "@/components/PropertyBottomCard";
+import { identifyProperty, checkStreetViewAvailability } from "@/lib/propertyApi";
+import { getGoogleMapsBrowserKey, loadGoogleMapsJs } from "@/lib/googleMapsLoader";
+import type { PropertyPin, StreetViewMetadataResult } from "@/types/property";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -14,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   MapPin, TrendingUp, Bookmark, FileText, X, Loader2,
   AlertCircle, CheckCircle2, Building2, Satellite, Map,
-  ExternalLink, CreditCard, Eye, Maximize2, RotateCcw, RotateCw,
+  ExternalLink, CreditCard, Eye,
 } from "lucide-react";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
@@ -26,13 +31,11 @@ const PRET_EXPERT_EUR =
   Number(import.meta.env.VITE_PRET_RAPORT_EXPERT_EUR) ||
   Number(import.meta.env.VITE_PRET_EXPERT_EUR) ||
   49;
+const MAP_UI_LOCALE_KEY = "vesta_map_ui_locale";
+type UiLocale = "en" | "es";
 
-// Stiluri hartă
-const STYLES = {
-  satellite: "mapbox://styles/mapbox/satellite-streets-v12",  // Satelit aerian
-  standard:  "mapbox://styles/mapbox/satellite-streets-v12",  // Satelit la nivel sol (același stil, altă cameră)
-  dark:      "mapbox://styles/mapbox/dark-v11",               // Dark cu 3D extrusion
-};
+// Mapbox doar satelit; modul „Map” = Google Maps roadmap.
+const MAPBOX_SATELLITE_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
 
 interface PropertyInfo {
   referenciaCatastral?: string;
@@ -55,6 +58,17 @@ interface FinancialAnalysis {
   avgRentPerSqm?: number | string;
   estimatedValue?: number | string;
   monthlyRent?: number | string;
+  valuationStatus?: string;
+  valuationDiffPct?: number | null;
+  negotiationNote?: string;
+  annualCagrPct?: number | string;
+  capitalAppreciation5yPct?: number | string;
+  marketAvgSqm?: number | string | null;
+  yieldVsBenchmark?: number | string | null;
+  annualRentEstimate?: number | string | null;
+  ineDataPoints?: number;
+  dataSource?: string;
+  ineCapitalAppreciationPct?: number | string | null;
   [key: string]: any;
 }
 
@@ -63,9 +77,15 @@ interface FinancialAnalysis {
 function MetricRow({ label, value, highlight }: { label: string; value?: string | number | null; highlight?: boolean }) {
   const v = value !== undefined && value !== null && value !== "" ? String(value) : "—";
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={`text-xs font-semibold ${highlight ? "text-primary" : "text-foreground"}`}>{v}</span>
+    <div className="flex items-start justify-between gap-3 py-2 border-b border-border/50 last:border-0">
+      <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground/75">{label}</span>
+      <span
+        className={`max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words ${
+          highlight ? "text-primary" : "text-foreground"
+        }`}
+      >
+        {v}
+      </span>
     </div>
   );
 }
@@ -77,7 +97,7 @@ function ScoreBadge({ score }: { score?: number | string }) {
     : n >= 40 ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
     : "bg-red-500/15 text-red-400 border-red-500/30";
   return (
-    <div className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${cls}`}>
+    <div className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-bold ${cls}`}>
       Score: {n.toFixed(0)}/100
     </div>
   );
@@ -88,7 +108,7 @@ function ScoreBadge({ score }: { score?: number | string }) {
 type ProductTier = "nota_simple" | "expert_report";
 
 function PaymentModal({
-  open, onClose, onSuccess, propertyInfo, financialData, selectedCoords,
+  open, onClose, onSuccess, propertyInfo, financialData, selectedCoords, uiLocale,
 }: {
   open: boolean;
   onClose: () => void;
@@ -96,7 +116,94 @@ function PaymentModal({
   propertyInfo: PropertyInfo | null;
   financialData: FinancialAnalysis | null;
   selectedCoords: { lat: number; lon: number } | null;
+  uiLocale: UiLocale;
 }) {
+  const tr = uiLocale === "es"
+    ? {
+        missingCoords: "Faltan coordenadas",
+        reselect: "Selecciona de nuevo el inmueble en el mapa.",
+        payError: "Error de pago",
+        incompletePayment: "Pago incompleto",
+        missingPaymentId: "Falta el identificador del pago. Intenta de nuevo.",
+        generationError: "Error al generar",
+        timeout: "Tiempo agotado",
+        timeoutDescription: "El pago aun no esta registrado o el informe no esta disponible.",
+        reportFailed: "Informe fallido",
+        retry: "Intenta de nuevo.",
+        reportTimeout: "Tiempo de informe agotado",
+        networkError: "Error de red",
+        bulletsNota1: "Nota Simple oficial solicitada a colaboradores autorizados (Registro)",
+        bulletsNota2: "Titular, cargas, hipotecas — documento en formato PDF",
+        bulletsNota3: "Notificacion cuando el documento este disponible",
+        bulletsExpert1: "Todo lo incluido en el paquete Nota Simple (oficial)",
+        bulletsExpert2: "Informe experto AI: analisis financiero, riesgos, resumen para inversor",
+        bulletsExpert3: "Due diligence ampliada con base catastral y de mercado",
+        orderDocs: "Solicitar documentos e informe",
+        twoPacks: "Dos paquetes: Nota Simple oficial o informe experto completo con analisis AI.",
+        catastroRef: "Referencia Catastro",
+        choosePack: "Elige paquete",
+        notaTitle: "Nota Simple oficial",
+        notaSub: "De colaboradores autorizados del registro espanol",
+        expertTitle: "Informe experto completo",
+        expertSub: "Nota Simple + analisis AI y due diligence",
+        include: "Que incluye",
+        total: "Total",
+        paymentInit: "Inicializando pago...",
+        registeringOrder: "Registrando pedido",
+        generatingReport: "Generando informe",
+        sendingRequest: "Enviamos la solicitud a colaboradores oficiales para Nota Simple",
+        waitingAI: "Despues del pago: Nota Simple de colaboradores y luego analisis AI; puede tardar unos minutos",
+        elapsed: "transcurridos",
+        orderRegistered: "Pedido registrado",
+        reportProgress: "Informe en curso / generado",
+        notaDelivered: "La Nota Simple oficial se entregara por el flujo de colaboradores. Revisa en Informes.",
+        redirecting: "Redirigiendo al detalle del informe...",
+        cancel: "Cancelar",
+        payNow: "Pagar",
+      }
+    : {
+        missingCoords: "Missing coordinates",
+        reselect: "Please reselect the property on the map.",
+        payError: "Payment error",
+        incompletePayment: "Incomplete payment",
+        missingPaymentId: "Missing payment identifier. Please retry.",
+        generationError: "Generation error",
+        timeout: "Timeout",
+        timeoutDescription: "Payment is not registered yet or the report is unavailable.",
+        reportFailed: "Report failed",
+        retry: "Please retry.",
+        reportTimeout: "Report timeout",
+        networkError: "Network error",
+        bulletsNota1: "Official Nota Simple requested from authorized partners (Registro)",
+        bulletsNota2: "Owner, liens, mortgages — PDF document",
+        bulletsNota3: "Notification when the document is available",
+        bulletsExpert1: "Everything included in the official Nota Simple package",
+        bulletsExpert2: "AI expert report: financial analysis, risks, investor summary",
+        bulletsExpert3: "Extended due diligence based on cadastral and market data",
+        orderDocs: "Order documents & report",
+        twoPacks: "Two packages: official Nota Simple or full expert report with AI analysis.",
+        catastroRef: "Catastro reference",
+        choosePack: "Choose package",
+        notaTitle: "Official Nota Simple",
+        notaSub: "From authorized Spanish registry collaborators",
+        expertTitle: "Full expert report",
+        expertSub: "Nota Simple + AI analysis and due diligence",
+        include: "Includes",
+        total: "Total",
+        paymentInit: "Initializing payment...",
+        registeringOrder: "Registering order",
+        generatingReport: "Generating report",
+        sendingRequest: "Sending request to official collaborators for Nota Simple",
+        waitingAI: "After payment: Nota Simple from collaborators, then AI analysis — this may take a few minutes",
+        elapsed: "elapsed",
+        orderRegistered: "Order registered",
+        reportProgress: "Report in progress / generated",
+        notaDelivered: "The official Nota Simple will be delivered via collaborators flow. Track it in Reports.",
+        redirecting: "Redirecting to report details...",
+        cancel: "Cancel",
+        payNow: "Pay",
+      };
+
   const { toast } = useToast();
   const [step, setStep] = useState<"confirm" | "paying" | "processing" | "done">("confirm");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -120,7 +227,7 @@ function PaymentModal({
   const startPayment = async () => {
     if (!propertyInfo) return;
     if (!selectedCoords) {
-      toast({ title: "Coordonate lipsă", description: "Selectează din nou imobilul pe hartă.", variant: "destructive" });
+      toast({ title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
       return;
     }
     setStep("paying");
@@ -139,7 +246,7 @@ function PaymentModal({
           cadastral_json: propertyInfo ?? {},
           financial_data: financialData ?? {},
           market_data: {},
-          output_language: detectBrowserLocale(),
+          output_language: uiLocale,
         });
       }
       const res = await apiRequest("POST", "/api/payment/create", payload);
@@ -152,7 +259,7 @@ function PaymentModal({
         typeof data.paymentIntentId === "string" ? data.paymentIntentId : undefined
       );
     } catch (err: any) {
-      toast({ title: "Eroare la plată", description: err.message, variant: "destructive" });
+      toast({ title: tr.payError, description: err.message, variant: "destructive" });
       setStep("confirm");
     }
   };
@@ -183,8 +290,8 @@ function PaymentModal({
 
       if (!paymentIntentId) {
         toast({
-          title: "Plată incompletă",
-          description: "Lipsește identificatorul plății. Reîncearcă.",
+          title: tr.incompletePayment,
+          description: tr.missingPaymentId,
           variant: "destructive",
         });
         setStep("confirm");
@@ -207,7 +314,7 @@ function PaymentModal({
       });
       pollPaymentFlowStatus(paymentIntentId, report.id);
     } catch (err: any) {
-      toast({ title: "Eroare la generare", description: err.message, variant: "destructive" });
+      toast({ title: tr.generationError, description: err.message, variant: "destructive" });
       setStep("confirm");
     }
   };
@@ -226,8 +333,8 @@ function PaymentModal({
             clearInterval(interval);
             await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
             toast({
-              title: "Timeout",
-              description: "Plata nu e încă înregistrată sau raportul nu e disponibil.",
+              title: tr.timeout,
+              description: tr.timeoutDescription,
               variant: "destructive",
             });
             onClose();
@@ -238,7 +345,7 @@ function PaymentModal({
         if (data.status === "failed" || data.ai_job_status === "failed") {
           clearInterval(interval);
           await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
-          toast({ title: "Raport eșuat", description: "Încearcă din nou.", variant: "destructive" });
+          toast({ title: tr.reportFailed, description: tr.retry, variant: "destructive" });
           onClose();
           return;
         }
@@ -259,14 +366,14 @@ function PaymentModal({
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
           await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
-          toast({ title: "Timeout raport", description: "Încearcă din nou.", variant: "destructive" });
+          toast({ title: tr.reportTimeout, description: tr.retry, variant: "destructive" });
           onClose();
         }
       } catch {
         if (attempts >= maxAttempts) {
           clearInterval(interval);
           await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
-          toast({ title: "Eroare rețea", variant: "destructive" });
+          toast({ title: tr.networkError, variant: "destructive" });
           onClose();
         }
       }
@@ -274,14 +381,14 @@ function PaymentModal({
   };
 
   const notaBullets = [
-    "Nota Simple oficială solicitată la colaboratori autorizați (Registro)",
-    "Titular, sarcini, ipoteci — document în format PDF",
-    "Notificare când documentul e disponibil",
+    tr.bulletsNota1,
+    tr.bulletsNota2,
+    tr.bulletsNota3,
   ];
   const expertBullets = [
-    "Tot ce include pachetul Nota Simple (oficial)",
-    "Raport expert AI: analiză financiară, riscuri, rezumat investitor",
-    "Due diligence extinsă pe baza cadastrului și pieței",
+    tr.bulletsExpert1,
+    tr.bulletsExpert2,
+    tr.bulletsExpert3,
   ];
 
   return (
@@ -290,17 +397,17 @@ function PaymentModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
-            Comandă documente & raport
+            {tr.orderDocs}
           </DialogTitle>
           <DialogDescription>
-            Două pachete: Nota Simple oficială sau raport expert complet cu analiză AI.
+            {tr.twoPacks}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           {propertyInfo?.referenciaCatastral && (
             <div className="rounded-lg bg-muted/50 border border-border px-3 py-2.5 space-y-1">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Referință Catastro</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tr.catastroRef}</p>
               <p className="text-sm font-bold text-primary font-mono">{propertyInfo.referenciaCatastral}</p>
               {propertyInfo.address && <p className="text-xs text-muted-foreground">{propertyInfo.address}</p>}
             </div>
@@ -308,7 +415,7 @@ function PaymentModal({
 
           {step === "confirm" && (
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Alege pachetul</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{tr.choosePack}</p>
               <div className="grid gap-2">
                 <button
                   type="button"
@@ -320,10 +427,10 @@ function PaymentModal({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-foreground">Nota Simple oficială</span>
+                    <span className="text-sm font-semibold text-foreground">{tr.notaTitle}</span>
                     <span className="text-sm font-bold text-primary">{PRET_NOTA_SIMPLE_EUR} €</span>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1">De la colaboratori autorizați ai registrului spaniol</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">{tr.notaSub}</p>
                 </button>
                 <button
                   type="button"
@@ -335,14 +442,14 @@ function PaymentModal({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-foreground">Raport expert complet</span>
+                    <span className="text-sm font-semibold text-foreground">{tr.expertTitle}</span>
                     <span className="text-sm font-bold text-primary">{PRET_EXPERT_EUR} €</span>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1">Nota Simple + analiză AI și due diligence</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">{tr.expertSub}</p>
                 </button>
               </div>
               <div className="space-y-2 pt-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ce include</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{tr.include}</p>
                 {(tier === "nota_simple" ? notaBullets : expertBullets).map((item) => (
                   <div key={item} className="flex items-center gap-2 text-xs text-foreground">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
@@ -351,7 +458,7 @@ function PaymentModal({
                 ))}
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-border">
-                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="text-sm text-muted-foreground">{tr.total}</span>
                 <span className="text-lg font-bold text-foreground">{priceForTier} €</span>
               </div>
             </div>
@@ -360,7 +467,7 @@ function PaymentModal({
           {step === "paying" && (
             <div className="flex flex-col items-center gap-3 py-4">
               <Loader2 className="h-8 w-8 text-primary animate-spin" />
-              <p className="text-sm text-muted-foreground">Inițializare plată…</p>
+              <p className="text-sm text-muted-foreground">{tr.paymentInit}</p>
             </div>
           )}
 
@@ -371,12 +478,12 @@ function PaymentModal({
               </div>
               <div className="text-center">
                 <p className="text-sm font-semibold text-foreground">
-                  {tier === "nota_simple" ? "Înregistrăm comanda" : "Se generează raportul"}
+                  {tier === "nota_simple" ? tr.registeringOrder : tr.generatingReport}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {tier === "nota_simple"
-                    ? "Transmitem cererea către colaboratorii oficiali pentru Nota Simple"
-                    : "După plată: Nota Simple de la colaboratori, apoi analiză AI — poate dura câteva minute"}
+                    ? tr.sendingRequest
+                    : tr.waitingAI}
                 </p>
               </div>
               {tier === "expert_report" && (
@@ -387,7 +494,7 @@ function PaymentModal({
                       style={{ width: `${Math.min(95, (pollCount / 120) * 100)}%` }}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">{pollCount * 4}s elapsed…</p>
+                  <p className="text-xs text-muted-foreground">{pollCount * 4}s {tr.elapsed}...</p>
                 </>
               )}
             </div>
@@ -397,12 +504,12 @@ function PaymentModal({
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <CheckCircle2 className="h-12 w-12 text-emerald-400" />
               <p className="text-sm font-semibold text-foreground">
-                {tier === "nota_simple" ? "Comandă înregistrată" : "Raport în curs / generat"}
+                {tier === "nota_simple" ? tr.orderRegistered : tr.reportProgress}
               </p>
               <p className="text-xs text-muted-foreground">
                 {tier === "nota_simple"
-                  ? "Nota Simple oficială va fi livrată prin fluxul colaboratorilor. Urmărești în Rapoarte."
-                  : "Redirecționare către detalii raport…"}
+                  ? tr.notaDelivered
+                  : tr.redirecting}
               </p>
             </div>
           )}
@@ -410,10 +517,10 @@ function PaymentModal({
 
         {step === "confirm" && (
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={onClose} className="flex-1">Anulează</Button>
+            <Button variant="outline" onClick={onClose} className="flex-1">{tr.cancel}</Button>
             <Button onClick={startPayment} className="flex-1 gap-2">
               <CreditCard className="h-4 w-4" />
-              Plătește {priceForTier} €
+              {tr.payNow} {priceForTier} €
             </Button>
           </div>
         )}
@@ -426,13 +533,16 @@ function PaymentModal({
 
 export default function MapPage() {
   const mapContainer = useRef<HTMLDivElement | null>(null);
+  const googleMapContainerRef = useRef<HTMLDivElement | null>(null);
   const map = useRef<any>(null);
   const marker = useRef<any>(null);
+  const googleMapRef = useRef<any>(null);
+  const googleMarkerRef = useRef<any>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, navigate] = useHashLocation();
 
-  type MapMode = "satellite" | "standard" | "dark";
+  type MapMode = "satellite" | "map";
   const [mapMode, setMapMode] = useState<MapMode>("satellite");
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [propertyInfo, setPropertyInfo] = useState<PropertyInfo | null>(null);
@@ -440,33 +550,202 @@ export default function MapPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [streetViewOpen, setStreetViewOpen] = useState(false);
+  const [checkingStreetView, setCheckingStreetView] = useState(false);
+  const [streetViewMeta, setStreetViewMeta] = useState<StreetViewMetadataResult | null>(null);
+  const [bottomPropertyCardDismissed, setBottomPropertyCardDismissed] = useState(false);
+  const [uiLocale, setUiLocale] = useState<UiLocale>(() => {
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem(MAP_UI_LOCALE_KEY);
+      if (saved === "en" || saved === "es") return saved;
+    }
+    return detectBrowserLocale() === "es" ? "es" : "en";
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(MAP_UI_LOCALE_KEY, uiLocale);
+    }
+  }, [uiLocale]);
+
+  const t = uiLocale === "es"
+    ? {
+        modeSatellite: "Satelite",
+        modeMap: "Calles (Google)",
+        streetView: "Street View",
+        clickBuilding: "Haz clic en un edificio",
+        propertyAnalysis: "Analisis de propiedad",
+        queryingCatastro: "Consultando Catastro...",
+        noBuildingTitle: "No se encontro edificio",
+        noBuildingDesc: "Haz clic directamente sobre el tejado de un edificio. Haz zoom para mayor precision.",
+        catastroRef: "Referencia Catastro",
+        propertyData: "Datos del inmueble",
+        address: "Direccion",
+        municipality: "Municipio",
+        province: "Provincia",
+        area: "Superficie",
+        usage: "Uso",
+        yearBuilt: "Ano de construccion",
+        aiFinancial: "Analisis financiero AI para este inmueble",
+        financialAnalysis: "Analisis financiero",
+        calculatingYield: "Calculando rentabilidad...",
+        financialSection: "Analisis financiero",
+        grossYield: "Rentabilidad bruta",
+        netYield: "Rentabilidad neta",
+        roi5y: "ROI 5 años (modelo)",
+        pricePerSqm: "Precio/m²",
+        estimatedValue: "Precio asumido (modelo)",
+        monthlyRent: "Alquiler mensual est.",
+        annualRent: "Alquiler anual est.",
+        zoneAvgPerSqm: "Zona media venta €/m²",
+        zoneRentPerSqm: "Zona alquiler €/m²/mes",
+        valuationVsMarket: "Valoracion vs mercado",
+        vsMarketPct: "vs mercado (%)",
+        negotiationNote: "Nota negociacion",
+        marketCagr: "CAGR mercado (INE)",
+        capApp5y: "Apreciacion capital 5 años",
+        yieldVsSpain: "Rent. vs media Espana",
+        ineTrendPoints: "Puntos tendencia INE",
+        dataSource: "Fuente datos",
+        ineCapApp: "Apreciacion INE (serie)",
+        saveProperty: "Guardar propiedad",
+        orderReport: "Pedir — Nota Simple o informe experto",
+        streetViewUnavailable: "Street View no disponible",
+        missingStreetKey: "Falta VITE_GOOGLE_MAPS_JS_API_KEY.",
+        status: "Estado",
+        noBuildingError: "No se encontro edificio. Haz clic directamente en un edificio.",
+        analysisFailed: "Analisis fallido",
+        retryAnalysis: "Reintentar analisis",
+        propertySaved: "Propiedad guardada",
+        genericError: "Error",
+        selectedProperty: "Inmueble seleccionado",
+      }
+    : {
+        modeSatellite: "Satellite",
+        modeMap: "Streets (Google)",
+        streetView: "Street View",
+        clickBuilding: "Click a building",
+        propertyAnalysis: "Property analysis",
+        queryingCatastro: "Querying Catastro...",
+        noBuildingTitle: "No building found",
+        noBuildingDesc: "Click directly on a building roof. Zoom in for better precision.",
+        catastroRef: "Catastro reference",
+        propertyData: "Property data",
+        address: "Address",
+        municipality: "Municipality",
+        province: "Province",
+        area: "Area",
+        usage: "Usage",
+        yearBuilt: "Year built",
+        aiFinancial: "AI financial analysis for this property",
+        financialAnalysis: "Financial analysis",
+        calculatingYield: "Calculating yield...",
+        financialSection: "Financial analysis",
+        grossYield: "Gross yield",
+        netYield: "Net yield",
+        roi5y: "5-year ROI (model)",
+        pricePerSqm: "Price/m²",
+        estimatedValue: "Assumed list price (model)",
+        monthlyRent: "Est. monthly rent",
+        annualRent: "Est. annual rent",
+        zoneAvgPerSqm: "Zone avg sale €/m²",
+        zoneRentPerSqm: "Zone rent €/m²/mo",
+        valuationVsMarket: "Valuation vs market",
+        vsMarketPct: "vs market (%)",
+        negotiationNote: "Negotiation note",
+        marketCagr: "Market CAGR (INE)",
+        capApp5y: "5y capital appreciation",
+        yieldVsSpain: "Yield vs Spain avg.",
+        ineTrendPoints: "INE trend points",
+        dataSource: "Data source",
+        ineCapApp: "INE series appreciation",
+        saveProperty: "Save property",
+        orderReport: "Order — Nota Simple or expert report",
+        streetViewUnavailable: "Street View unavailable",
+        missingStreetKey: "Missing VITE_GOOGLE_MAPS_JS_API_KEY.",
+        status: "Status",
+        noBuildingError: "No building found. Click directly on a building.",
+        analysisFailed: "Analysis failed",
+        retryAnalysis: "Retry analysis",
+        propertySaved: "Property saved",
+        genericError: "Error",
+        selectedProperty: "Selected property",
+      };
 
   // ── mutations ──────────────────────────────────────────────────────────
-
-  const identifyMutation = useMutation({
-    mutationFn: async ({ lat, lon }: { lat: number; lon: number }) => {
-      const res = await apiRequest("POST", "/api/property/identify", { lat, lon });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Not found");
-      }
-      return res.json();
-    },
-    onSuccess: (data) => { setPropertyInfo(data); setIdentifyError(null); },
-    onError: () => {
-      setIdentifyError("Nicio clădire găsită. Fă click direct pe o clădire.");
-      setPropertyInfo(null);
-    },
-  });
 
   const financialMutation = useMutation({
     mutationFn: async (payload: PropertyInfo) => {
       const res = await apiRequest("POST", "/api/property/financial-analysis", payload);
-      return res.json();
+      return res.json() as FinancialAnalysis;
     },
     onSuccess: (data) => setFinancialData(data),
-    onError: (err: any) => toast({ title: "Analiză eșuată", description: err.message, variant: "destructive" }),
+    onError: (err: any) => toast({ title: t.analysisFailed, description: err.message, variant: "destructive" }),
   });
+
+  const identifyMutation = useMutation({
+    mutationFn: async ({ lat, lon }: { lat: number; lon: number }) => {
+      return identifyProperty(lat, lon);
+    },
+    onSuccess: (data) => {
+      setPropertyInfo(data);
+      setIdentifyError(null);
+      financialMutation.mutate(data);
+    },
+    onError: () => {
+      setIdentifyError(t.noBuildingError);
+      setPropertyInfo(null);
+    },
+  });
+
+  const beginPropertySelection = useCallback(
+    (lat: number, lon: number) => {
+      setSelectedCoords({ lat, lon });
+      setPropertyInfo(null);
+      setFinancialData(null);
+      setIdentifyError(null);
+      setStreetViewOpen(false);
+      setStreetViewMeta(null);
+      setCheckingStreetView(false);
+      setPanelOpen(true);
+
+      if (map.current) {
+        const el = document.createElement("div");
+        el.style.cssText =
+          "width:24px;height:24px;border-radius:50%;background:hsl(38,70%,50%);border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.6);cursor:pointer;";
+        if (marker.current) {
+          marker.current.setLngLat([lon, lat]);
+        } else {
+          marker.current = new mapboxgl.Marker({ element: el })
+            .setLngLat([lon, lat])
+            .addTo(map.current);
+        }
+      }
+
+      const g = (typeof window !== "undefined" ? (window as any).google : null)?.maps;
+      const gm = googleMapRef.current;
+      if (g?.Marker && gm) {
+        if (googleMarkerRef.current) {
+          googleMarkerRef.current.setPosition({ lat, lng: lon });
+          googleMarkerRef.current.setMap(gm);
+        } else {
+          googleMarkerRef.current = new g.Marker({
+            position: { lat, lng: lon },
+            map: gm,
+          });
+        }
+      }
+
+      identifyMutation.mutate({ lat, lon });
+    },
+    [identifyMutation],
+  );
+
+  const beginPropertySelectionRef = useRef(beginPropertySelection);
+  beginPropertySelectionRef.current = beginPropertySelection;
+
+  const selectedCoordsRef = useRef(selectedCoords);
+  selectedCoordsRef.current = selectedCoords;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -486,47 +765,12 @@ export default function MapPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/properties"] });
-      toast({ title: "Proprietate salvată" });
+      toast({ title: t.propertySaved });
     },
-    onError: (err: any) => toast({ title: "Eroare", description: err.message, variant: "destructive" }),
+    onError: (err: any) => toast({ title: t.genericError, description: err.message, variant: "destructive" }),
   });
 
-  // ── 3D buildings — DOAR pe modul dark, nu pe satellite sau standard ──────
-  // Pe satellite: clădirile reale sunt vizibile din aer
-  // Pe standard: Mapbox Standard are propriul sistem 3D cu texturi (nu fill-extrusion)
-  // Pe dark: adăugăm fill-extrusion cu înălțime dar fără a acoperi imaginea
-  const add3DBuildings = useCallback((mode: "satellite" | "standard" | "dark", mapInstance: any) => {
-    if (mode !== "dark") return; // satellite și standard au 3D nativ
-    if (!mapInstance.getSource("composite")) return;
-    if (mapInstance.getLayer("3d-buildings")) mapInstance.removeLayer("3d-buildings");
-
-    mapInstance.addLayer({
-      id: "3d-buildings",
-      source: "composite",
-      "source-layer": "building",
-      filter: ["==", "extrude", "true"],
-      type: "fill-extrusion",
-      minzoom: 14,
-      paint: {
-        "fill-extrusion-color": [
-          "interpolate", ["linear"], ["zoom"],
-          14, "hsl(220, 12%, 22%)",
-          18, "hsl(220, 18%, 32%)",
-        ],
-        "fill-extrusion-height": [
-          "interpolate", ["linear"], ["zoom"],
-          14, 0, 14.05, ["get", "height"],
-        ],
-        "fill-extrusion-base": [
-          "interpolate", ["linear"], ["zoom"],
-          14, 0, 14.05, ["get", "min_height"],
-        ],
-        "fill-extrusion-opacity": 0.85,
-      },
-    });
-  }, []);
-
-  // ── init map ───────────────────────────────────────────────────────────
+  // ── init Mapbox (satelit only) ─────────────────────────────────────────
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -534,7 +778,7 @@ export default function MapPage() {
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: STYLES.satellite,
+      style: MAPBOX_SATELLITE_STYLE,
       center: [-3.7038, 40.4168],
       zoom: 17,
       pitch: 45,
@@ -546,77 +790,98 @@ export default function MapPage() {
     map.current.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "top-right");
     map.current.addControl(new mapboxgl.ScaleControl(), "bottom-left");
 
-    map.current.on("style.load", () => {
-      add3DBuildings("satellite", map.current);
-    });
-
     map.current.on("click", (e: any) => {
-      const { lat, lng: lon } = e.lngLat;
-
-      const el = document.createElement("div");
-      el.style.cssText = `width:24px;height:24px;border-radius:50%;background:hsl(38,70%,50%);border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.6);cursor:pointer;`;
-
-      if (marker.current) {
-        marker.current.setLngLat([lon, lat]);
-      } else {
-        marker.current = new mapboxgl.Marker({ element: el })
-          .setLngLat([lon, lat])
-          .addTo(map.current);
-      }
-
-      setSelectedCoords({ lat, lon });
-      setPropertyInfo(null);
-      setFinancialData(null);
-      setIdentifyError(null);
-      setPanelOpen(true);
-
-      identifyMutation.mutate({ lat, lon });
+      beginPropertySelectionRef.current(e.lngLat.lat, e.lngLat.lng);
     });
 
-    return () => { map.current?.remove(); map.current = null; };
+    return () => {
+      map.current?.remove();
+      map.current = null;
+    };
   }, []);
 
-  // ── switch map mode ────────────────────────────────────────────────────
+  // ── Google Maps roadmap când modul ≠ satelit ────────────────────────────
 
-  const switchMode = useCallback((next: "satellite" | "standard" | "dark") => {
-    setMapMode(next);
-    if (!map.current) return;
+  useLayoutEffect(() => {
+    if (mapMode !== "map") return;
+    const key = getGoogleMapsBrowserKey();
+    const container = googleMapContainerRef.current;
+    if (!key || !container) return;
 
-    const applyCamera = () => {
-      const center = selectedCoords
-        ? [selectedCoords.lon, selectedCoords.lat]
-        : map.current.getCenter().toArray();
+    let cancelled = false;
+    loadGoogleMapsJs(key).then(() => {
+      if (cancelled || !googleMapContainerRef.current) return;
+      const g = (window as any).google?.maps;
+      if (!g?.Map) return;
 
-      if (next === "satellite") {
-        // Vedere aeriană — pitch mic, zoom mediu
-        map.current.easeTo({ pitch: 45, zoom: 17, bearing: -20, duration: 900 });
-      } else if (next === "standard") {
-        // Nivel sol — pitch maxim (pietonal), zoom foarte mare, satelit culori reale
-        map.current.easeTo({ center, pitch: 85, zoom: 20, bearing: map.current.getBearing(), duration: 1200 });
-      } else if (next === "dark") {
-        map.current.easeTo({ pitch: 50, zoom: 17, duration: 800 });
+      if (!googleMapRef.current) {
+        const c = map.current?.getCenter();
+        const z = map.current?.getZoom() ?? 17;
+        googleMapRef.current = new g.Map(googleMapContainerRef.current, {
+          center: c ? { lat: c.lat, lng: c.lng } : { lat: 40.4168, lng: -3.7038 },
+          zoom: Math.round(z),
+          mapTypeId: g.MapTypeId.ROADMAP,
+          streetViewControl: false,
+          mapTypeControl: true,
+          fullscreenControl: true,
+        });
+        googleMapRef.current.addListener("click", (e: any) => {
+          if (e.latLng) beginPropertySelectionRef.current(e.latLng.lat(), e.latLng.lng());
+        });
+      } else if (map.current) {
+        const c = map.current.getCenter();
+        googleMapRef.current.setCenter({ lat: c.lat, lng: c.lng });
+        googleMapRef.current.setZoom(Math.round(map.current.getZoom()));
       }
+
+      const sel = selectedCoordsRef.current;
+      if (sel && googleMapRef.current && g.Marker) {
+        if (googleMarkerRef.current) {
+          googleMarkerRef.current.setPosition({ lat: sel.lat, lng: sel.lon });
+          googleMarkerRef.current.setMap(googleMapRef.current);
+        } else {
+          googleMarkerRef.current = new g.Marker({
+            position: { lat: sel.lat, lng: sel.lon },
+            map: googleMapRef.current,
+          });
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
     };
+  }, [mapMode]);
 
-    // Dacă trecem între satellite ⇔ standard nu schimbăm stilul (același)
-    // Dacă trecem la/de la dark, schimbăm stilul
-    const currentStyle = map.current.getStyle()?.name ?? "";
-    const needsStyleChange =
-      (next === "dark" && mapMode !== "dark") ||
-      (next !== "dark" && mapMode === "dark");
+  // ── switch: satelit Mapbox ↔ străzi Google ─────────────────────────────
 
-    if (needsStyleChange) {
-      map.current.setStyle(STYLES[next]);
-      map.current.once("style.load", () => {
-        add3DBuildings(next, map.current);
-        if (marker.current && selectedCoords) marker.current.addTo(map.current);
-        applyCamera();
-      });
-    } else {
-      // Doar mișcă camera, fără reload stil
-      applyCamera();
-    }
-  }, [mapMode, add3DBuildings, selectedCoords]);
+  const switchMode = useCallback(
+    (next: "satellite" | "map") => {
+      if (next === mapMode) return;
+      if (next === "map") {
+        if (!getGoogleMapsBrowserKey()) {
+          toast({ title: t.genericError, description: t.missingStreetKey, variant: "destructive" });
+          return;
+        }
+        setMapMode("map");
+        return;
+      }
+      if (googleMapRef.current && map.current) {
+        const c = googleMapRef.current.getCenter();
+        map.current.jumpTo({
+          center: [c.lng(), c.lat()],
+          zoom: googleMapRef.current.getZoom(),
+        });
+      }
+      if (marker.current && selectedCoords && map.current) {
+        marker.current.setLngLat([selectedCoords.lon, selectedCoords.lat]);
+        marker.current.addTo(map.current);
+      }
+      setMapMode("satellite");
+      map.current?.easeTo?.({ pitch: 45, bearing: -20, duration: 600 });
+    },
+    [mapMode, toast, t, selectedCoords],
+  );
 
   const closePanel = useCallback(() => {
     setPanelOpen(false);
@@ -624,37 +889,108 @@ export default function MapPage() {
     setFinancialData(null);
     setSelectedCoords(null);
     setIdentifyError(null);
-    if (marker.current) { marker.current.remove(); marker.current = null; }
+    setStreetViewOpen(false);
+    setStreetViewMeta(null);
+    setCheckingStreetView(false);
+    setBottomPropertyCardDismissed(false);
+    if (marker.current) {
+      marker.current.remove();
+      marker.current = null;
+    }
+    if (googleMarkerRef.current) {
+      googleMarkerRef.current.setMap(null);
+      googleMarkerRef.current = null;
+    }
   }, []);
 
-  // Street View modal
-  const [streetViewOpen, setStreetViewOpen] = useState(false);
+  useEffect(() => {
+    setBottomPropertyCardDismissed(false);
+  }, [selectedCoords?.lat, selectedCoords?.lon]);
 
-  // Google Maps embed — street view via cbll param (no API key needed)
-  // Format: /maps?q=&layer=c&cbll=lat,lon  
-  const streetViewEmbedUrl = selectedCoords
-    ? `https://maps.google.com/maps?q=&layer=c&cbll=${selectedCoords.lat},${selectedCoords.lon}&cbp=11,0,0,0,0&output=embed&z=18`
-    : null;
-
-  const streetViewUrl = selectedCoords
-    ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${selectedCoords.lat},${selectedCoords.lon}`
-    : null;
+  const selectedProperty = useMemo<PropertyPin | null>(() => {
+    if (!selectedCoords) return null;
+    const ref = propertyInfo?.referenciaCatastral || `${selectedCoords.lat},${selectedCoords.lon}`;
+    const title =
+      propertyInfo?.address ||
+      (propertyInfo?.referenciaCatastral
+        ? `${t.selectedProperty} ${propertyInfo.referenciaCatastral}`
+        : t.selectedProperty);
+    const scoreRaw = financialData?.opportunityScore ?? propertyInfo?.oportunityScore;
+    const scoreNum = scoreRaw != null ? Number(scoreRaw) : undefined;
+    return {
+      id: String(ref),
+      title,
+      lat: selectedCoords.lat,
+      lng: selectedCoords.lon,
+      address: propertyInfo?.address,
+      opportunityScore: Number.isFinite(scoreNum as number) ? scoreNum : undefined,
+    };
+  }, [selectedCoords, propertyInfo, financialData]);
 
   const isIdentifying = identifyMutation.isPending;
+  const streetViewAvailable = !checkingStreetView && streetViewMeta?.status === "OK";
+
+  useEffect(() => {
+    if (!selectedProperty) {
+      setStreetViewMeta(null);
+      setCheckingStreetView(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckingStreetView(true);
+    checkStreetViewAvailability(selectedProperty.lat, selectedProperty.lng, {
+      source: "outdoor",
+      radius: 25,
+    })
+      .then((meta) => {
+        if (!cancelled) setStreetViewMeta(meta);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingStreetView(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProperty]);
+
+  const openStreetView = useCallback(() => {
+    if (!selectedProperty) return;
+    if (checkingStreetView) return;
+    if (!streetViewAvailable) {
+      toast({
+        title: t.streetViewUnavailable,
+        description: streetViewMeta?.status === "MISSING_API_KEY"
+          ? t.missingStreetKey
+          : `${t.status}: ${streetViewMeta?.status ?? "UNKNOWN"}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    setStreetViewOpen(true);
+  }, [selectedProperty, checkingStreetView, streetViewAvailable, streetViewMeta, toast, t.missingStreetKey, t.status, t.streetViewUnavailable]);
 
   return (
     <div className="relative h-[calc(100vh-3rem)] w-full overflow-hidden">
-      {/* Map */}
-      <div ref={mapContainer} className="absolute inset-0 w-full h-full" data-testid="map-container" />
+      {/* Mapbox satelit */}
+      <div
+        ref={mapContainer}
+        className={`absolute inset-0 w-full h-full ${mapMode === "satellite" ? "z-[5] opacity-100" : "z-0 opacity-0 pointer-events-none"}`}
+        data-testid="map-container"
+      />
+      {/* Google roadmap (străzi) */}
+      <div
+        ref={googleMapContainerRef}
+        className={`absolute inset-0 w-full h-full ${mapMode === "map" ? "z-[5] opacity-100" : "z-0 opacity-0 pointer-events-none"}`}
+        data-testid="google-map-container"
+      />
 
       {/* Top bar — 3 mode switcher + Street View */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
         {/* Mode switcher pill */}
         <div className="flex items-center bg-black/75 backdrop-blur-sm border border-white/10 rounded-full shadow-xl overflow-hidden">
           {([
-            { key: "satellite", label: "Satelit",   icon: <Satellite className="h-3.5 w-3.5" /> },
-            { key: "standard",  label: "3D Sol",    icon: <Building2  className="h-3.5 w-3.5" /> },
-            { key: "dark",      label: "Hartă",     icon: <Map        className="h-3.5 w-3.5" /> },
+            { key: "satellite", label: t.modeSatellite,   icon: <Satellite className="h-3.5 w-3.5" /> },
+            { key: "map", label: t.modeMap, icon: <Map className="h-3.5 w-3.5" /> },
           ] as const).map(({ key, label, icon }) => (
             <button
               key={key}
@@ -671,42 +1007,31 @@ export default function MapPage() {
           ))}
         </div>
 
-        {/* Google Street View button — apare mereu dar mai vizibil după click */}
-        <a
-          href={streetViewUrl ?? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=40.4168,-3.7038`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Deschide Google Street View"
-          className="flex items-center gap-1.5 bg-black/75 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-xs text-white hover:bg-black/90 transition-colors shadow-xl"
+        {/* Google Street View button */}
+        <button
+          type="button"
+          title={t.streetView}
+          onClick={openStreetView}
+          disabled={!selectedProperty || !streetViewAvailable}
+          className="flex items-center gap-1.5 bg-black/75 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-xs text-white hover:bg-black/90 transition-colors shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Eye className="h-3.5 w-3.5" /> Street View
-        </a>
+          <Eye className="h-3.5 w-3.5" /> {t.streetView}
+        </button>
 
-        {/* Rotation controls — only in 3D Sol mode */}
-        {mapMode === "standard" && (
-          <div className="flex items-center gap-1 bg-black/75 backdrop-blur-sm border border-white/10 rounded-full shadow-xl overflow-hidden">
-            <button
-              onClick={() => map.current?.easeTo({ bearing: (map.current.getBearing() - 45), duration: 500 })}
-              className="flex items-center gap-1 px-3 py-2 text-xs text-white hover:bg-white/10 transition-colors"
-              title="Rotire stânga"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-            <span className="text-white/40 text-xs">|</span>
-            <button
-              onClick={() => map.current?.easeTo({ bearing: (map.current.getBearing() + 45), duration: 500 })}
-              className="flex items-center gap-1 px-3 py-2 text-xs text-white hover:bg-white/10 transition-colors"
-              title="Rotire dreapta"
-            >
-              <RotateCw className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
+        <select
+          value={uiLocale}
+          onChange={(e: any) => setUiLocale(e.target.value as UiLocale)}
+          className="rounded-full border border-white/20 bg-black/70 px-3 py-2 text-xs text-white"
+          aria-label="Language selector"
+        >
+          <option value="en">EN</option>
+          <option value="es">ES</option>
+        </select>
 
-        {!panelOpen && mapMode !== "standard" && (
+        {!panelOpen && (
           <div className="hidden md:flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-xs text-white/80">
             <MapPin className="h-3 w-3 text-primary" />
-            Click pe clădire
+            {t.clickBuilding}
           </div>
         )}
       </div>
@@ -726,30 +1051,32 @@ export default function MapPage() {
               <CardHeader className="pb-3 pt-4 px-4 shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-primary" />
-                    <CardTitle className="text-sm font-semibold">Analiză Proprietate</CardTitle>
+                    <Building2 className="h-8 w-8 shrink-0 text-primary" />
+                    <CardTitle className="text-[2rem] font-extrabold text-foreground leading-tight tracking-tight">
+                      {t.propertyAnalysis}
+                    </CardTitle>
                   </div>
                   <Button variant="ghost" size="icon" onClick={closePanel} className="h-7 w-7">
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
                 {selectedCoords && (
-                  <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                  <p className="text-xs font-mono text-foreground/80 mt-1.5">
                     {selectedCoords.lat.toFixed(5)}, {selectedCoords.lon.toFixed(5)}
                   </p>
                 )}
               </CardHeader>
               <Separator />
 
-              <CardContent className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <CardContent className="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-foreground">
                 {/* Identifying */}
                 {isIdentifying && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                      <span className="text-xs text-muted-foreground">Interogare Catastro…</span>
+                      <span className="text-sm text-foreground/80">{t.queryingCatastro}</span>
                     </div>
-                    {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-3 w-full" />)}
+                    {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-4 w-full" />)}
                   </div>
                 )}
 
@@ -758,9 +1085,9 @@ export default function MapPage() {
                   <div className="flex flex-col items-center gap-3 py-10 text-center">
                     <AlertCircle className="h-9 w-9 text-muted-foreground/50" />
                     <div>
-                      <p className="text-sm font-medium text-foreground">Nicio clădire găsită</p>
-                      <p className="text-xs text-muted-foreground mt-1 max-w-[220px]">
-                        Fă click direct pe acoperișul unei clădiri. Zoom in pentru mai multă precizie.
+                      <p className="text-sm font-medium text-foreground">{t.noBuildingTitle}</p>
+                      <p className="text-sm text-foreground/75 mt-1 max-w-[240px] leading-relaxed">
+                        {t.noBuildingDesc}
                       </p>
                     </div>
                   </div>
@@ -771,9 +1098,9 @@ export default function MapPage() {
                   <div className="space-y-4">
                     {/* Catastro ref */}
                     {propertyInfo.referenciaCatastral && (
-                      <div className="rounded-lg bg-primary/10 border border-primary/20 px-3 py-2.5">
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Referință Catastro</p>
-                        <p className="text-sm font-bold text-primary font-mono tracking-wide">
+                      <div className="rounded-lg bg-primary/10 border border-primary/20 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-foreground/80 mb-1">{t.catastroRef}</p>
+                        <p className="text-base font-bold text-primary font-mono tracking-wide break-all">
                           {propertyInfo.referenciaCatastral}
                         </p>
                       </div>
@@ -781,52 +1108,133 @@ export default function MapPage() {
 
                     {/* Details */}
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Date Imobil</p>
-                      {propertyInfo.address && <MetricRow label="Adresă" value={propertyInfo.address} />}
-                      {propertyInfo.municipio && <MetricRow label="Municipiu" value={propertyInfo.municipio} />}
-                      {propertyInfo.provincia && <MetricRow label="Provincie" value={propertyInfo.provincia} />}
-                      {propertyInfo.superficie && <MetricRow label="Suprafață" value={`${propertyInfo.superficie} m²`} />}
-                      {propertyInfo.uso && <MetricRow label="Utilizare" value={propertyInfo.uso} />}
-                      {propertyInfo.anoConstruccion && <MetricRow label="An construcție" value={propertyInfo.anoConstruccion} />}
+                      <p className="text-xs font-bold uppercase tracking-wider text-foreground/85 mb-2">{t.propertyData}</p>
+                      {propertyInfo.address && <MetricRow label={t.address} value={propertyInfo.address} />}
+                      {propertyInfo.municipio && <MetricRow label={t.municipality} value={propertyInfo.municipio} />}
+                      {propertyInfo.provincia && <MetricRow label={t.province} value={propertyInfo.provincia} />}
+                      {propertyInfo.superficie && <MetricRow label={t.area} value={`${propertyInfo.superficie} m²`} />}
+                      {propertyInfo.uso && <MetricRow label={t.usage} value={propertyInfo.uso} />}
+                      {propertyInfo.anoConstruccion && <MetricRow label={t.yearBuilt} value={propertyInfo.anoConstruccion} />}
                     </div>
 
                     <Separator />
 
                     {/* Financial */}
-                    {!financialData && !financialMutation.isPending && (
-                      <div className="text-center py-2 space-y-3">
-                        <TrendingUp className="h-7 w-7 text-primary/50 mx-auto" />
-                        <p className="text-xs text-muted-foreground">Analiză financiară AI pentru acest imobil</p>
-                        <Button className="w-full" onClick={() => financialMutation.mutate(propertyInfo)}>
-                          <TrendingUp className="mr-2 h-4 w-4" /> Analiză Financiară
+                    {financialMutation.isPending && !financialData && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                          <span className="text-sm text-foreground/80">{t.calculatingYield}</span>
+                        </div>
+                        {[1,2,3,4].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+                      </div>
+                    )}
+
+                    {!financialData && !financialMutation.isPending && financialMutation.isError && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 space-y-2">
+                        <p className="text-sm font-medium text-destructive">{t.analysisFailed}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => financialMutation.mutate(propertyInfo)}
+                        >
+                          <TrendingUp className="mr-2 h-4 w-4" /> {t.retryAnalysis}
                         </Button>
                       </div>
                     )}
 
-                    {financialMutation.isPending && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                          <span className="text-xs text-muted-foreground">Calcul randament…</span>
-                        </div>
-                        {[1,2,3,4].map(i => <Skeleton key={i} className="h-3 w-full" />)}
+                    {!financialData && !financialMutation.isPending && !financialMutation.isError && (
+                      <div className="text-center py-2 space-y-3">
+                        <TrendingUp className="h-7 w-7 text-primary/50 mx-auto" />
+                        <p className="text-sm text-foreground/80">{t.aiFinancial}</p>
+                        <Button className="w-full" onClick={() => financialMutation.mutate(propertyInfo)}>
+                          <TrendingUp className="mr-2 h-4 w-4" /> {t.financialAnalysis}
+                        </Button>
                       </div>
                     )}
 
                     {financialData && (
                       <div className="space-y-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Analiză Financiară</p>
-                        {financialData.grossYield != null && <MetricRow label="Randament brut" value={`${parseFloat(String(financialData.grossYield)).toFixed(2)}%`} highlight />}
-                        {financialData.netYield != null && <MetricRow label="Randament net" value={`${parseFloat(String(financialData.netYield)).toFixed(2)}%`} highlight />}
-                        {financialData.roi != null && <MetricRow label="ROI" value={`${parseFloat(String(financialData.roi)).toFixed(2)}%`} highlight />}
-                        {financialData.pricePerSqm != null && <MetricRow label="Preț/m²" value={`€${parseFloat(String(financialData.pricePerSqm)).toLocaleString()}`} />}
-                        {financialData.estimatedValue != null && <MetricRow label="Valoare estimată" value={`€${parseFloat(String(financialData.estimatedValue)).toLocaleString()}`} />}
-                        {financialData.monthlyRent != null && <MetricRow label="Chirie lunară est." value={`€${parseFloat(String(financialData.monthlyRent)).toLocaleString()}`} />}
+                        <p className="text-xs font-bold uppercase tracking-wider text-foreground/85">{t.financialSection}</p>
+                        {financialData.grossYield != null && Number.isFinite(parseFloat(String(financialData.grossYield))) && (
+                          <MetricRow label={t.grossYield} value={`${parseFloat(String(financialData.grossYield)).toFixed(2)}%`} highlight />
+                        )}
+                        {financialData.netYield != null && Number.isFinite(parseFloat(String(financialData.netYield))) && (
+                          <MetricRow label={t.netYield} value={`${parseFloat(String(financialData.netYield)).toFixed(2)}%`} highlight />
+                        )}
+                        {financialData.roi != null && Number.isFinite(parseFloat(String(financialData.roi))) && (
+                          <MetricRow label={t.roi5y} value={`${parseFloat(String(financialData.roi)).toFixed(2)}%`} highlight />
+                        )}
+                        {financialData.pricePerSqm != null && Number.isFinite(parseFloat(String(financialData.pricePerSqm))) && (
+                          <MetricRow label={t.pricePerSqm} value={`€${parseFloat(String(financialData.pricePerSqm)).toLocaleString()}`} />
+                        )}
+                        {financialData.estimatedValue != null && Number.isFinite(parseFloat(String(financialData.estimatedValue))) && (
+                          <MetricRow label={t.estimatedValue} value={`€${parseFloat(String(financialData.estimatedValue)).toLocaleString()}`} />
+                        )}
+                        {financialData.monthlyRent != null && Number.isFinite(parseFloat(String(financialData.monthlyRent))) && (
+                          <MetricRow label={t.monthlyRent} value={`€${parseFloat(String(financialData.monthlyRent)).toLocaleString()}`} />
+                        )}
+                        {financialData.annualRentEstimate != null && Number.isFinite(parseFloat(String(financialData.annualRentEstimate))) && (
+                          <MetricRow label={t.annualRent} value={`€${parseFloat(String(financialData.annualRentEstimate)).toLocaleString()}`} />
+                        )}
+                        {financialData.marketAvgSqm != null && Number.isFinite(parseFloat(String(financialData.marketAvgSqm))) && (
+                          <MetricRow label={t.zoneAvgPerSqm} value={`€${parseFloat(String(financialData.marketAvgSqm)).toLocaleString()}`} />
+                        )}
+                        {financialData.avgRentPerSqm != null && Number.isFinite(parseFloat(String(financialData.avgRentPerSqm))) && (
+                          <MetricRow label={t.zoneRentPerSqm} value={`€${parseFloat(String(financialData.avgRentPerSqm)).toFixed(2)}`} />
+                        )}
+                        {financialData.yieldVsBenchmark != null && Number.isFinite(parseFloat(String(financialData.yieldVsBenchmark))) && (
+                          <MetricRow label={t.yieldVsSpain} value={`${parseFloat(String(financialData.yieldVsBenchmark)) >= 0 ? "+" : ""}${parseFloat(String(financialData.yieldVsBenchmark)).toFixed(2)} pp`} />
+                        )}
+                        {financialData.annualCagrPct != null && Number.isFinite(parseFloat(String(financialData.annualCagrPct))) && (
+                          <MetricRow label={t.marketCagr} value={`${parseFloat(String(financialData.annualCagrPct)).toFixed(2)}%`} />
+                        )}
+                        {financialData.capitalAppreciation5yPct != null && Number.isFinite(parseFloat(String(financialData.capitalAppreciation5yPct))) && (
+                          <MetricRow label={t.capApp5y} value={`${parseFloat(String(financialData.capitalAppreciation5yPct)).toFixed(2)}%`} />
+                        )}
+                        {financialData.ineCapitalAppreciationPct != null && Number.isFinite(parseFloat(String(financialData.ineCapitalAppreciationPct))) && (
+                          <MetricRow label={t.ineCapApp} value={`${parseFloat(String(financialData.ineCapitalAppreciationPct)).toFixed(2)}%`} />
+                        )}
+                        {financialData.valuationStatus && (
+                          <MetricRow label={t.valuationVsMarket} value={financialData.valuationStatus} />
+                        )}
+                        {financialData.valuationDiffPct != null && financialData.valuationDiffPct !== undefined && Number.isFinite(Number(financialData.valuationDiffPct)) && (
+                          <MetricRow label={t.vsMarketPct} value={`${Number(financialData.valuationDiffPct) >= 0 ? "+" : ""}${Number(financialData.valuationDiffPct).toFixed(1)}%`} />
+                        )}
+                        {financialData.ineDataPoints != null && (
+                          <MetricRow label={t.ineTrendPoints} value={String(financialData.ineDataPoints)} />
+                        )}
+                        {financialData.dataSource && (
+                          <MetricRow label={t.dataSource} value={financialData.dataSource} />
+                        )}
+                        {financialData.negotiationNote ? (
+                          <div className="rounded-md border border-border/60 bg-muted/40 px-3 py-3 mt-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/85 mb-2">{t.negotiationNote}</p>
+                            <p className="text-sm text-foreground leading-relaxed">{financialData.negotiationNote}</p>
+                          </div>
+                        ) : null}
                         {financialData.opportunityScore != null && (
                           <div className="flex justify-center pt-1">
                             <ScoreBadge score={financialData.opportunityScore} />
                           </div>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full text-sm font-medium text-foreground/80 hover:text-foreground"
+                          onClick={() => financialMutation.mutate(propertyInfo)}
+                          disabled={financialMutation.isPending}
+                        >
+                          {financialMutation.isPending ? (
+                            <span className="inline-flex items-center gap-2">
+                              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                              {t.calculatingYield}
+                            </span>
+                          ) : (
+                            t.financialAnalysis
+                          )}
+                        </Button>
                       </div>
                     )}
 
@@ -837,15 +1245,16 @@ export default function MapPage() {
                       <Button
                         variant="outline"
                         className="w-full gap-2"
-                        onClick={() => setStreetViewOpen(true)}
+                        onClick={openStreetView}
+                        disabled={!streetViewAvailable}
                         data-testid="open-street-view"
                       >
                         <Eye className="h-4 w-4" />
-                        Street View 360°
+                        {t.streetView} 360°
                       </Button>
                       <Button variant="secondary" className="w-full" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
                         {saveMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bookmark className="mr-2 h-4 w-4" />}
-                        Salvează Proprietatea
+                        {t.saveProperty}
                       </Button>
                       <Button
                         className="w-full font-semibold"
@@ -853,7 +1262,7 @@ export default function MapPage() {
                         data-testid="order-full-report"
                       >
                         <FileText className="mr-2 h-4 w-4" />
-                        Comandă — Nota Simple sau raport expert
+                        {t.orderReport}
                       </Button>
                     </div>
                   </div>
@@ -875,74 +1284,31 @@ export default function MapPage() {
         propertyInfo={propertyInfo}
         financialData={financialData}
         selectedCoords={selectedCoords}
+        uiLocale={uiLocale}
       />
 
-      {/* Street View Modal — fullscreen iframe 360° */}
-      <AnimatePresence>
-        {streetViewOpen && (
-          <motion.div
-            key="sv-modal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 bg-black flex flex-col"
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 bg-black/90 border-b border-white/10 shrink-0">
-              <div className="flex items-center gap-2">
-                <Eye className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold text-white">Street View 360°</span>
-                {selectedCoords && (
-                  <span className="text-xs text-white/50 font-mono ml-2">
-                    {selectedCoords.lat.toFixed(5)}, {selectedCoords.lon.toFixed(5)}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Open in Google Maps */}
-                <a
-                  href={streetViewUrl ?? ""}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors px-2 py-1"
-                >
-                  <Maximize2 className="h-3.5 w-3.5" /> Deschide complet
-                </a>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setStreetViewOpen(false)}
-                  className="h-8 w-8 text-white hover:text-white hover:bg-white/10"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+      {/* Bottom property card + Street View modal (over satellite map) */}
+      {!streetViewOpen && selectedProperty && !bottomPropertyCardDismissed && (
+        <PropertyBottomCard
+          property={selectedProperty}
+          checkingStreetView={checkingStreetView}
+          streetViewMeta={streetViewMeta}
+          locale={uiLocale}
+          onOpenStreetView={openStreetView}
+          onClose={closePanel}
+          onKeepSatellite={() => setBottomPropertyCardDismissed(true)}
+        />
+      )}
 
-            {/* iframe Street View */}
-            <div className="flex-1 relative">
-              {streetViewEmbedUrl ? (
-                <iframe
-                  key={streetViewEmbedUrl}
-                  src={streetViewEmbedUrl}
-                  className="absolute inset-0 w-full h-full border-0"
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  title="Street View"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-white/50">
-                  <div className="text-center space-y-2">
-                    <Eye className="h-10 w-10 mx-auto opacity-30" />
-                    <p className="text-sm">Fă click pe o clădire mai întâi</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <StreetViewModal
+        open={streetViewOpen}
+        lat={selectedProperty?.lat ?? null}
+        lng={selectedProperty?.lng ?? null}
+        title={selectedProperty?.title}
+        metadata={streetViewMeta}
+        locale={uiLocale}
+        onClose={() => setStreetViewOpen(false)}
+      />
     </div>
   );
 }

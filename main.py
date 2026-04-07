@@ -1456,6 +1456,7 @@ async def proceseaza_nota_simple(
         if report:
             report.extracted_owner = titular or report.extracted_owner
             report.cargas_resumen = cargas_resumen or report.cargas_resumen
+            report.nota_simple_json = json.dumps(extracted, ensure_ascii=False)
             report.status = "completed"
             db.commit()
             # Dirección pentru scrisoare: din proprietate dacă există, altfel din OCR
@@ -1545,6 +1546,7 @@ async def upload_nota_simple(
 
     report.extracted_owner = titular or report.extracted_owner
     report.cargas_resumen = cargas_resumen or report.cargas_resumen
+    report.nota_simple_json = json.dumps(extracted, ensure_ascii=False)
     report.status = "completed"
     report.pdf_url = f"/static/letters/{filename_pdf}"
     db.commit()
@@ -1609,6 +1611,32 @@ async def verifica_raport(request_id: str, db: Session = Depends(get_db)):
         if prop and prop.address:
             result["address"] = prop.address
     return result
+
+
+@app.get("/nota-simple/structured/{report_id}", tags=["nota-simple"])
+async def nota_simple_structured_debug(report_id: int, db: Session = Depends(get_db)):
+    """
+    Endpoint debug: returnează JSON-ul structurat extras din Nota Simple pentru un raport.
+    """
+    report = db.query(DetailedReport).filter(DetailedReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Raport negăsit")
+
+    parsed: dict = {}
+    if report.nota_simple_json:
+        try:
+            parsed = json.loads(report.nota_simple_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=422, detail="nota_simple_json invalid (neparsabil)")
+
+    return {
+        "report_id": report.id,
+        "status": report.status,
+        "external_request_id": report.external_request_id,
+        "has_nota_simple_json": bool(report.nota_simple_json),
+        "nota_simple_raw": parsed,
+        "structured": parsed.get("structured") if isinstance(parsed, dict) else None,
+    }
 
 
 @app.post("/financial-analysis")
@@ -1823,6 +1851,7 @@ async def webhook_registru(request: Request, data: dict, db: Session = Depends(g
         if not extracted.get("error"):
             report.extracted_owner = extracted.get("titular") or report.extracted_owner
             report.cargas_resumen = extracted.get("cargas") or report.cargas_resumen
+            report.nota_simple_json = json.dumps(extracted, ensure_ascii=False)
             nota_text = _nota_text_from_extraction(extracted)
         db.commit()
 

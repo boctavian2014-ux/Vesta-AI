@@ -1,4 +1,4 @@
-import { useLocation } from "wouter";
+import { Link } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import {
   Map,
@@ -111,6 +111,14 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="pb-4">
+        <div className="px-2 pb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <Link href="/legal/terms" className="hover:text-foreground hover:underline">
+            Termeni
+          </Link>
+          <Link href="/legal/privacy" className="hover:text-foreground hover:underline">
+            Confidențialitate
+          </Link>
+        </div>
         <SidebarSeparator className="mb-3" />
         <div className="flex items-center gap-2 px-2">
           <Avatar className="h-8 w-8 shrink-0">

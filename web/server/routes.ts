@@ -6,7 +6,10 @@ import MemoryStore from "memorystore";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { registerSchema, loginSchema, type Report } from "@shared/schema";
-import { buildFinancialAnalysisUpstreamBody } from "./financialPayload";
+import {
+  buildFinancialAnalysisUpstreamBody,
+  normalizeFinancialAnalysisForClient,
+} from "./financialPayload";
 
 const SessionStore = MemoryStore(session);
 
@@ -208,11 +211,12 @@ export async function registerRoutes(
           body: JSON.stringify(upstreamBody),
         }
       );
-      const data = await response.json();
+      const data = (await response.json()) as Record<string, unknown>;
       if (!response.ok) {
         return res.status(response.status).json(data);
       }
-      return res.json(data);
+      const normalized = normalizeFinancialAnalysisForClient(data, upstreamBody);
+      return res.json(normalized);
     } catch (err: any) {
       return res.status(500).json({ message: "Failed to get financial analysis", error: err.message });
     }

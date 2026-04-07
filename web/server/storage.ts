@@ -9,6 +9,56 @@ import { eq, and } from "drizzle-orm";
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
+
+function ensureSchema() {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT 'now'
+    );
+
+    CREATE TABLE IF NOT EXISTS saved_properties (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      referencia_catastral TEXT,
+      address TEXT,
+      lat TEXT,
+      lon TEXT,
+      price_per_sqm TEXT,
+      avg_rent_per_sqm TEXT,
+      gross_yield TEXT,
+      net_yield TEXT,
+      roi TEXT,
+      opportunity_score TEXT,
+      saved_at TEXT NOT NULL DEFAULT 'now',
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      property_id INTEGER,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      stripe_session_id TEXT,
+      stripe_job_id TEXT,
+      referencia_catastral TEXT,
+      address TEXT,
+      cadastral_json TEXT,
+      financial_json TEXT,
+      nota_simple_json TEXT,
+      report_json TEXT,
+      created_at TEXT NOT NULL DEFAULT 'now',
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+  `);
+}
+
+ensureSchema();
 
 export const db = drizzle(sqlite);
 

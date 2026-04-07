@@ -62,6 +62,7 @@ ALTER TABLE detailed_reports ADD COLUMN IF NOT EXISTS product_tier VARCHAR;
 ALTER TABLE detailed_reports ADD COLUMN IF NOT EXISTS extras_json TEXT;
 ALTER TABLE detailed_reports ADD COLUMN IF NOT EXISTS ai_job_id VARCHAR;
 ALTER TABLE detailed_reports ADD COLUMN IF NOT EXISTS report_json TEXT;
+ALTER TABLE detailed_reports ADD COLUMN IF NOT EXISTS nota_simple_json TEXT;
 
 CREATE TABLE IF NOT EXISTS payment_contexts (
   id VARCHAR(40) PRIMARY KEY,

@@ -12,20 +12,54 @@ from typing import Any, Optional
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
 
-SYSTEM_PROMPT = """Eres un experto inmobiliario en España. Extrae de esta Nota Simple (documento del Registro de la Propiedad) la siguiente información en español, de forma literal cuando sea posible:
+SYSTEM_PROMPT = """Eres un experto inmobiliario en España. Analiza esta Nota Simple (Registro de la Propiedad) y responde SOLO con JSON válido.
 
-1. **Titular**: Nombre completo del propietario actual (titular o titulares).
-2. **Descripción**: Descripción breve del inmueble (tipo, referencia, superficie si aparece).
-3. **Cargas**: Resumen de las cargas (Hipoteca, Embargo, Afecciones Fiscales, anotaciones preventivas). Si no hay, escribe "Sin cargas".
-4. **Caducidad de las cargas**: Busca de forma específica las fechas de caducidad (caducidad) de cada carga o embargo. Indica las fechas si aparecen en el documento (ej: "Embargo caducidad 15/03/2022", "Hipoteca sin fecha de caducidad").
-5. **Dirección**: Dirección completa del inmueble.
-6. **embargo_caducado**: Si hay algún embargo y su fecha de caducidad ya ha pasado (la fecha es anterior a hoy), pon true. Si no hay embargo o el embargo no ha caducado, pon false.
+Extrae estos campos top-level:
+- titular: nombre(s) del/los titular(es) actual(es)
+- descripcion: descripción breve del inmueble
+- cargas: resumen textual de cargas (si no hay, "Sin cargas")
+- caducidad_cargas: resumen textual de fechas de caducidad observadas
+- direccion: dirección del inmueble si aparece
+- embargo_caducado: true/false si hay embargo ya caducado por fecha
+- manual_check: true/false si la calidad del documento exige revisión humana
 
-Si el documento está borroso, escaneado con mala calidad, torcido o ilegible y no puedes extraer los datos con confianza, añade "manual_check": true. Si la imagen es clara y legible, "manual_check": false.
+Además devuelve una sección estructurada:
+- structured.owner:
+  - names: string[]
+  - ownership_type: string (pleno_dominio, nuda_propiedad, usufructo, mixto, desconocido)
+  - ownership_share: string
+- structured.property:
+  - property_type: string
+  - registry_reference: string
+  - idufir_cru: string
+  - address: string
+  - built_area_m2: number|null
+  - usable_area_m2: number|null
+  - cadastral_reference: string
+- structured.legal:
+  - rights_and_limitations: string[]
+  - annotations: string[]
+- structured.debts:
+  - items: array de objetos con:
+    - type: string (hipoteca, embargo, afeccion_fiscal, anotacion_preventiva, servidumbre, otro)
+    - creditor: string
+    - amount_eur: number|null
+    - rank: string
+    - constitution_date: string
+    - maturity_or_expiry_date: string
+    - status: string (active, cancelled, expired, unknown)
+    - notes: string
+  - total_known_amount_eur: number|null
+  - has_active_debts: boolean
+- structured.risk:
+  - legal_risk_level: string (low, medium, high)
+  - legal_risk_reasons: string[]
 
-Responde ÚNICAMENTE con un JSON válido, sin markdown ni texto extra.
-Claves: titular, descripcion, cargas, caducidad_cargas (texto con fechas de caducidad si aparecen), direccion, embargo_caducado (true/false), manual_check (opcional).
-Ejemplo: {"titular": "...", "descripcion": "...", "cargas": "...", "caducidad_cargas": "Embargo caducidad 12/01/2020", "direccion": "...", "embargo_caducado": true, "manual_check": false}
+Reglas:
+- Si falta un dato, usa "" o null según tipo.
+- No inventes datos.
+- Mantén texto literal cuando sea posible.
+- NO markdown, NO explicación fuera del JSON.
 """
 
 
@@ -70,12 +104,13 @@ def _clean_json_markdown(text: str) -> str:
     return text.strip()
 
 
-def _parse_extraction(text: str) -> dict[str, str]:
+def _parse_extraction(text: str) -> dict[str, Any]:
     """Extrage JSON din răspunsul modelului (poate conține markdown)."""
     text = (text or "").strip()
     try:
         text = _clean_json_markdown(text)
         obj = json.loads(text)
+        structured = obj.get("structured") if isinstance(obj.get("structured"), dict) else {}
         out = {
             "titular": (obj.get("titular") or "").strip(),
             "descripcion": (obj.get("descripcion") or "").strip(),
@@ -83,6 +118,7 @@ def _parse_extraction(text: str) -> dict[str, str]:
             "caducidad_cargas": (obj.get("caducidad_cargas") or "").strip(),
             "direccion": (obj.get("direccion") or "").strip(),
         }
+        out["structured"] = structured
         if "manual_check" in obj:
             out["manual_check"] = bool(obj.get("manual_check"))
         if "embargo_caducado" in obj:
@@ -91,7 +127,14 @@ def _parse_extraction(text: str) -> dict[str, str]:
     except json.JSONDecodeError:
         pass
     # Fallback: regex pentru câmpuri
-    out = {"titular": "", "descripcion": "", "cargas": "", "caducidad_cargas": "", "direccion": ""}
+    out = {
+        "titular": "",
+        "descripcion": "",
+        "cargas": "",
+        "caducidad_cargas": "",
+        "direccion": "",
+        "structured": {},
+    }
     for key in list(out.keys()):
         m = re.search(rf'"{key}"\s*:\s*"([^"]*)"', text, re.IGNORECASE)
         if m:

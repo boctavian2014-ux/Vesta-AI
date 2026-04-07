@@ -1,5 +1,6 @@
 import { useHashLocation } from "wouter/use-hash-location";
 import { useAuth } from "@/hooks/use-auth";
+import { useUiLocale } from "@/lib/ui-locale";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,13 +73,56 @@ function CustomTooltip({ active, payload, label }: any) {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { locale } = useUiLocale();
   const [, navigate] = useHashLocation();
+  const t = locale === "es"
+    ? {
+        goodMorning: "Buenos días",
+        goodAfternoon: "Buenas tardes",
+        goodEvening: "Buenas noches",
+        hello: "hola",
+        overview: "Aquí tienes tu resumen de inteligencia inmobiliaria",
+        marketBadge: "Mercado España",
+        chartTitle: "Índice de Precio de Vivienda — Tendencia reciente",
+        chartDesc: "IPV últimos 7 meses",
+        quickActions: "Acciones rápidas",
+        quickActionsDesc: "Ir a funciones clave",
+        analyzeProperty: "Analizar propiedad",
+        viewTrends: "Ver tendencias",
+        savedProperties: "Propiedades guardadas",
+        reports: "Informes",
+      }
+    : {
+        goodMorning: "Good morning",
+        goodAfternoon: "Good afternoon",
+        goodEvening: "Good evening",
+        hello: "there",
+        overview: "Here's your real estate intelligence overview",
+        marketBadge: "Spain Market",
+        chartTitle: "Housing Price Index — Recent Trend",
+        chartDesc: "IPV last 7 months",
+        quickActions: "Quick Actions",
+        quickActionsDesc: "Jump to key features",
+        analyzeProperty: "Analyze Property",
+        viewTrends: "View Trends",
+        savedProperties: "Saved Properties",
+        reports: "Reports",
+      };
+
+  const kpiCards = locale === "es"
+    ? [
+        { label: "Propiedades analizadas", value: "47", icon: Building2, description: "Total de propiedades revisadas", badge: "+3 esta semana" },
+        { label: "Rentabilidad bruta media", value: "6.2%", icon: TrendingUp, description: "Promedio en propiedades guardadas", badge: "Por encima del mercado" },
+        { label: "Puntuación de mercado", value: "72/100", icon: BarChart3, description: "Salud del mercado inmobiliario español", badge: "Estable" },
+        { label: "Informes generados", value: "12", icon: FileText, description: "Informes detallados de propiedades", badge: "2 pendientes" },
+      ]
+    : KPI_CARDS;
 
   const greeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
+    if (hour < 12) return t.goodMorning;
+    if (hour < 18) return t.goodAfternoon;
+    return t.goodEvening;
   };
 
   return (
@@ -87,20 +131,20 @@ export default function Dashboard() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">
-            {greeting()}, {user?.username ?? "there"}
+            {greeting()}, {user?.username ?? t.hello}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Here's your real estate intelligence overview
+            {t.overview}
           </p>
         </div>
         <Badge variant="secondary" className="mt-1">
-          Spain Market
+          {t.marketBadge}
         </Badge>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {KPI_CARDS.map((card) => (
+        {kpiCards.map((card) => (
           <Card key={card.label} className="border-border">
             <CardHeader className="pb-2 pt-4 px-4">
               <div className="flex items-center justify-between">
@@ -131,11 +175,9 @@ export default function Dashboard() {
         {/* Mini Chart */}
         <Card className="lg:col-span-2 border-border">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold">
-              Housing Price Index — Recent Trend
-            </CardTitle>
+            <CardTitle className="text-sm font-semibold">{t.chartTitle}</CardTitle>
             <CardDescription className="text-xs">
-              IPV (Índice de Precio de Vivienda) last 7 months
+              {t.chartDesc}
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4">
@@ -180,9 +222,9 @@ export default function Dashboard() {
         {/* Quick Actions */}
         <Card className="border-border">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold">Quick Actions</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t.quickActions}</CardTitle>
             <CardDescription className="text-xs">
-              Jump to key features
+              {t.quickActionsDesc}
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-3">
@@ -193,7 +235,7 @@ export default function Dashboard() {
             >
               <span className="flex items-center gap-2">
                 <Map className="h-4 w-4" />
-                Analyze Property
+                {t.analyzeProperty}
               </span>
               <ArrowRight className="h-4 w-4 opacity-60" />
             </Button>
@@ -206,7 +248,7 @@ export default function Dashboard() {
             >
               <span className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                View Trends
+                {t.viewTrends}
               </span>
               <ArrowRight className="h-4 w-4 opacity-60" />
             </Button>
@@ -219,7 +261,7 @@ export default function Dashboard() {
             >
               <span className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
-                Saved Properties
+                {t.savedProperties}
               </span>
               <ArrowRight className="h-4 w-4 opacity-60" />
             </Button>
@@ -232,7 +274,7 @@ export default function Dashboard() {
             >
               <span className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
-                Reports
+                {t.reports}
               </span>
               <ArrowRight className="h-4 w-4 opacity-60" />
             </Button>

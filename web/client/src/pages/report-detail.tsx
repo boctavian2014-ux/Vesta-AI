@@ -96,6 +96,32 @@ function RiskScore({ score, level }: { score?: number; level?: string }) {
   );
 }
 
+function formatEuroMaybe(v: unknown) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return `€${n.toLocaleString("ro-RO")}`;
+}
+
+function LegalRiskBadge({ level }: { level?: string }) {
+  if (!level) return null;
+  const key = String(level).toLowerCase();
+  const cfg =
+    key === "high"
+      ? { label: "HIGH", cls: "bg-red-500/15 text-red-400 border-red-500/30" }
+      : key === "medium"
+        ? { label: "MEDIUM", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" }
+        : key === "low"
+          ? { label: "LOW", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" }
+          : { label: key.toUpperCase(), cls: "bg-muted text-muted-foreground border-border" };
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold tracking-wide ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
 // ── main ──────────────────────────────────────────────────────────────────
 
 export default function ReportDetail() {
@@ -163,6 +189,7 @@ export default function ReportDetail() {
   // Parse stored data
   const cadastral = (() => { try { return report?.cadastralJson ? JSON.parse(report.cadastralJson) : null; } catch { return null; } })();
   const financial  = (() => { try { return report?.financialJson ? JSON.parse(report.financialJson) : null; } catch { return null; } })();
+  const notaSimple = (() => { try { return (report as any)?.notaSimpleJson ? JSON.parse((report as any).notaSimpleJson) : null; } catch { return null; } })();
   const fullReport = asyncReport ?? (() => { try { return report?.reportJson ? JSON.parse(report.reportJson) : null; } catch { return null; } })();
 
   const isProcessing = (report?.status === "processing" || report?.status === "pending") && !fullReport;
@@ -278,6 +305,94 @@ export default function ReportDetail() {
             {financial.pricePerSqm != null && <Row label="Preț/m²" value={`€${parseFloat(String(financial.pricePerSqm)).toLocaleString()}`} />}
             {financial.estimatedValue != null && <Row label="Valoare estimată" value={`€${parseFloat(String(financial.estimatedValue)).toLocaleString()}`} />}
             {financial.monthlyRent != null && <Row label="Chirie lunară" value={`€${parseFloat(String(financial.monthlyRent)).toLocaleString()}`} />}
+          </div>
+        </Section>
+      )}
+
+      {/* ── Nota Simple structured data ─────────────────────────────────────── */}
+      {!isLoading && notaSimple && (
+        <Section icon={<Scale className="h-4 w-4" />} title="Date extrase din Nota Simple">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Proprietar</p>
+                <Row
+                  label="Titular"
+                  value={
+                    notaSimple?.structured?.owner?.names?.length
+                      ? notaSimple.structured.owner.names.join(", ")
+                      : notaSimple?.titular
+                  }
+                />
+                <Row label="Tip proprietate" value={notaSimple?.structured?.owner?.ownership_type} />
+                <Row label="Cotă" value={notaSimple?.structured?.owner?.ownership_share} />
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Caracteristici imobil</p>
+                <Row label="Adresă" value={notaSimple?.structured?.property?.address || notaSimple?.direccion} />
+                <Row label="Tip imobil" value={notaSimple?.structured?.property?.property_type} />
+                <Row label="IDUFIR/CRU" value={notaSimple?.structured?.property?.idufir_cru} />
+                <Row label="Ref. registru" value={notaSimple?.structured?.property?.registry_reference} />
+                <Row label="Ref. cadastrală" value={notaSimple?.structured?.property?.cadastral_reference} />
+                <Row label="Suprafață construită" value={notaSimple?.structured?.property?.built_area_m2 ? `${notaSimple.structured.property.built_area_m2} m²` : null} />
+                <Row label="Suprafață utilă" value={notaSimple?.structured?.property?.usable_area_m2 ? `${notaSimple.structured.property.usable_area_m2} m²` : null} />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Datorii și sarcini</p>
+              <Row label="Rezumat" value={notaSimple?.cargas} />
+              <Row label="Caducitate sarcini" value={notaSimple?.caducidad_cargas} />
+              <Row
+                label="Total cunoscut"
+                value={formatEuroMaybe(notaSimple?.structured?.debts?.total_known_amount_eur)}
+              />
+              <Row
+                label="Are datorii active"
+                value={
+                  typeof notaSimple?.structured?.debts?.has_active_debts === "boolean"
+                    ? (notaSimple.structured.debts.has_active_debts ? "Da" : "Nu")
+                    : null
+                }
+              />
+              {Array.isArray(notaSimple?.structured?.debts?.items) &&
+                notaSimple.structured.debts.items.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    {notaSimple.structured.debts.items.map((item: any, idx: number) => (
+                      <div key={idx} className="rounded border border-border/60 px-3 py-2 text-xs">
+                        <p className="font-semibold text-foreground">
+                          {(item.type || "Sarcină").toString().toUpperCase()}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {[item.creditor, formatEuroMaybe(item.amount_eur), item.rank].filter(Boolean).join(" · ")}
+                        </p>
+                        {item.maturity_or_expiry_date && (
+                          <p className="text-muted-foreground">Scadență/caducitate: {item.maturity_or_expiry_date}</p>
+                        )}
+                        {item.notes && <p className="text-muted-foreground">{item.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </div>
+
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Risc juridic</p>
+              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                <span className="text-xs text-muted-foreground">Nivel risc</span>
+                <LegalRiskBadge level={notaSimple?.structured?.risk?.legal_risk_level} />
+              </div>
+              {Array.isArray(notaSimple?.structured?.risk?.legal_risk_reasons) &&
+                notaSimple.structured.risk.legal_risk_reasons.length > 0 && (
+                  <BulletList items={notaSimple.structured.risk.legal_risk_reasons} variant="warning" />
+                )}
+              {notaSimple?.embargo_caducado && (
+                <p className="text-xs text-amber-400 mt-2">Embargo caducat detectat: necesită verificare juridică.</p>
+              )}
+              {notaSimple?.manual_check && (
+                <p className="text-xs text-amber-400 mt-1">Documentul necesită verificare manuală (OCR low-confidence).</p>
+              )}
+            </div>
           </div>
         </Section>
       )}

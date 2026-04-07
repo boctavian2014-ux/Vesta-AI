@@ -114,6 +114,79 @@ export type FinancialAnalysisUpstreamBody = {
   what_if_price?: number;
 };
 
+/** CamelCase + extras for the web UI; Python returns snake_case (`gross_yield_pct`, …). */
+export type FinancialAnalysisClient = {
+  grossYield?: number;
+  netYield?: number;
+  roi?: number;
+  monthlyRent?: number | null;
+  pricePerSqm?: number | null;
+  avgRentPerSqm?: number;
+  estimatedValue?: number;
+  opportunityScore?: number;
+  valuationStatus?: string;
+  valuationDiffPct?: number | null;
+  negotiationNote?: string;
+  annualCagrPct?: number;
+  capitalAppreciation5yPct?: number;
+  marketAvgSqm?: number | null;
+  yieldVsBenchmark?: number | null;
+  annualRentEstimate?: number | null;
+  ineDataPoints?: number;
+  dataSource?: string;
+  ineCapitalAppreciationPct?: number | null;
+};
+
+function numFromApi(v: unknown): number | undefined {
+  if (v === null || v === undefined || v === "") return undefined;
+  const x = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+  return Number.isFinite(x) ? x : undefined;
+}
+
+export function normalizeFinancialAnalysisForClient(
+  api: Record<string, unknown>,
+  upstream: FinancialAnalysisUpstreamBody,
+): FinancialAnalysisClient {
+  const listing = upstream.property_data.listing_price;
+  const avgRent = upstream.market_data.avg_rent_sqm;
+  const opp = api.opportunity_score;
+  const oppN =
+    opp !== undefined && opp !== null && String(opp) !== ""
+      ? Math.round(Number(opp))
+      : undefined;
+
+  return {
+    grossYield: numFromApi(api.gross_yield_pct),
+    netYield: numFromApi(api.net_yield_pct),
+    roi: numFromApi(api.roi_5y_pct),
+    monthlyRent:
+      api.monthly_rent_estimate === null || api.monthly_rent_estimate === undefined
+        ? undefined
+        : numFromApi(api.monthly_rent_estimate),
+    pricePerSqm: numFromApi(api.price_per_sqm),
+    avgRentPerSqm: avgRent,
+    estimatedValue: listing,
+    opportunityScore: Number.isFinite(oppN as number) ? (oppN as number) : undefined,
+    valuationStatus: typeof api.valuation_status === "string" ? api.valuation_status : undefined,
+    valuationDiffPct:
+      api.valuation_diff_pct === null || api.valuation_diff_pct === undefined
+        ? undefined
+        : numFromApi(api.valuation_diff_pct),
+    negotiationNote: typeof api.negotiation_note === "string" ? api.negotiation_note : undefined,
+    annualCagrPct: numFromApi(api.annual_cagr_pct),
+    capitalAppreciation5yPct: numFromApi(api.capital_appreciation_5y_pct),
+    marketAvgSqm: numFromApi(api.market_avg_sqm),
+    yieldVsBenchmark: numFromApi(api.yield_vs_benchmark),
+    annualRentEstimate:
+      api.annual_rent_estimate === null || api.annual_rent_estimate === undefined
+        ? undefined
+        : numFromApi(api.annual_rent_estimate),
+    ineDataPoints: typeof api.ine_data_points === "number" ? api.ine_data_points : undefined,
+    dataSource: typeof api.data_source === "string" ? api.data_source : undefined,
+    ineCapitalAppreciationPct: numFromApi(api.ine_capital_appreciation_pct),
+  };
+}
+
 /**
  * Returns the object to JSON.stringify for the Python /financial-analysis endpoint.
  */
