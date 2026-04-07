@@ -148,10 +148,12 @@ python tests_e2e.py
 
 Testează **împotriva backend-ului local** (presupune că ai pornit `python -m uvicorn main:app --port 8000`).
 
-### Testare împotriva Railway
+### Testare împotriva API Python pe Railway
+
+`tests_e2e.py` lovește **direct** FastAPI (`/`, `/identifica-imobil/`, etc.). Folosește **URL-ul serviciului Python** din Railway (Networking), **nu** domeniul site-ului public: pe [vesta-asset.com](https://vesta-asset.com/) rutele fără prefix `/api/` pot întoarce HTML-ul SPA.
 
 ```powershell
-$env:API_URL = "https://web-production-34c2a5.up.railway.app"
+$env:API_URL = "https://<serviciu-python>.up.railway.app"
 python tests_e2e.py
 ```
 
@@ -255,9 +257,13 @@ Așteptat: `[OK] Serverul răspunde`, apoi `[OK] Imobil identificat: referință
    - Așteptat: răspuns **JSON** cu `status`, `referinta` / `ref_catastral`, `data` (ref_catastral, address, year_built, lat, lon, …). **Nu** răspuns care începe cu `<` (XML).
    - În logs Railway: **nu** apar erori SSL (SSLCertVerificationError, hostname mismatch); dacă `ENV=prod` și `fnmt_root.pem` e setat corect, request-urile Catastro folosesc CA-ul valid.
 
-### Swagger
-- https://web-production-34c2a5.up.railway.app/docs  
+### Swagger (FastAPI direct)
+- Pe serviciul Python: `https://<serviciu-python>.up.railway.app/docs`  
 - Testează **POST /identifica-imobil/** cu `{"lat": 36.72, "lon": -4.42}`.
+
+### Site producție (proxy Express)
+- App: [https://vesta-asset.com/](https://vesta-asset.com/)
+- Exemplu identificare prin proxy: `POST https://vesta-asset.com/api/property/identify` cu body JSON `{"lat":40.42056879131868,"lon":-3.705847207404546}`.
 
 ---
 

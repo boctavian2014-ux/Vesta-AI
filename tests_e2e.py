@@ -1,7 +1,8 @@
 """
 Testare completă: backend (local sau Railway) + logică Catastro.
 Rulează: python tests_e2e.py
-Opțional: API_URL=https://web-production-34c2a5.up.railway.app python tests_e2e.py
+Opțional: API_URL=https://<serviciu-python>.up.railway.app python tests_e2e.py
+    (URL direct FastAPI; nu domeniul SPA public — vezi DEPLOY_RAILWAY.md)
 """
 import os
 import sys

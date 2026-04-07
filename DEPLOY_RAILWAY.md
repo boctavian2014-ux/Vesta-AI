@@ -93,24 +93,35 @@ Tabela `payment_contexts` stochează JSON mare între `/creeaza-plata/` și `pay
 
 ## 8. Testare la distanță (fără rulare locală)
 
-URL-ul API: **https://web-production-34c2a5.up.railway.app** (dacă ai alt domeniu Railway, înlocuiești în comenzile de mai jos).
+**Site producție (app web + proxy Express):** [https://vesta-asset.com/](https://vesta-asset.com/)
 
-### În browser
-- **Health**: https://web-production-34c2a5.up.railway.app/ → ar trebui `{"message":"Serverul imobiliar este activ!"}`.
-- **Swagger**: https://web-production-34c2a5.up.railway.app/docs → poți testa toate endpoint-urile din interfață.
+Pe domeniul public, browserul folosește rutele **`/api/...`** (proxy către FastAPI). Cereri directe gen `POST /identifica-imobil/` pe același host pot întoarce **HTML** (SPA), nu JSON — folosește fie proxy-ul de mai jos, fie URL-ul **direct** al serviciului Python din Railway (cel setat în `VEST_PYTHON_API_URL`).
 
-### Test identificare imobil (Catastro) din terminal
+### În browser (app web)
+- **Site**: https://vesta-asset.com/ → încarcă aplicația.
+- **Proxy piață**: `GET https://vesta-asset.com/api/market-trend` → JSON.
+- **Proxy identificare**: `POST https://vesta-asset.com/api/property/identify` cu body `{"lat":40.42056879131868,"lon":-3.705847207404546}` → JSON cu `referenciaCatastral` (dacă upstream răspunde).
+
+### API Python direct (hostname Railway)
+
+Înlocuiește `<PYTHON_RAILWAY_URL>` cu URL-ul public al serviciului **uvicorn** din Railway (fără slash final), din **Settings → Networking**.
+
+**Health / Swagger (doar pe FastAPI):**
+- `GET <PYTHON_RAILWAY_URL>/` → mesaj health JSON.
+- `GET <PYTHON_RAILWAY_URL>/docs` → Swagger UI.
+
+**Identificare imobil (Catastro) din terminal**
 
 **PowerShell:**
 ```powershell
-$url = "https://web-production-34c2a5.up.railway.app/identifica-imobil/"
+$url = "<PYTHON_RAILWAY_URL>/identifica-imobil/"
 $body = '{"lat":36.7,"lon":-4.4}'
 Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json"
 ```
 
 **curl (bash / Git Bash / WSL):**
 ```bash
-curl -X POST "https://web-production-34c2a5.up.railway.app/identifica-imobil/" \
+curl -X POST "<PYTHON_RAILWAY_URL>/identifica-imobil/" \
   -H "Content-Type: application/json" \
   -d '{"lat":36.7,"lon":-4.4}'
 ```
@@ -133,17 +144,18 @@ Serviciul **vesta-web** (React + Express) e separat de API-ul Python de mai sus.
 | `VITE_PRET_NOTA_SIMPLE_EUR` | **Build** | Opțional — afișare preț Nota Simple în UI (implicit 19). Aliniază cu `PRET_NOTA_SIMPLE_EUR` pe API. |
 | `VITE_PRET_RAPORT_EXPERT_EUR` | **Build** | Opțional — afișare preț raport expert (implicit 49). Aliniază cu `PRET_RAPORT_EXPERT_EUR` pe API. |
 | `PORT` | Runtime | Railway injectează automat; nu forța alt port dacă platforma cere altul. |
-| `VEST_PYTHON_API_URL` | Runtime | Opțional — URL public API Python, fără slash final (ex. `https://web-production-....up.railway.app`). Implicit în cod e URL-ul de producție curent. |
+| `VEST_PYTHON_API_URL` | Runtime | **Obligatoriu în producție** — URL public al serviciului FastAPI (`uvicorn`), fără slash final (ex. `https://<serviciu-api>.up.railway.app`). Site-ul public poate fi [vesta-asset.com](https://vesta-asset.com/), dar proxy-ul Express trebuie să lovească **hostname-ul Python**, nu domeniul SPA. Fără variabilă, rutele `/api/*` care proxy-uiesc Python răspund **503**. În dev local, serverul web folosește implicit `http://127.0.0.1:8000` dacă variabila lipsește. |
 | `VESTA_INTERNAL_SYNC_SECRET` | Runtime | Același secret ca pe serviciul Python; protejează `POST /api/internal/sync-registro-report`. |
 
 ### Aliniere URL backend Python
 
-Proxy-urile din `web/server/routes.ts` folosesc `VEST_PYTHON_API_URL` sau fallback la URL-ul hardcodat. Setează variabila pe Railway dacă domeniul API diferă de implicit.
+Proxy-urile din `web/server/routes.ts` folosesc `VEST_PYTHON_API_URL` în producție; în dev, implicit `http://127.0.0.1:8000` dacă lipsește. Pe Railway, setează **întotdeauna** `VEST_PYTHON_API_URL`.
 
 `VITE_API_URL` din `web/README.md` nu este folosit astăzi de serverul Express pentru proxy; sursa de adevăr pentru URL-ul backend este `routes.ts`.
 
 ### Smoke test după deploy (web)
 
-- `GET https://<vesta-web>.up.railway.app/api/market-trend` → 200, JSON.
+- Cu domeniu propriu: `GET https://vesta-asset.com/api/market-trend` → 200, JSON.
+- Sau: `GET https://<vesta-web>.up.railway.app/api/market-trend` → 200, JSON.
 - `POST .../api/property/identify` cu body JSON `{"lat":40.42056879131868,"lon":-3.705847207404546}` → 200 și `referenciaCatastral` (dacă upstream răspunde).
 - `POST .../api/property/financial-analysis` cu body-ul din `tests_e2e.py` (`property_data` + `market_data`) → 200 și câmpuri `gross_yield_pct`, etc. Poți trimite și **direct** payload-ul normalizat de la `/api/property/identify`: serverul Express (`buildFinancialAnalysisUpstreamBody` în `web/server/financialPayload.ts`) construiește `property_data` / `market_data` din suprafață, zonă (municipiu/provincie) și ipoteze de piață, sau poți suprascrie cu `listing_price`, `market_assumptions`, sau `property_data` / `market_data` parțiale.

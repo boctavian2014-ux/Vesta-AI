@@ -10,11 +10,11 @@ App nativă pentru identificare imobile și comandă raport Nota Simple. Consum�
    npm install
    ```
 
-2. URL API: editează [config.js](config.js) sau seteză variabila de mediu:
+2. URL API (FastAPI direct, același host ca `VEST_PYTHON_API_URL` pe web): setează variabila pentru build-uri de producție; în dev, dacă lipsește, se folosește `http://127.0.0.1:8000`.
    ```bash
-   set EXPO_PUBLIC_API_URL=https://openhouse-api.up.railway.app
+   set EXPO_PUBLIC_API_URL=https://<serviciu-python>.up.railway.app
    ```
-   (Înlocuiește cu URL-ul real al backend-ului Railway.)
+   Nu folosi domeniul SPA (ex. vesta-asset.com) dacă `/identifica-imobil/` nu e proxied către Python pe același host.
 
 3. Asseturi: dacă lipsește `assets/icon.png` sau `assets/splash-icon.png`, copiază din orice template Expo sau rulează:
    ```bash

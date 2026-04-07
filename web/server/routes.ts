@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import session from "express-session";
@@ -13,9 +13,31 @@ import {
 
 const SessionStore = MemoryStore(session);
 
-const PYTHON_API_BASE = (
-  process.env.VEST_PYTHON_API_URL || "https://web-production-34c2a5.up.railway.app"
-).replace(/\/$/, "");
+// FastAPI origin for server-side proxy. Production: set VEST_PYTHON_API_URL on the web service (Python Railway URL, not the SPA domain).
+function resolvePythonApiBase(): string {
+  const fromEnv = (process.env.VEST_PYTHON_API_URL || "").trim().replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === "production") {
+    console.error(
+      "[Vesta] VEST_PYTHON_API_URL is unset — /api/* proxy routes that need Python will return 503."
+    );
+    return "";
+  }
+  return "http://127.0.0.1:8000";
+}
+
+const PYTHON_API_BASE = resolvePythonApiBase();
+
+function requirePythonApiBase(res: Response): string | null {
+  if (!PYTHON_API_BASE) {
+    res.status(503).json({
+      message:
+        "Python API is not configured. Set VEST_PYTHON_API_URL to your FastAPI base URL (no trailing slash).",
+    });
+    return null;
+  }
+  return PYTHON_API_BASE;
+}
 
 function hashPassword(password: string): string {
   // Simple hash for demo — use bcrypt in production
@@ -162,10 +184,12 @@ export async function registerRoutes(
 
   // Proxy to Railway backend — Property Identification
   app.post("/api/property/identify", async (req, res) => {
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const { lat, lon } = req.body;
       const response = await fetch(
-        `${PYTHON_API_BASE}/identifica-imobil/`,
+        `${base}/identifica-imobil/`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -199,12 +223,14 @@ export async function registerRoutes(
 
   // Proxy — Financial Analysis (adapts identify-shaped bodies → property_data / market_data)
   app.post("/api/property/financial-analysis", async (req, res) => {
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const upstreamBody = buildFinancialAnalysisUpstreamBody(
         req.body as Record<string, unknown>
       );
       const response = await fetch(
-        `${PYTHON_API_BASE}/financial-analysis`,
+        `${base}/financial-analysis`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -224,9 +250,11 @@ export async function registerRoutes(
 
   // Proxy — Market Trends
   app.get("/api/market-trend", async (_req, res) => {
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const response = await fetch(
-        `${PYTHON_API_BASE}/market-trend`
+        `${base}/market-trend`
       );
       const data = await response.json();
       return res.json(data);
@@ -260,10 +288,12 @@ export async function registerRoutes(
   // Proxy — Stripe PaymentIntent (creeaza-plata)
   app.post("/api/payment/create", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const user = req.user as any;
       const response = await fetch(
-        `${PYTHON_API_BASE}/creeaza-plata/`,
+        `${base}/creeaza-plata/`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -290,11 +320,13 @@ export async function registerRoutes(
   // Proxy — Stripe checkout session
   app.post("/api/checkout/create", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const { property_id, success_url, cancel_url } = req.body;
       const user = req.user as any;
       const response = await fetch(
-        `${PYTHON_API_BASE}/create-checkout-session`,
+        `${base}/create-checkout-session`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -317,9 +349,11 @@ export async function registerRoutes(
   // Proxy — Async report generation
   app.post("/api/report/generate", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const response = await fetch(
-        `${PYTHON_API_BASE}/report/generate-async`,
+        `${base}/report/generate-async`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -336,9 +370,11 @@ export async function registerRoutes(
   // Proxy — Poll async report status
   app.get("/api/report/status/:jobId", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const response = await fetch(
-        `${PYTHON_API_BASE}/report/async-status/${req.params.jobId}`
+        `${base}/report/async-status/${req.params.jobId}`
       );
       const data = await response.json();
       return res.json(data);
@@ -350,9 +386,11 @@ export async function registerRoutes(
   // Proxy — Plată → Nota Simple → AI: stare agregată după PaymentIntent
   app.get("/api/payment-flow/status/:paymentIntentId", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const base = requirePythonApiBase(res);
+    if (!base) return;
     try {
       const id = encodeURIComponent(req.params.paymentIntentId);
-      const response = await fetch(`${PYTHON_API_BASE}/payment-flow/status/${id}`);
+      const response = await fetch(`${base}/payment-flow/status/${id}`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         return res.status(response.status).json(data);
