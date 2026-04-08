@@ -5,6 +5,8 @@ import session from "express-session";
 import MemoryStore from "memorystore";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
+import multer from "multer";
+import * as nodemailer from "nodemailer";
 import { registerSchema, loginSchema, type Report } from "@shared/schema";
 import {
   buildFinancialAnalysisUpstreamBody,
@@ -12,6 +14,13 @@ import {
 } from "./financialPayload";
 
 const SessionStore = MemoryStore(session);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
+const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "")
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 // FastAPI origin for server-side proxy. Production: set VEST_PYTHON_API_URL on the web service (Python Railway URL, not the SPA domain).
 function resolvePythonApiBase(): string {
@@ -37,6 +46,83 @@ function requirePythonApiBase(res: Response): string | null {
     return null;
   }
   return PYTHON_API_BASE;
+}
+
+function isAdminEmail(email: string | undefined | null): boolean {
+  if (!email) return false;
+  if (ADMIN_EMAILS.size === 0) return false;
+  return ADMIN_EMAILS.has(email.trim().toLowerCase());
+}
+
+type ActorInfo = {
+  actorUserId?: number | null;
+  actorEmail?: string | null;
+  actorName?: string | null;
+};
+
+async function sendCompletedEmailToClient(report: Report) {
+  const user = await storage.getUser(report.userId);
+  const userEmail = user?.email?.trim();
+  if (!userEmail) return;
+
+  const host = (process.env.SMTP_HOST || "").trim();
+  const port = Number(process.env.SMTP_PORT || "587");
+  const smtpUser = (process.env.SMTP_USER || "").trim();
+  const smtpPassword = (process.env.SMTP_PASSWORD || "").trim();
+  const from = (process.env.SMTP_FROM || smtpUser || "no-reply@vesta.local").trim();
+  const useTls = ["1", "true", "yes"].includes((process.env.SMTP_TLS || "true").toLowerCase());
+  const webBase = (process.env.VESTA_WEB_BASE_URL || "https://vesta-asset.com").replace(/\/$/, "");
+  const reportUrl = `${webBase}/#/reports/${report.id}`;
+
+  const subject = "Vesta AI: Nota Simple este gata";
+  const text = [
+    "Buna,",
+    "",
+    "Comanda ta de Nota Simple a fost finalizata.",
+    report.address ? `Proprietate: ${report.address}` : undefined,
+    report.referenciaCatastral ? `Referinta cadastrala: ${report.referenciaCatastral}` : undefined,
+    "",
+    `Poti vedea rezultatul aici: ${reportUrl}`,
+  ].filter(Boolean).join("\n");
+
+  if (!host) {
+    console.log(`[MVP email] Completed report ${report.id} -> ${userEmail}. Configure SMTP_HOST for real sending.`);
+    return;
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port: Number.isFinite(port) ? port : 587,
+    secure: false,
+    auth: smtpUser && smtpPassword ? { user: smtpUser, pass: smtpPassword } : undefined,
+  });
+  if (useTls && typeof transporter.options === "object") {
+    (transporter.options as any).requireTLS = true;
+  }
+  await transporter.sendMail({
+    from,
+    to: userEmail,
+    subject,
+    text,
+  });
+}
+
+async function addStatusEvent(
+  reportId: number,
+  fromStatus: string | null | undefined,
+  toStatus: string,
+  actor: ActorInfo,
+  note?: string
+) {
+  await storage.createReportStatusEvent({
+    reportId,
+    fromStatus: fromStatus ?? null,
+    toStatus,
+    actorUserId: actor.actorUserId ?? null,
+    actorEmail: actor.actorEmail ?? null,
+    actorName: actor.actorName ?? null,
+    note: note ?? null,
+  });
 }
 
 function hashPassword(password: string): string {
@@ -152,7 +238,12 @@ export async function registerRoutes(
       });
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Login failed" });
-        return res.json({ id: user.id, username: user.username, email: user.email });
+        return res.json({
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          isAdmin: isAdminEmail(user.email),
+        });
       });
     } catch (err: any) {
       return res.status(400).json({ message: err.message || "Invalid data" });
@@ -165,7 +256,12 @@ export async function registerRoutes(
       if (!user) return res.status(401).json({ message: info?.message || "Authentication failed" });
       req.login(user, (err) => {
         if (err) return next(err);
-        return res.json({ id: user.id, username: user.username, email: user.email });
+        return res.json({
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          isAdmin: isAdminEmail(user.email),
+        });
       });
     })(req, res, next);
   });
@@ -179,7 +275,183 @@ export async function registerRoutes(
   app.get("/api/auth/me", (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const user = req.user as any;
-    return res.json({ id: user.id, username: user.username, email: user.email });
+    return res.json({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      isAdmin: isAdminEmail(user.email),
+    });
+  });
+
+  // Admin-only endpoints for manual Nota Simple operations.
+  app.get("/api/admin/nota-orders", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const user = req.user as any;
+    if (!isAdminEmail(user?.email)) return res.status(403).json({ message: "Forbidden" });
+    const type = String(req.query.type || "nota_simple").trim().toLowerCase();
+    const rows = await storage.getAllReports();
+    const filtered = rows
+      .filter((r) => (type ? (r.type || "").toLowerCase() === type : true))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return res.json(filtered);
+  });
+
+  app.get("/api/admin/reports/:id/audit-trail", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const user = req.user as any;
+    if (!isAdminEmail(user?.email)) return res.status(403).json({ message: "Forbidden" });
+    const rawId = req.params.id;
+    const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid report id" });
+    const report = await storage.getReportAdmin(id);
+    if (!report) return res.status(404).json({ message: "Report not found" });
+    const events = await storage.getReportStatusEvents(id);
+    return res.json(events);
+  });
+
+  app.patch("/api/admin/reports/:id/status", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const user = req.user as any;
+    if (!isAdminEmail(user?.email)) return res.status(403).json({ message: "Forbidden" });
+    const rawId = req.params.id;
+    const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid report id" });
+    const nextStatus = String(req.body?.status || "").trim().toLowerCase();
+    const allowed = new Set([
+      "paid",
+      "submitted_manual",
+      "waiting_partner",
+      "pdf_received",
+      "completed",
+      "failed_refundable",
+      "failed",
+      "refunded",
+      "processing",
+      "pending",
+    ]);
+    if (!allowed.has(nextStatus)) {
+      return res.status(400).json({ message: "Unsupported status" });
+    }
+    const report = await storage.getReportAdmin(id);
+    if (!report) return res.status(404).json({ message: "Report not found" });
+    const previousStatus = report.status;
+    const updated = await storage.updateReportAdmin(id, { status: nextStatus });
+    if (!updated) return res.status(404).json({ message: "Report not found" });
+    await addStatusEvent(
+      id,
+      previousStatus,
+      nextStatus,
+      {
+        actorUserId: user?.id ?? null,
+        actorEmail: user?.email ?? null,
+        actorName: user?.username ?? null,
+      },
+      typeof req.body?.note === "string" ? req.body.note : null
+    );
+    if (nextStatus === "completed" && previousStatus !== "completed") {
+      try {
+        await sendCompletedEmailToClient(updated);
+      } catch (err: any) {
+        console.error(`[Vesta] Failed to send completed email for report ${id}:`, err?.message || err);
+      }
+    }
+    return res.json(updated);
+  });
+
+  app.post("/api/admin/reports/:id/upload-nota-simple", upload.single("file"), async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const user = req.user as any;
+    if (!isAdminEmail(user?.email)) return res.status(403).json({ message: "Forbidden" });
+    const rawId = req.params.id;
+    const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid report id" });
+    const report = await storage.getReportAdmin(id);
+    if (!report) return res.status(404).json({ message: "Report not found" });
+    const file = req.file;
+    if (!file?.buffer?.length) return res.status(400).json({ message: "Missing file" });
+
+    const base = requirePythonApiBase(res);
+    if (!base) return;
+
+    try {
+      const beforePdf = await storage.getReportAdmin(id);
+      const statusBeforePdf = beforePdf?.status ?? null;
+      await storage.updateReportAdmin(id, { status: "pdf_received" });
+      await addStatusEvent(
+        id,
+        statusBeforePdf,
+        "pdf_received",
+        {
+          actorUserId: user?.id ?? null,
+          actorEmail: user?.email ?? null,
+          actorName: user?.username ?? null,
+        },
+        "PDF uploaded by admin"
+      );
+
+      const form = new FormData();
+      form.append("file", new Blob([file.buffer], { type: file.mimetype || "application/pdf" }), file.originalname || "nota-simple.pdf");
+
+      const pyRes = await fetch(`${base}/proceseaza-nota-simple/`, {
+        method: "POST",
+        body: form,
+      });
+      const pyData = await pyRes.json().catch(() => ({} as Record<string, unknown>));
+      if (!pyRes.ok) {
+        await storage.updateReportAdmin(id, { status: "failed_refundable" });
+        await addStatusEvent(
+          id,
+          "pdf_received",
+          "failed_refundable",
+          {
+            actorUserId: user?.id ?? null,
+            actorEmail: user?.email ?? null,
+            actorName: user?.username ?? null,
+          },
+          "OCR failed after PDF upload"
+        );
+        return res.status(pyRes.status).json(pyData);
+      }
+
+      const extracted = (pyData as any)?.extracted ?? pyData;
+      const updated = await storage.updateReportAdmin(id, {
+        status: "completed",
+        notaSimpleJson: JSON.stringify(extracted ?? {}),
+      });
+      await addStatusEvent(
+        id,
+        "pdf_received",
+        "completed",
+        {
+          actorUserId: user?.id ?? null,
+          actorEmail: user?.email ?? null,
+          actorName: user?.username ?? null,
+        },
+        "OCR succeeded"
+      );
+      if (updated) {
+        try {
+          await sendCompletedEmailToClient(updated);
+        } catch (err: any) {
+          console.error(`[Vesta] Failed to send completed email for report ${id}:`, err?.message || err);
+        }
+      }
+      return res.json({ ok: true, report: updated, extraction: pyData });
+    } catch (err: any) {
+      await storage.updateReportAdmin(id, { status: "failed_refundable" });
+      await addStatusEvent(
+        id,
+        "pdf_received",
+        "failed_refundable",
+        {
+          actorUserId: user?.id ?? null,
+          actorEmail: user?.email ?? null,
+          actorName: user?.username ?? null,
+        },
+        "Upload/OCR exception"
+      );
+      return res.status(500).json({ message: "Upload/OCR failed", error: err.message });
+    }
   });
 
   // Proxy to Railway backend — Property Identification

@@ -6,6 +6,7 @@ import {
   TrendingUp,
   Bookmark,
   FileText,
+  ClipboardList,
   LogOut,
 } from "lucide-react";
 import {
@@ -72,6 +73,9 @@ function VestaLogo() {
 export function AppSidebar() {
   const [location, navigate] = useHashLocation();
   const { user, logout } = useAuth();
+  const navItems = user?.isAdmin
+    ? [...NAV_ITEMS, { label: "Admin Orders", icon: ClipboardList, href: "/admin/orders" }]
+    : NAV_ITEMS;
 
   const initials = user?.username
     ? user.username.slice(0, 2).toUpperCase()
@@ -89,7 +93,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const isActive = location === item.href;
                 return (
                   <SidebarMenuItem key={item.href}>

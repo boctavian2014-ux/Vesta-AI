@@ -18,6 +18,7 @@ import MarketTrends from "@/pages/market-trends";
 import SavedProperties from "@/pages/saved-properties";
 import Reports from "@/pages/reports";
 import ReportDetail from "@/pages/report-detail";
+import AdminOrders from "@/pages/admin-orders";
 import LegalTermsPage from "@/pages/legal-terms";
 import LegalPrivacyPage from "@/pages/legal-privacy";
 import NotFound from "@/pages/not-found";
@@ -90,6 +91,7 @@ function AppRouter() {
             <Route path="/properties" component={SavedProperties} />
             <Route path="/reports" component={Reports} />
             <Route path="/reports/:id" component={ReportDetail} />
+            {user?.isAdmin && <Route path="/admin/orders" component={AdminOrders} />}
             <Route path="/legal/terms" component={LegalTermsPage} />
             <Route path="/legal/privacy" component={LegalPrivacyPage} />
             <Route component={NotFound} />

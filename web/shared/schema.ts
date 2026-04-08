@@ -43,6 +43,18 @@ export const reports = sqliteTable("reports", {
   createdAt: text("created_at").notNull().default("now"),
 });
 
+export const reportStatusEvents = sqliteTable("report_status_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  reportId: integer("report_id").notNull(),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  actorUserId: integer("actor_user_id"),
+  actorEmail: text("actor_email"),
+  actorName: text("actor_name"),
+  note: text("note"),
+  createdAt: text("created_at").notNull().default("now"),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -76,3 +88,4 @@ export type SavedProperty = typeof savedProperties.$inferSelect;
 export type InsertSavedProperty = z.infer<typeof insertSavedPropertySchema>;
 export type Report = typeof reports.$inferSelect;
 export type InsertReport = z.infer<typeof insertReportSchema>;
+export type ReportStatusEvent = typeof reportStatusEvents.$inferSelect;
