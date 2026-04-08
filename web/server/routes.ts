@@ -148,6 +148,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ ok: true, service: "vesta-web" });
+  });
+
   // Callback intern din API Python (fără sesiune utilizator)
   app.post("/api/internal/sync-registro-report", async (req, res) => {
     const secret = (process.env.VESTA_INTERNAL_SYNC_SECRET || "").trim();
