@@ -86,6 +86,7 @@ function ReportTypeLabel({
   s: ReturnType<typeof getReportsStrings>;
 }) {
   const labels: Record<string, string> = {
+    analysis_pack: s.typeAnalysisPack,
     nota_simple: s.typeNotaSimple,
     expert_report: s.typeExpertReport,
   };

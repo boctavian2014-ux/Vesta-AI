@@ -42,6 +42,7 @@ function shortDate(value: string): string {
 }
 
 export default function AdminOrders() {
+  const ADMIN_NOTA_TYPE = "expert_report";
   const qc = useQueryClient();
   const { toast } = useToast();
   const [selectedFiles, setSelectedFiles] = useState<Record<number, File | null>>({});
@@ -53,7 +54,7 @@ export default function AdminOrders() {
   const [loadingAuditFor, setLoadingAuditFor] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery<Report[]>({
-    queryKey: ["/api/admin/nota-orders?type=nota_simple"],
+    queryKey: [`/api/admin/nota-orders?type=${ADMIN_NOTA_TYPE}`],
     queryFn: getQueryFn({ on401: "throw" }),
     refetchInterval: 10_000,
   });
@@ -81,7 +82,7 @@ export default function AdminOrders() {
   }, [rows, search, statusFilter, actionableOnly]);
 
   const refresh = async () => {
-    await qc.invalidateQueries({ queryKey: ["/api/admin/nota-orders?type=nota_simple"] });
+    await qc.invalidateQueries({ queryKey: [`/api/admin/nota-orders?type=${ADMIN_NOTA_TYPE}`] });
   };
 
   const patchStatus = useMutation({

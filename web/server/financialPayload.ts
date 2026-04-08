@@ -85,7 +85,7 @@ function zoneMarket(body: Record<string, unknown>): { avg_sqm_price: number; avg
   return out;
 }
 
-function normalizePropertyData(o: unknown): Record<string, number> | null {
+function normalizePropertyData(o: unknown): { listing_price: number; sqm: number } | null {
   if (!o || typeof o !== "object") return null;
   const x = o as Record<string, unknown>;
   const listing = num(x.listing_price ?? x.listingPrice);

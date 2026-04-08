@@ -54,6 +54,14 @@ function isAdminEmail(email: string | undefined | null): boolean {
   return ADMIN_EMAILS.has(email.trim().toLowerCase());
 }
 
+function normalizeProductTier(raw: unknown): "analysis_pack" | "expert_report" {
+  const value = String(raw ?? "").trim().toLowerCase();
+  if (["expert", "premium", "expert_report", "full", "raport_expert"].includes(value)) {
+    return "expert_report";
+  }
+  return "analysis_pack";
+}
+
 type ActorInfo = {
   actorUserId?: number | null;
   actorEmail?: string | null;
@@ -572,7 +580,7 @@ export async function registerRoutes(
           body: JSON.stringify({
             email: user.email ?? "",
             property_id: req.body.property_id ?? 0,
-            tip: req.body.tip ?? "nota_simple",
+            tip: normalizeProductTier(req.body.tip),
             referencia_catastral: req.body.referencia_catastral ?? "",
             address: req.body.address ?? "",
             lat: req.body.lat,
@@ -605,7 +613,7 @@ export async function registerRoutes(
           body: JSON.stringify({
             property_id: property_id ?? 0,
             user_id: user.id,
-            product: req.body.product ?? "nota_simple",
+            product: normalizeProductTier(req.body.product),
             success_url: success_url ?? "https://www.perplexity.ai/computer/a/vesta-ai-dXVERI0mRBaIDCn.9K69dw/#/reports",
             cancel_url: cancel_url ?? "https://www.perplexity.ai/computer/a/vesta-ai-dXVERI0mRBaIDCn.9K69dw/#/map",
           }),

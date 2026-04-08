@@ -162,9 +162,12 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # pentru imagini satelit (analiză piscină)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # Prețuri în EUR (Stripe folosește cenți). Suprascrie din Railway Variables.
-PRET_NOTA_SIMPLE_EUR = int(os.getenv("PRET_NOTA_SIMPLE_EUR", "19"))
-PRET_RAPORT_EXPERT_EUR = int(os.getenv("PRET_RAPORT_EXPERT_EUR", "49"))
-PRET_RAPORT_EUR = PRET_NOTA_SIMPLE_EUR  # alias pentru compatibilitate (checkout implicit)
+PRET_ANALYSIS_PACK_EUR = int(
+    os.getenv("PRET_ANALYSIS_PACK_EUR", os.getenv("PRET_NOTA_SIMPLE_EUR", "20"))
+)
+PRET_NOTA_SIMPLE_EUR = PRET_ANALYSIS_PACK_EUR  # alias backward-compatible
+PRET_RAPORT_EXPERT_EUR = int(os.getenv("PRET_RAPORT_EXPERT_EUR", "50"))
+PRET_RAPORT_EUR = PRET_ANALYSIS_PACK_EUR  # alias pentru compatibilitate (checkout implicit)
 
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
@@ -269,7 +272,7 @@ class CheckoutRequest(BaseModel):
     user_id: int
     success_url: str = "https://platforma-ta.ro/success"
     cancel_url: str = "https://platforma-ta.ro/cancel"
-    product: str = "nota_simple"  # nota_simple | expert_report
+    product: str = "analysis_pack"  # analysis_pack | expert_report
 
 
 # Guest: obține sau creează user după email (fără cont obligatoriu)
@@ -281,8 +284,8 @@ class GuestEmail(BaseModel):
 class CreeazaPlataRequest(BaseModel):
     email: Optional[str] = None
     property_id: Optional[int] = None
-    # nota_simple | standard → Nota Simple prin colaboratori oficiali; expert | premium → raport expert complet
-    tip: Optional[str] = "nota_simple"
+    # analysis_pack | standard → analiza proprietate + financiară; expert | premium → raport expert + Nota Simple
+    tip: Optional[str] = "analysis_pack"
     referencia_catastral: Optional[str] = None
     address: Optional[str] = None
     lat: Optional[float] = None
@@ -292,14 +295,18 @@ class CreeazaPlataRequest(BaseModel):
 
 
 def normalize_product_tier(tip: Optional[str]) -> str:
-    t = (tip or "nota_simple").strip().lower()
+    t = (tip or "analysis_pack").strip().lower()
     if t in ("expert", "premium", "expert_report", "full", "raport_expert"):
         return "expert_report"
-    return "nota_simple"
+    if t in ("analysis_pack", "analysis", "financial", "financial_analysis", "standard", "basic"):
+        return "analysis_pack"
+    if t == "nota_simple":
+        return "analysis_pack"
+    return "analysis_pack"
 
 
 def tier_amount_eur(tier: str) -> int:
-    return PRET_RAPORT_EXPERT_EUR if tier == "expert_report" else PRET_NOTA_SIMPLE_EUR
+    return PRET_RAPORT_EXPERT_EUR if tier == "expert_report" else PRET_ANALYSIS_PACK_EUR
 
 
 _EXPERT_REPORT_LANGS = frozenset({"en", "ro", "es", "de"})
@@ -478,6 +485,60 @@ def _nota_text_from_extraction(ext: dict) -> str:
         ext.get("direccion") or "",
     ]
     return "\n\n".join(p.strip() for p in parts if p and str(p).strip())
+
+
+def _analysis_pack_from_extras(extras_json: Optional[str]) -> dict:
+    """Construiește un payload de raport financiar pentru pachetul analysis_pack."""
+    defaults = {"avg_sqm_price": 2500, "avg_rent_sqm": 12, "city": "Spain", "sqm": 80}
+    try:
+        extras = json.loads(extras_json) if extras_json else {}
+    except Exception:
+        extras = {}
+    cadastral = extras.get("cadastral_json") if isinstance(extras, dict) else {}
+    if isinstance(cadastral, str):
+        try:
+            cadastral = json.loads(cadastral)
+        except Exception:
+            cadastral = {}
+    if not isinstance(cadastral, dict):
+        cadastral = {}
+
+    def _num(v, fallback: float) -> float:
+        try:
+            if v is None or v == "":
+                return fallback
+            n = float(str(v).replace(",", "."))
+            return n if n > 0 else fallback
+        except Exception:
+            return fallback
+
+    sqm = _num(cadastral.get("superficie"), defaults["sqm"])
+    city_hint = str(cadastral.get("municipio") or cadastral.get("provincia") or "Spain").strip() or "Spain"
+    city_u = city_hint.upper()
+    priors = {
+        "MADRID": (3800, 15),
+        "BARCELONA": (4500, 16),
+        "VALENCIA": (2200, 11),
+        "MALAGA": (2800, 12),
+        "SEVILLA": (2100, 10),
+    }
+    avg_sqm_price, avg_rent_sqm = defaults["avg_sqm_price"], defaults["avg_rent_sqm"]
+    for key, val in priors.items():
+        if key in city_u:
+            avg_sqm_price, avg_rent_sqm = val
+            break
+
+    listing_price = round(sqm * avg_sqm_price)
+    property_data = {"listing_price": listing_price, "sqm": sqm}
+    market_data = {"avg_sqm_price": avg_sqm_price, "avg_rent_sqm": avg_rent_sqm, "city": city_hint}
+    ine_trend = get_market_trend()
+    engine = VestaFinancialEngine(property_data=property_data, market_data=market_data, ine_trend=ine_trend)
+    out = engine.generate_full_metrics()
+    out["ine_capital_appreciation_pct"] = get_capital_appreciation(ine_trend)
+    out["package"] = "analysis_pack"
+    out["property_data"] = property_data
+    out["market_data"] = market_data
+    return out
 
 
 def _verify_registro_partner_webhook(request: Request) -> bool:
@@ -1083,7 +1144,7 @@ async def create_checkout_session(
     body: CheckoutRequest,
     db: Session = Depends(get_db),
 ):
-    """Creează sesiune Stripe Checkout — Nota Simple oficială sau raport expert (preț din env)."""
+    """Creează sesiune Stripe Checkout — pachet analiză sau raport expert (preț din env)."""
     if not STRIPE_SECRET_KEY:
         raise HTTPException(
             status_code=503,
@@ -1102,8 +1163,8 @@ async def create_checkout_session(
         prod_name = "Raport expert Vesta (Nota Simple + analiză AI)"
         prod_desc = f"Proprietate: {prop.address or prop.ref_catastral} — pachet complet"
     else:
-        prod_name = "Nota Simple — colaboratori oficiali Registro"
-        prod_desc = f"Proprietate: {prop.address or prop.ref_catastral} — document oficial"
+        prod_name = "Pachet analiză proprietate + financiară"
+        prod_desc = f"Proprietate: {prop.address or prop.ref_catastral} — analiză investițională"
 
     try:
         session = stripe.checkout.Session.create(
@@ -1139,7 +1200,7 @@ async def create_checkout_session(
 @app.post("/creeaza-plata/")
 async def creeaza_plata(body: CreeazaPlataRequest, db: Session = Depends(get_db)):
     """
-    Creează un PaymentIntent Stripe: preț după tier (Nota Simple oficială vs raport expert).
+    Creează un PaymentIntent Stripe: preț după tier (analysis_pack vs expert_report).
     Metadata include ref. catastrală + coordonate ca să poată fi creată proprietatea la webhook dacă lipsește property_id.
     """
     if not STRIPE_SECRET_KEY:
@@ -1269,21 +1330,28 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     db.delete(snap)
 
             external_request_id = f"req_{uuid.uuid4().hex[:16]}"
+            initial_status = "processing" if tier == "expert_report" else "completed"
             report = DetailedReport(
                 property_id=property_id,
                 user_id=user.id,
-                status="processing",
+                status=initial_status,
                 external_request_id=external_request_id,
                 stripe_session_id=pi_id,
                 product_tier=tier,
                 extras_json=extras_payload,
             )
+            if tier == "analysis_pack":
+                report.report_json = json.dumps(
+                    _analysis_pack_from_extras(extras_payload),
+                    ensure_ascii=False,
+                )
             db.add(report)
             db.commit()
             db.refresh(report)
-            solicita_raport_registru(
-                db, report.id, property_id, external_request_id, prop.ref_catastral or "", product_tier=tier
-            )
+            if tier == "expert_report":
+                solicita_raport_registru(
+                    db, report.id, property_id, external_request_id, prop.ref_catastral or "", product_tier=tier
+                )
             print(f"📄 Raport creat: report_id={report.id}, request_id={external_request_id}, tier={tier}")
 
     return JSONResponse(content={"status": "success"})
@@ -1377,21 +1445,25 @@ async def webhook_stripe(request: Request, db: Session = Depends(get_db)):
     tier = normalize_product_tier(metadata.get("product_tier") or metadata.get("product"))
 
     external_request_id = f"req_{uuid.uuid4().hex[:16]}"
+    initial_status = "processing" if tier == "expert_report" else "completed"
     report = DetailedReport(
         property_id=property_id,
         user_id=user_id,
-        status="processing",
+        status=initial_status,
         external_request_id=external_request_id,
         stripe_session_id=session_id,
         product_tier=tier,
     )
+    if tier == "analysis_pack":
+        report.report_json = json.dumps(_analysis_pack_from_extras(None), ensure_ascii=False)
     db.add(report)
     db.commit()
     db.refresh(report)
 
-    solicita_raport_registru(
-        db, report.id, property_id, external_request_id, prop.ref_catastral or "", product_tier=tier
-    )
+    if tier == "expert_report":
+        solicita_raport_registru(
+            db, report.id, property_id, external_request_id, prop.ref_catastral or "", product_tier=tier
+        )
 
     return JSONResponse(content={"received": True, "report_id": report.id})
 
@@ -1801,6 +1873,8 @@ async def payment_flow_status(payment_intent_id: str, db: Session = Depends(get_
 
     st = (row.status or "").strip().lower()
     if tier == "expert_report" and out.get("report"):
+        out["client_ready"] = True
+    elif tier == "analysis_pack" and st == "completed":
         out["client_ready"] = True
     elif tier == "nota_simple" and st == "completed" and bool(row.nota_simple_json):
         out["client_ready"] = True

@@ -23,13 +23,15 @@ import {
   CreditCard, Eye,
 } from "lucide-react";
 
-/** Aliniat cu PRET_NOTA_SIMPLE_EUR / PRET_RAPORT_EXPERT_EUR pe API Python (Railway). */
-const PRET_NOTA_SIMPLE_EUR =
-  Number(import.meta.env.VITE_PRET_NOTA_SIMPLE_EUR) || 19;
+/** Aliniat cu PRET_ANALYSIS_PACK_EUR / PRET_RAPORT_EXPERT_EUR pe API Python (Railway). */
+const PRET_ANALYSIS_PACK_EUR =
+  Number(import.meta.env.VITE_PRET_ANALYSIS_PACK_EUR) ||
+  Number(import.meta.env.VITE_PRET_NOTA_SIMPLE_EUR) ||
+  20;
 const PRET_EXPERT_EUR =
   Number(import.meta.env.VITE_PRET_RAPORT_EXPERT_EUR) ||
   Number(import.meta.env.VITE_PRET_EXPERT_EUR) ||
-  49;
+  50;
 const MAP_UI_LOCALE_KEY = "vesta_map_ui_locale";
 type UiLocale = "en" | "es";
 
@@ -78,9 +80,11 @@ function MetricRow({ label, value, highlight }: { label: string; value?: string 
   const v = value !== undefined && value !== null && value !== "" ? String(value) : "—";
   return (
     <div className="flex items-start justify-between gap-3 py-2 border-b border-border/50 last:border-0">
-      <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground/75">{label}</span>
+      <span className="map-neon-muted min-w-0 flex-1 text-sm font-medium leading-snug">{label}</span>
       <span
-        className={`${highlight ? "map-neon-strong" : "text-foreground"} max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words`}
+        className={`max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words ${
+          highlight ? "map-neon-strong" : "map-neon-text"
+        }`}
       >
         {v}
       </span>
@@ -103,7 +107,7 @@ function ScoreBadge({ score }: { score?: number | string }) {
 
 // ── Payment Modal ──────────────────────────────────────────────────────────
 
-type ProductTier = "nota_simple" | "expert_report";
+type ProductTier = "analysis_pack" | "expert_report";
 
 function PaymentModalStripeForm({
   onPaid,
@@ -155,7 +159,7 @@ function PaymentModalStripeForm({
 }
 
 function PaymentModal({
-  open, onClose, onSuccess, propertyInfo, financialData, selectedCoords, uiLocale,
+  open, onClose, onSuccess, propertyInfo, financialData, selectedCoords, uiLocale, initialTier,
 }: {
   open: boolean;
   onClose: () => void;
@@ -164,6 +168,7 @@ function PaymentModal({
   financialData: FinancialAnalysis | null;
   selectedCoords: { lat: number; lon: number } | null;
   uiLocale: UiLocale;
+  initialTier: ProductTier;
 }) {
   const tr = uiLocale === "es"
     ? {
@@ -179,30 +184,31 @@ function PaymentModal({
         retry: "Intenta de nuevo.",
         reportTimeout: "Tiempo de informe agotado",
         networkError: "Error de red",
-        bulletsNota1: "Nota Simple oficial solicitada a colaboradores autorizados (Registro)",
-        bulletsNota2: "Titular, cargas, hipotecas — documento en formato PDF",
-        bulletsNota3: "Notificacion cuando el documento este disponible",
-        bulletsExpert1: "Todo lo incluido en el paquete Nota Simple (oficial)",
-        bulletsExpert2: "Informe experto AI: analisis financiero, riesgos, resumen para inversor",
-        bulletsExpert3: "Due diligence ampliada con base catastral y de mercado",
-        orderDocs: "Solicitar documentos e informe",
-        twoPacks: "Dos paquetes: Nota Simple oficial o informe experto completo con analisis AI.",
+        bulletsAnalysis1: "Analisis de propiedad + analisis financiero",
+        bulletsAnalysis2: "Scor de oportunidad, rentabilidad, ROI y valoracion",
+        bulletsAnalysis3: "Entrega en la seccion Informes tras confirmar el pago",
+        bulletsExpert1: "Incluye paquete de analisis + Nota Simple oficial",
+        bulletsExpert2: "Informe experto AI: riesgos, resumen para inversor, due diligence",
+        bulletsExpert3: "Soporte completo para decision de compra/inversion",
+        orderDocs: "Solicitar paquete",
+        twoPacks: "Dos paquetes: Analisis (20€) o Expert report + Nota Simple (50€).",
         catastroRef: "Referencia Catastro",
         choosePack: "Elige paquete",
-        notaTitle: "Nota Simple oficial",
-        notaSub: "De colaboradores autorizados del registro espanol",
+        analysisTitle: "Analisis de propiedad + financiero",
+        analysisSub: "Evaluacion AI de inversion para el inmueble seleccionado",
         expertTitle: "Informe experto completo",
-        expertSub: "Nota Simple + analisis AI y due diligence",
+        expertSub: "Nota Simple oficial + analisis AI y due diligence",
         include: "Que incluye",
         total: "Total",
         paymentInit: "Inicializando pago...",
-        registeringOrder: "Registrando pedido",
+        registeringOrder: "Registrando paquete",
         generatingReport: "Generando informe",
-        sendingRequest: "Enviamos la solicitud a colaboradores oficiales para Nota Simple",
-        waitingAI: "Despues del pago: Nota Simple de colaboradores y luego analisis AI; puede tardar unos minutos",
+        sendingRequest: "Procesando tu paquete de analisis",
+        waitingAI: "Despues del pago: Nota Simple de colaboradores y analisis AI; puede tardar unos minutos",
         elapsed: "transcurridos",
-        orderRegistered: "Pedido registrado",
+        orderRegistered: "Paquete registrado",
         reportProgress: "Informe en curso / generado",
+        analysisDelivered: "Tu analisis se entregara en Informes en breve.",
         notaDelivered: "La Nota Simple oficial se entregara por el flujo de colaboradores. Revisa en Informes.",
         redirecting: "Redirigiendo al detalle del informe...",
         cancel: "Cancelar",
@@ -224,30 +230,31 @@ function PaymentModal({
         retry: "Please retry.",
         reportTimeout: "Report timeout",
         networkError: "Network error",
-        bulletsNota1: "Official Nota Simple requested from authorized partners (Registro)",
-        bulletsNota2: "Owner, liens, mortgages — PDF document",
-        bulletsNota3: "Notification when the document is available",
-        bulletsExpert1: "Everything included in the official Nota Simple package",
-        bulletsExpert2: "AI expert report: financial analysis, risks, investor summary",
-        bulletsExpert3: "Extended due diligence based on cadastral and market data",
-        orderDocs: "Order documents & report",
-        twoPacks: "Two packages: official Nota Simple or full expert report with AI analysis.",
+        bulletsAnalysis1: "Property analysis + financial analysis",
+        bulletsAnalysis2: "Opportunity score, yield, ROI, valuation snapshot",
+        bulletsAnalysis3: "Delivered in Reports after payment confirmation",
+        bulletsExpert1: "Includes analysis pack + official Nota Simple",
+        bulletsExpert2: "AI expert report: risk review, investor summary, due diligence",
+        bulletsExpert3: "Full package for acquisition/investment decision",
+        orderDocs: "Order package",
+        twoPacks: "Two packages: Analysis (20€) or Expert report + Nota Simple (50€).",
         catastroRef: "Catastro reference",
         choosePack: "Choose package",
-        notaTitle: "Official Nota Simple",
-        notaSub: "From authorized Spanish registry collaborators",
+        analysisTitle: "Property + financial analysis",
+        analysisSub: "AI investment evaluation for the selected property",
         expertTitle: "Full expert report",
-        expertSub: "Nota Simple + AI analysis and due diligence",
+        expertSub: "Official Nota Simple + AI analysis and due diligence",
         include: "Includes",
         total: "Total",
         paymentInit: "Initializing payment...",
-        registeringOrder: "Registering order",
+        registeringOrder: "Registering package",
         generatingReport: "Generating report",
-        sendingRequest: "Sending request to official collaborators for Nota Simple",
+        sendingRequest: "Processing your analysis package",
         waitingAI: "After payment: Nota Simple from collaborators, then AI analysis — this may take a few minutes",
         elapsed: "elapsed",
-        orderRegistered: "Order registered",
+        orderRegistered: "Package registered",
         reportProgress: "Report in progress / generated",
+        analysisDelivered: "Your analysis package will be available in Reports shortly.",
         notaDelivered: "The official Nota Simple will be delivered via collaborators flow. Track it in Reports.",
         redirecting: "Redirecting to report details...",
         cancel: "Cancel",
@@ -262,11 +269,11 @@ function PaymentModal({
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
-  const [tier, setTier] = useState<ProductTier>("nota_simple");
+  const [tier, setTier] = useState<ProductTier>("analysis_pack");
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qc = useQueryClient();
 
-  const priceForTier = tier === "expert_report" ? PRET_EXPERT_EUR : PRET_NOTA_SIMPLE_EUR;
+  const priceForTier = tier === "expert_report" ? PRET_EXPERT_EUR : PRET_ANALYSIS_PACK_EUR;
 
   // Reset when opened; clear poll timer when modal closes
   useEffect(() => {
@@ -275,12 +282,12 @@ function PaymentModal({
       setClientSecret(null);
       setPaymentIntentId(null);
       setPollCount(0);
-      setTier("nota_simple");
+      setTier(initialTier);
     } else if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
     }
-  }, [open]);
+  }, [open, initialTier]);
 
   // Step 1: create payment intent
   const startPayment = async () => {
@@ -300,14 +307,12 @@ function PaymentModal({
         lat: selectedCoords.lat,
         lon: selectedCoords.lon,
       };
-      if (tier === "expert_report") {
-        payload.context_json = JSON.stringify({
-          cadastral_json: propertyInfo ?? {},
-          financial_data: financialData ?? {},
-          market_data: {},
-          output_language: uiLocale,
-        });
-      }
+      payload.context_json = JSON.stringify({
+        cadastral_json: propertyInfo ?? {},
+        financial_data: financialData ?? {},
+        market_data: {},
+        output_language: uiLocale,
+      });
       const res = await apiRequest("POST", "/api/payment/create", payload);
       const data = await res.json();
       if (!data.clientSecret) throw new Error("No client secret");
@@ -341,7 +346,7 @@ function PaymentModal({
     try {
       setStep("processing");
       const reportRes = await apiRequest("POST", "/api/reports", {
-        type: productTier === "nota_simple" ? "nota_simple" : "expert_report",
+        type: productTier === "analysis_pack" ? "analysis_pack" : "expert_report",
         status: "processing",
         referenciaCatastral: propertyInfo?.referenciaCatastral ?? "",
         address: propertyInfo?.address ?? "",
@@ -435,10 +440,10 @@ function PaymentModal({
     pollTimerRef.current = interval;
   };
 
-  const notaBullets = [
-    tr.bulletsNota1,
-    tr.bulletsNota2,
-    tr.bulletsNota3,
+  const analysisBullets = [
+    tr.bulletsAnalysis1,
+    tr.bulletsAnalysis2,
+    tr.bulletsAnalysis3,
   ];
   const expertBullets = [
     tr.bulletsExpert1,
@@ -474,18 +479,18 @@ function PaymentModal({
               <div className="grid gap-2">
                 <button
                   type="button"
-                  onClick={() => setTier("nota_simple")}
+                  onClick={() => setTier("analysis_pack")}
                   className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                    tier === "nota_simple"
+                    tier === "analysis_pack"
                       ? "border-primary bg-primary/10 ring-1 ring-primary"
                       : "border-border hover:bg-muted/50"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-foreground">{tr.notaTitle}</span>
-                    <span className="text-sm font-bold text-primary">{PRET_NOTA_SIMPLE_EUR} €</span>
+                    <span className="text-sm font-semibold text-foreground">{tr.analysisTitle}</span>
+                    <span className="text-sm font-bold text-primary">{PRET_ANALYSIS_PACK_EUR} €</span>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1">{tr.notaSub}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">{tr.analysisSub}</p>
                 </button>
                 <button
                   type="button"
@@ -505,7 +510,7 @@ function PaymentModal({
               </div>
               <div className="space-y-2 pt-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{tr.include}</p>
-                {(tier === "nota_simple" ? notaBullets : expertBullets).map((item) => (
+                {(tier === "analysis_pack" ? analysisBullets : expertBullets).map((item) => (
                   <div key={item} className="flex items-center gap-2 text-xs text-foreground">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
                     {item}
@@ -565,10 +570,10 @@ function PaymentModal({
               </div>
               <div className="text-center">
                 <p className="text-sm font-semibold text-foreground">
-                  {tier === "nota_simple" ? tr.registeringOrder : tr.generatingReport}
+                  {tier === "analysis_pack" ? tr.registeringOrder : tr.generatingReport}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {tier === "nota_simple"
+                  {tier === "analysis_pack"
                     ? tr.sendingRequest
                     : tr.waitingAI}
                 </p>
@@ -587,11 +592,11 @@ function PaymentModal({
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <CheckCircle2 className="h-12 w-12 text-emerald-400" />
               <p className="text-sm font-semibold text-foreground">
-                {tier === "nota_simple" ? tr.orderRegistered : tr.reportProgress}
+                {tier === "analysis_pack" ? tr.orderRegistered : tr.reportProgress}
               </p>
               <p className="text-xs text-muted-foreground">
-                {tier === "nota_simple"
-                  ? tr.notaDelivered
+                {tier === "analysis_pack"
+                  ? tr.analysisDelivered
                   : tr.redirecting}
               </p>
             </div>
@@ -629,6 +634,7 @@ export default function MapPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentModalTier, setPaymentModalTier] = useState<ProductTier>("analysis_pack");
   const [streetViewOpen, setStreetViewOpen] = useState(false);
   const [checkingStreetView, setCheckingStreetView] = useState(false);
   const [streetViewMeta, setStreetViewMeta] = useState<StreetViewMetadataResult | null>(null);
@@ -686,7 +692,7 @@ export default function MapPage() {
         dataSource: "Fuente datos",
         ineCapApp: "Apreciacion INE (serie)",
         saveProperty: "Guardar propiedad",
-        orderReport: "Pedir — Nota Simple o informe experto",
+        orderReport: "Pedir — Expert report + Nota Simple (50€)",
         streetViewUnavailable: "Street View no disponible",
         missingStreetKey: "Falta VITE_GOOGLE_MAPS_JS_API_KEY.",
         status: "Estado",
@@ -735,7 +741,7 @@ export default function MapPage() {
         dataSource: "Data source",
         ineCapApp: "INE series appreciation",
         saveProperty: "Save property",
-        orderReport: "Order — Nota Simple or expert report",
+        orderReport: "Order — Expert report + Nota Simple (50€)",
         streetViewUnavailable: "Street View unavailable",
         missingStreetKey: "Missing VITE_GOOGLE_MAPS_JS_API_KEY.",
         status: "Status",
@@ -765,7 +771,7 @@ export default function MapPage() {
     onSuccess: (data) => {
       setPropertyInfo(data);
       setIdentifyError(null);
-      financialMutation.mutate(data);
+      // Financial analysis is unlocked after payment (analysis pack).
     },
     onError: () => {
       setIdentifyError(t.noBuildingError);
@@ -1012,11 +1018,11 @@ export default function MapPage() {
             className="absolute right-0 top-0 bottom-0 z-20 w-full max-w-[380px] flex flex-col"
           >
             <Card className="h-full rounded-none border-l border-y-0 border-r-0 border-border bg-card/97 backdrop-blur-sm shadow-2xl overflow-hidden flex flex-col">
-              <CardHeader className="pb-3 pt-4 px-4 shrink-0">
+              <CardHeader className="map-neon-text pb-3 pt-4 px-4 shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Building2 className="h-8 w-8 shrink-0 text-primary" />
-                    <CardTitle className="text-[2rem] font-extrabold leading-tight tracking-tight text-foreground">
+                    <CardTitle className="map-neon-text text-[2rem] font-extrabold leading-tight tracking-tight">
                       {t.propertyAnalysis}
                     </CardTitle>
                   </div>
@@ -1032,7 +1038,7 @@ export default function MapPage() {
               </CardHeader>
               <Separator />
 
-              <CardContent className="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-foreground">
+              <CardContent className="map-neon-text flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {/* Identifying */}
                 {isIdentifying && (
                   <div className="space-y-3">
@@ -1101,7 +1107,10 @@ export default function MapPage() {
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          onClick={() => financialMutation.mutate(propertyInfo)}
+                          onClick={() => {
+                            setPaymentModalTier("analysis_pack");
+                            setPaymentModalOpen(true);
+                          }}
                         >
                           <TrendingUp className="mr-2 h-4 w-4" /> {t.retryAnalysis}
                         </Button>
@@ -1112,7 +1121,10 @@ export default function MapPage() {
                       <div className="text-center py-2 space-y-3">
                         <TrendingUp className="h-7 w-7 text-primary/50 mx-auto" />
                         <p className="text-sm text-foreground/80">{t.aiFinancial}</p>
-                        <Button className="w-full" onClick={() => financialMutation.mutate(propertyInfo)}>
+                        <Button className="w-full" onClick={() => {
+                            setPaymentModalTier("analysis_pack");
+                            setPaymentModalOpen(true);
+                          }}>
                           <TrendingUp className="mr-2 h-4 w-4" /> {t.financialAnalysis}
                         </Button>
                       </div>
@@ -1222,7 +1234,10 @@ export default function MapPage() {
                       </Button>
                       <Button
                         className="w-full font-semibold"
-                        onClick={() => setPaymentModalOpen(true)}
+                        onClick={() => {
+                          setPaymentModalTier("expert_report");
+                          setPaymentModalOpen(true);
+                        }}
                         data-testid="order-full-report"
                       >
                         <FileText className="mr-2 h-4 w-4" />
@@ -1249,6 +1264,7 @@ export default function MapPage() {
         financialData={financialData}
         selectedCoords={selectedCoords}
         uiLocale={uiLocale}
+        initialTier={paymentModalTier}
       />
 
       {/* Bottom property card + Street View modal (over Google map) */}

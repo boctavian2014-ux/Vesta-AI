@@ -14,6 +14,7 @@ const STRINGS: Record<
     statusProcessing: string;
     statusCompleted: string;
     statusFailed: string;
+    typeAnalysisPack: string;
     typeNotaSimple: string;
     typeExpertReport: string;
     countProcessing: string;
@@ -35,6 +36,7 @@ const STRINGS: Record<
     statusProcessing: "Processing",
     statusCompleted: "Completed",
     statusFailed: "Failed",
+    typeAnalysisPack: "Property + financial analysis",
     typeNotaSimple: "Nota Simple",
     typeExpertReport: "Expert report",
     countProcessing: "processing",
@@ -55,6 +57,7 @@ const STRINGS: Record<
     statusProcessing: "În procesare",
     statusCompleted: "Finalizat",
     statusFailed: "Eșuat",
+    typeAnalysisPack: "Analiză proprietate + financiară",
     typeNotaSimple: "Nota Simple",
     typeExpertReport: "Raport expert",
     countProcessing: "în procesare",
@@ -75,6 +78,7 @@ const STRINGS: Record<
     statusProcessing: "En proceso",
     statusCompleted: "Completado",
     statusFailed: "Fallido",
+    typeAnalysisPack: "Analisis de propiedad + financiero",
     typeNotaSimple: "Nota Simple",
     typeExpertReport: "Informe experto",
     countProcessing: "en proceso",
@@ -95,6 +99,7 @@ const STRINGS: Record<
     statusProcessing: "In Bearbeitung",
     statusCompleted: "Abgeschlossen",
     statusFailed: "Fehlgeschlagen",
+    typeAnalysisPack: "Objekt- und Finanzanalyse",
     typeNotaSimple: "Nota Simple",
     typeExpertReport: "Expertenbericht",
     countProcessing: "in Bearbeitung",
