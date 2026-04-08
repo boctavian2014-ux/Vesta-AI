@@ -78,11 +78,9 @@ function MetricRow({ label, value, highlight }: { label: string; value?: string 
   const v = value !== undefined && value !== null && value !== "" ? String(value) : "—";
   return (
     <div className="flex items-start justify-between gap-3 py-2 border-b border-border/50 last:border-0">
-      <span className="map-neon-muted min-w-0 flex-1 text-sm font-medium leading-snug">{label}</span>
+      <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground/75">{label}</span>
       <span
-        className={`map-neon-text max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words ${
-          highlight ? "text-[#7CFF32]" : ""
-        }`}
+        className={`${highlight ? "map-neon-strong" : "text-foreground"} max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words`}
       >
         {v}
       </span>
@@ -1014,11 +1012,11 @@ export default function MapPage() {
             className="absolute right-0 top-0 bottom-0 z-20 w-full max-w-[380px] flex flex-col"
           >
             <Card className="h-full rounded-none border-l border-y-0 border-r-0 border-border bg-card/97 backdrop-blur-sm shadow-2xl overflow-hidden flex flex-col">
-              <CardHeader className="map-neon-text pb-3 pt-4 px-4 shrink-0">
+              <CardHeader className="pb-3 pt-4 px-4 shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Building2 className="h-8 w-8 shrink-0 text-primary" />
-                    <CardTitle className="map-neon-text text-[2rem] font-extrabold leading-tight tracking-tight">
+                    <CardTitle className="text-[2rem] font-extrabold leading-tight tracking-tight text-foreground">
                       {t.propertyAnalysis}
                     </CardTitle>
                   </div>
@@ -1034,7 +1032,7 @@ export default function MapPage() {
               </CardHeader>
               <Separator />
 
-              <CardContent className="map-neon-text flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <CardContent className="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-foreground">
                 {/* Identifying */}
                 {isIdentifying && (
                   <div className="space-y-3">
