@@ -8,7 +8,7 @@ type PropertyBottomCardProps = {
   locale: "en" | "es";
   onOpenStreetView: () => void;
   onClose: () => void;
-  /** Hide bottom card only; map / panel stay as-is (satellite view). */
+  /** Hide bottom card only; map / panel stay as-is. */
   onKeepSatellite: () => void;
 };
 
@@ -31,7 +31,7 @@ export function PropertyBottomCard({
         score: "Puntuacion",
         close: "Cerrar",
         openStreet: "Ver desde la calle",
-        keepSatellite: "Mantener satelite",
+        keepSatellite: "Ocultar tarjeta",
       }
     : {
         checking: "Checking Street View...",
@@ -40,7 +40,7 @@ export function PropertyBottomCard({
         score: "Opportunity score",
         close: "Close",
         openStreet: "View from street",
-        keepSatellite: "Keep satellite",
+        keepSatellite: "Hide card",
       };
 
   const streetViewStatus = checkingStreetView

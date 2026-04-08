@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, type FormEvent } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-const mapboxgl = (window as any).mapboxgl;
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -20,11 +19,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useToast } from "@/hooks/use-toast";
 import {
   MapPin, TrendingUp, Bookmark, FileText, X, Loader2,
-  AlertCircle, CheckCircle2, Building2, Satellite, Map,
-  ExternalLink, CreditCard, Eye,
+  AlertCircle, CheckCircle2, Building2,
+  CreditCard, Eye,
 } from "lucide-react";
-
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
 
 /** Aliniat cu PRET_NOTA_SIMPLE_EUR / PRET_RAPORT_EXPERT_EUR pe API Python (Railway). */
 const PRET_NOTA_SIMPLE_EUR =
@@ -39,8 +36,6 @@ type UiLocale = "en" | "es";
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
-// Mapbox doar satelit; modul „Map” = Google Maps roadmap.
-const MAPBOX_SATELLITE_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
 
 interface PropertyInfo {
   referenciaCatastral?: string;
@@ -83,10 +78,10 @@ function MetricRow({ label, value, highlight }: { label: string; value?: string 
   const v = value !== undefined && value !== null && value !== "" ? String(value) : "—";
   return (
     <div className="flex items-start justify-between gap-3 py-2 border-b border-border/50 last:border-0">
-      <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground/75">{label}</span>
+      <span className="map-neon-muted min-w-0 flex-1 text-sm font-medium leading-snug">{label}</span>
       <span
-        className={`max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words ${
-          highlight ? "text-primary" : "text-foreground"
+        className={`map-neon-text max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words ${
+          highlight ? "text-[#7CFF32]" : ""
         }`}
       >
         {v}
@@ -623,18 +618,13 @@ function PaymentModal({
 // ── Main Map Page ──────────────────────────────────────────────────────────
 
 export default function MapPage() {
-  const mapContainer = useRef<HTMLDivElement | null>(null);
   const googleMapContainerRef = useRef<HTMLDivElement | null>(null);
-  const map = useRef<any>(null);
-  const marker = useRef<any>(null);
   const googleMapRef = useRef<any>(null);
   const googleMarkerRef = useRef<any>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, navigate] = useHashLocation();
 
-  type MapMode = "satellite" | "map";
-  const [mapMode, setMapMode] = useState<MapMode>("satellite");
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [propertyInfo, setPropertyInfo] = useState<PropertyInfo | null>(null);
   const [financialData, setFinancialData] = useState<FinancialAnalysis | null>(null);
@@ -661,8 +651,6 @@ export default function MapPage() {
 
   const t = uiLocale === "es"
     ? {
-        modeSatellite: "Satelite",
-        modeMap: "Calles (Google)",
         streetView: "Street View",
         clickBuilding: "Haz clic en un edificio",
         propertyAnalysis: "Analisis de propiedad",
@@ -712,8 +700,6 @@ export default function MapPage() {
         selectedProperty: "Inmueble seleccionado",
       }
     : {
-        modeSatellite: "Satellite",
-        modeMap: "Streets (Google)",
         streetView: "Street View",
         clickBuilding: "Click a building",
         propertyAnalysis: "Property analysis",
@@ -800,19 +786,6 @@ export default function MapPage() {
       setCheckingStreetView(false);
       setPanelOpen(true);
 
-      if (map.current) {
-        const el = document.createElement("div");
-        el.style.cssText =
-          "width:24px;height:24px;border-radius:50%;background:hsl(38,70%,50%);border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.6);cursor:pointer;";
-        if (marker.current) {
-          marker.current.setLngLat([lon, lat]);
-        } else {
-          marker.current = new mapboxgl.Marker({ element: el })
-            .setLngLat([lon, lat])
-            .addTo(map.current);
-        }
-      }
-
       const g = (typeof window !== "undefined" ? (window as any).google : null)?.maps;
       const gm = googleMapRef.current;
       if (g?.Marker && gm) {
@@ -861,40 +834,9 @@ export default function MapPage() {
     onError: (err: any) => toast({ title: t.genericError, description: err.message, variant: "destructive" }),
   });
 
-  // ── init Mapbox (satelit only) ─────────────────────────────────────────
-
-  useEffect(() => {
-    if (!mapContainer.current || map.current) return;
-    mapboxgl.accessToken = MAPBOX_TOKEN;
-
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: MAPBOX_SATELLITE_STYLE,
-      center: [-3.7038, 40.4168],
-      zoom: 17,
-      pitch: 45,
-      bearing: -20,
-      antialias: true,
-      maxPitch: 85,
-    });
-
-    map.current.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "top-right");
-    map.current.addControl(new mapboxgl.ScaleControl(), "bottom-left");
-
-    map.current.on("click", (e: any) => {
-      beginPropertySelectionRef.current(e.lngLat.lat, e.lngLat.lng);
-    });
-
-    return () => {
-      map.current?.remove();
-      map.current = null;
-    };
-  }, []);
-
-  // ── Google Maps roadmap când modul ≠ satelit ────────────────────────────
+  // ── Google Maps only (roadmap + Street View) ────────────────────────────
 
   useLayoutEffect(() => {
-    if (mapMode !== "map") return;
     const key = getGoogleMapsBrowserKey();
     const container = googleMapContainerRef.current;
     if (!key || !container) return;
@@ -906,11 +848,9 @@ export default function MapPage() {
       if (!g?.Map) return;
 
       if (!googleMapRef.current) {
-        const c = map.current?.getCenter();
-        const z = map.current?.getZoom() ?? 17;
         googleMapRef.current = new g.Map(googleMapContainerRef.current, {
-          center: c ? { lat: c.lat, lng: c.lng } : { lat: 40.4168, lng: -3.7038 },
-          zoom: Math.round(z),
+          center: { lat: 40.4168, lng: -3.7038 },
+          zoom: 17,
           mapTypeId: g.MapTypeId.ROADMAP,
           streetViewControl: false,
           mapTypeControl: true,
@@ -919,10 +859,6 @@ export default function MapPage() {
         googleMapRef.current.addListener("click", (e: any) => {
           if (e.latLng) beginPropertySelectionRef.current(e.latLng.lat(), e.latLng.lng());
         });
-      } else if (map.current) {
-        const c = map.current.getCenter();
-        googleMapRef.current.setCenter({ lat: c.lat, lng: c.lng });
-        googleMapRef.current.setZoom(Math.round(map.current.getZoom()));
       }
 
       const sel = selectedCoordsRef.current;
@@ -942,52 +878,7 @@ export default function MapPage() {
     return () => {
       cancelled = true;
     };
-  }, [mapMode]);
-
-  // ── switch: satelit Mapbox ↔ străzi Google ─────────────────────────────
-
-  const switchMode = useCallback(
-    (next: "satellite" | "map") => {
-      if (next === mapMode) return;
-      if (next === "map") {
-        if (!getGoogleMapsBrowserKey()) {
-          toast({ title: t.genericError, description: t.missingStreetKey, variant: "destructive" });
-          return;
-        }
-        setMapMode("map");
-        return;
-      }
-      if (googleMapRef.current && map.current) {
-        const c = googleMapRef.current.getCenter();
-        map.current.jumpTo({
-          center: [c.lng(), c.lat()],
-          zoom: googleMapRef.current.getZoom(),
-        });
-      }
-      if (googleMarkerRef.current) {
-        googleMarkerRef.current.setMap(null);
-      }
-      if (selectedCoords && map.current) {
-        if (marker.current) {
-          marker.current.setLngLat([selectedCoords.lon, selectedCoords.lat]);
-          marker.current.addTo(map.current);
-        } else {
-          const el = document.createElement("div");
-          el.style.cssText =
-            "width:24px;height:24px;border-radius:50%;background:hsl(38,70%,50%);border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.6);cursor:pointer;";
-          marker.current = new mapboxgl.Marker({ element: el })
-            .setLngLat([selectedCoords.lon, selectedCoords.lat])
-            .addTo(map.current);
-        }
-      } else if (marker.current) {
-        marker.current.remove();
-        marker.current = null;
-      }
-      setMapMode("satellite");
-      map.current?.easeTo?.({ pitch: 45, bearing: -20, duration: 600 });
-    },
-    [mapMode, toast, t, selectedCoords],
-  );
+  }, []);
 
   const closePanel = useCallback(() => {
     setPanelOpen(false);
@@ -999,10 +890,6 @@ export default function MapPage() {
     setStreetViewMeta(null);
     setCheckingStreetView(false);
     setBottomPropertyCardDismissed(false);
-    if (marker.current) {
-      marker.current.remove();
-      marker.current = null;
-    }
     if (googleMarkerRef.current) {
       googleMarkerRef.current.setMap(null);
       googleMarkerRef.current = null;
@@ -1077,42 +964,15 @@ export default function MapPage() {
 
   return (
     <div className="relative h-[calc(100vh-3rem)] w-full overflow-hidden">
-      {/* Mapbox satelit */}
-      <div
-        ref={mapContainer}
-        className={`absolute inset-0 w-full h-full ${mapMode === "satellite" ? "z-[5] opacity-100" : "z-0 opacity-0 pointer-events-none"}`}
-        data-testid="map-container"
-      />
-      {/* Google roadmap (străzi) */}
+      {/* Google Maps only */}
       <div
         ref={googleMapContainerRef}
-        className={`absolute inset-0 w-full h-full ${mapMode === "map" ? "z-[5] opacity-100" : "z-0 opacity-0 pointer-events-none"}`}
+        className="absolute inset-0 z-[5] h-full w-full"
         data-testid="google-map-container"
       />
 
-      {/* Top bar — 3 mode switcher + Street View */}
+      {/* Top bar — Street View + language */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
-        {/* Mode switcher pill */}
-        <div className="flex items-center bg-black/75 backdrop-blur-sm border border-white/10 rounded-full shadow-xl overflow-hidden">
-          {([
-            { key: "satellite", label: t.modeSatellite,   icon: <Satellite className="h-3.5 w-3.5" /> },
-            { key: "map", label: t.modeMap, icon: <Map className="h-3.5 w-3.5" /> },
-          ] as const).map(({ key, label, icon }) => (
-            <button
-              key={key}
-              onClick={() => switchMode(key)}
-              data-testid={`mode-${key}`}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
-                mapMode === key
-                  ? "bg-primary text-primary-foreground"
-                  : "text-white hover:bg-white/10"
-              }`}
-            >
-              {icon} {label}
-            </button>
-          ))}
-        </div>
-
         {/* Google Street View button */}
         <button
           type="button"
@@ -1154,11 +1014,11 @@ export default function MapPage() {
             className="absolute right-0 top-0 bottom-0 z-20 w-full max-w-[380px] flex flex-col"
           >
             <Card className="h-full rounded-none border-l border-y-0 border-r-0 border-border bg-card/97 backdrop-blur-sm shadow-2xl overflow-hidden flex flex-col">
-              <CardHeader className="pb-3 pt-4 px-4 shrink-0">
+              <CardHeader className="map-neon-text pb-3 pt-4 px-4 shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Building2 className="h-8 w-8 shrink-0 text-primary" />
-                    <CardTitle className="text-[2rem] font-extrabold text-foreground leading-tight tracking-tight">
+                    <CardTitle className="map-neon-text text-[2rem] font-extrabold leading-tight tracking-tight">
                       {t.propertyAnalysis}
                     </CardTitle>
                   </div>
@@ -1167,14 +1027,14 @@ export default function MapPage() {
                   </Button>
                 </div>
                 {selectedCoords && (
-                  <p className="text-xs font-mono text-foreground/80 mt-1.5">
+                  <p className="map-neon-muted text-xs font-mono mt-1.5">
                     {selectedCoords.lat.toFixed(5)}, {selectedCoords.lon.toFixed(5)}
                   </p>
                 )}
               </CardHeader>
               <Separator />
 
-              <CardContent className="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-foreground">
+              <CardContent className="map-neon-text flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {/* Identifying */}
                 {isIdentifying && (
                   <div className="space-y-3">
@@ -1393,7 +1253,7 @@ export default function MapPage() {
         uiLocale={uiLocale}
       />
 
-      {/* Bottom property card + Street View modal (over satellite map) */}
+      {/* Bottom property card + Street View modal (over Google map) */}
       {!streetViewOpen && selectedProperty && !bottomPropertyCardDismissed && (
         <PropertyBottomCard
           property={selectedProperty}
