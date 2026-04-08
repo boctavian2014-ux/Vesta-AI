@@ -7,7 +7,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { detectBrowserLocale } from "@/lib/locale";
 import { useHashLocation } from "wouter/use-hash-location";
 import { StreetViewModal } from "@/components/StreetViewModal";
-import { PropertyBottomCard } from "@/components/PropertyBottomCard";
 import { identifyProperty, checkStreetViewAvailability } from "@/lib/propertyApi";
 import { getGoogleMapsBrowserKey, loadGoogleMapsJs } from "@/lib/googleMapsLoader";
 import type { PropertyPin, StreetViewMetadataResult } from "@/types/property";
@@ -638,7 +637,6 @@ export default function MapPage() {
   const [streetViewOpen, setStreetViewOpen] = useState(false);
   const [checkingStreetView, setCheckingStreetView] = useState(false);
   const [streetViewMeta, setStreetViewMeta] = useState<StreetViewMetadataResult | null>(null);
-  const [bottomPropertyCardDismissed, setBottomPropertyCardDismissed] = useState(false);
   const [uiLocale, setUiLocale] = useState<UiLocale>(() => {
     if (typeof window !== "undefined") {
       const saved = window.localStorage.getItem(MAP_UI_LOCALE_KEY);
@@ -893,16 +891,11 @@ export default function MapPage() {
     setStreetViewOpen(false);
     setStreetViewMeta(null);
     setCheckingStreetView(false);
-    setBottomPropertyCardDismissed(false);
     if (googleMarkerRef.current) {
       googleMarkerRef.current.setMap(null);
       googleMarkerRef.current = null;
     }
   }, []);
-
-  useEffect(() => {
-    setBottomPropertyCardDismissed(false);
-  }, [selectedCoords?.lat, selectedCoords?.lon]);
 
   const selectedProperty = useMemo<PropertyPin | null>(() => {
     if (!selectedCoords) return null;
@@ -1266,19 +1259,6 @@ export default function MapPage() {
         uiLocale={uiLocale}
         initialTier={paymentModalTier}
       />
-
-      {/* Bottom property card + Street View modal (over Google map) */}
-      {!streetViewOpen && selectedProperty && !bottomPropertyCardDismissed && (
-        <PropertyBottomCard
-          property={selectedProperty}
-          checkingStreetView={checkingStreetView}
-          streetViewMeta={streetViewMeta}
-          locale={uiLocale}
-          onOpenStreetView={openStreetView}
-          onClose={closePanel}
-          onKeepSatellite={() => setBottomPropertyCardDismissed(true)}
-        />
-      )}
 
       <StreetViewModal
         open={streetViewOpen}
