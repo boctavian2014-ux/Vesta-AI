@@ -9,35 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertCircle } from "lucide-react";
-
-function VestaLogoFull() {
-  return (
-    <div className="flex flex-col items-center gap-3 mb-8">
-      <svg
-        width="56"
-        height="56"
-        viewBox="0 0 32 32"
-        fill="none"
-        aria-label="Vesta AI"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <rect width="32" height="32" rx="8" fill="hsl(38 70% 50%)" />
-        <path
-          d="M16 8L25 15V25H20V19H12V25H7V15L16 8Z"
-          fill="white"
-          fillOpacity="0.9"
-        />
-        <rect x="13.5" y="19" width="5" height="6" rx="1" fill="hsl(38 70% 50%)" />
-      </svg>
-      <div className="text-center">
-        <h1 className="text-xl font-bold tracking-tight text-foreground">Vesta AI</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Real estate intelligence for Spain
-        </p>
-      </div>
-    </div>
-  );
-}
+import { VestaBrandLogoAuth } from "@/components/vesta-brand-logo";
 
 export default function AuthPage() {
   const [, navigate] = useHashLocation();
@@ -85,7 +57,7 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
-        <VestaLogoFull />
+        <VestaBrandLogoAuth />
 
         <Card className="border-border shadow-lg">
           <Tabs defaultValue="login">
