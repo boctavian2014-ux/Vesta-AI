@@ -262,17 +262,25 @@
 
   /* High-contrast neon text for transparent map analysis cards */
   .map-neon-text {
-    color: #7cff32;
+    color: #39ff14;
     text-shadow:
-      0 0 3px rgba(25, 255, 80, 0.85),
-      0 0 10px rgba(25, 255, 80, 0.35),
-      0 1px 2px rgba(0, 0, 0, 0.95);
+      0 0 2px rgba(57, 255, 20, 0.85),
+      0 0 8px rgba(57, 255, 20, 0.3),
+      0 1px 2px rgba(0, 0, 0, 0.98);
   }
 
   .map-neon-muted {
-    color: #b9ff9a;
+    color: #98ff66;
     text-shadow:
-      0 0 2px rgba(25, 255, 80, 0.65),
-      0 1px 2px rgba(0, 0, 0, 0.9);
+      0 0 1px rgba(57, 255, 20, 0.55),
+      0 1px 2px rgba(0, 0, 0, 0.98);
+  }
+
+  .map-neon-strong {
+    color: #39ff14;
+    text-shadow:
+      0 0 3px rgba(57, 255, 20, 0.95),
+      0 0 12px rgba(57, 255, 20, 0.4),
+      0 1px 2px rgba(0, 0, 0, 1);
   }
 }
