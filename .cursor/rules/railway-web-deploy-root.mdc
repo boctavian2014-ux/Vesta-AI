@@ -1,0 +1,32 @@
+---
+description: Deploy vesta-web from web root path
+alwaysApply: true
+---
+
+# Railway deploy for `vesta-web`
+
+- For the `vesta-web` service, deploy from the `web` folder as archive root.
+- Use:
+  - `railway up . --path-as-root --service vesta-web --environment production`
+- Do not point this service at the **monorepo root** without Option A or B below: Nixpacks may detect **Python** first and still run `npm run build`, causing `npm: not found` (exit **127**).
+- After deploy, verify build logs and confirm no `npm: not found` / `exit code: 127` errors.
+
+## GitHub / automatic deploys (stops yellow warning / FAILED)
+
+When the Git repo root is the **full monorepo**, Nixpacks often picks **Python** (`pip install` …) and still runs **`npm run build`**, which fails with **`npm: not found`** (**exit 127**). Fix one of these (pick one):
+
+### Option A — Root Directory (Nixpacks, simple)
+
+- Service `vesta-web` → Settings → **Root Directory:** `web`
+- Builder: **Nixpacks** (must match [`web/railway.json`](web/railway.json) `build.builder`). Uses [`web/nixpacks.toml`](web/nixpacks.toml).
+- **Do not** set Root Directory = `web` while forcing **Dockerfile** `Dockerfile.vesta-web` in the UI: that file lives at the **repo root** (Option B), not inside `web/`.
+
+### Option B — Dockerfile (works even if Root Directory was never set)
+
+- Repo file: [`Dockerfile.vesta-web`](Dockerfile.vesta-web) (copies and builds only `web/`).
+- Service `vesta-web` → Settings:
+  - **Root Directory:** leave **empty** (repo root), so paths `web/...` exist in the build context.
+  - **Builder:** **Dockerfile**
+  - **Dockerfile path:** `Dockerfile.vesta-web`
+
+Do **not** combine “Root Directory = `web`” with Option B as written — the Dockerfile expects `COPY web/...` from repo root.
