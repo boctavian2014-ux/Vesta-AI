@@ -21,6 +21,13 @@ export function serveStatic(app: Express) {
           return;
         }
 
+        // Brand PNGs keep stable filenames; avoid 1y immutable cache or users never see updated logos.
+        const baseName = filePath.replace(/\\/g, "/").split("/").pop() ?? "";
+        if (/^(vesta-logo(-sidebar)?|favicon)\.png$/i.test(baseName)) {
+          res.setHeader("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+          return;
+        }
+
         // Keep immutable caching for fingerprinted static assets.
         if (/\\.(js|mjs|css|png|jpg|jpeg|gif|svg|webp|ico|woff2?)$/i.test(filePath)) {
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");

@@ -21,6 +21,10 @@ import {
   normalizeWebhookPayload,
   verifyWebhookSignature,
 } from "./notaProvider";
+import {
+  handleSpainPropertySearchChat,
+  handleSpainPropertySearchStatus,
+} from "./spainPropertySearchChat";
 
 const SessionStore = MemoryStore(session);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
@@ -377,14 +381,21 @@ export async function registerRoutes(
     return res.json({ ok: true, id: report.id });
   });
 
-  // Session
+  // Session (MemoryStore: single Railway instance OK; multiple replicas need a shared store)
+  const sessionSecret = (process.env.SESSION_SECRET || "vesta-ai-secret-key-2026").trim();
+  const isProd = process.env.NODE_ENV === "production";
   app.use(
     session({
-      secret: "vesta-ai-secret-key-2026",
+      secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
       store: new SessionStore({ checkPeriod: 86400000 }),
-      cookie: { maxAge: 86400000 },
+      cookie: {
+        maxAge: 86400000,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: isProd,
+      },
     })
   );
 
@@ -952,6 +963,14 @@ export async function registerRoutes(
       osm,
     });
     return res.json({ zoneAnalysis });
+  });
+
+  app.get("/api/spain-property-search/status", (req, res) => {
+    handleSpainPropertySearchStatus(req, res);
+  });
+
+  app.post("/api/spain-property-search/chat", (req, res) => {
+    void handleSpainPropertySearchChat(req, res);
   });
 
   // Saved Properties

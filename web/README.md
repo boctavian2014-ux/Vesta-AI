@@ -12,6 +12,7 @@ AI-powered property analysis platform for Spanish real estate. Click any buildin
 - **Full Property Reports** — Legal data, Nota Simplă, urbanism, neighborhood analysis
 - **Stripe Payments** — 19€ Basic / 49.99€ Full Report with Nota Simplă
 - **Street View** — Embedded 360° street-level photos (no redirect)
+- **Property search (AI agent)** — Chat at `#/property-search` uses OpenAI with **tools**: geocoding (Nominatim), metadata fetch for allowed listing domains (Idealista, Fotocasa, etc.), and structured **listing cards** in the response. **Open on map** deep links to `#/map?lat=&lon=` only when the agent has **reliable coordinates** (e.g. from geocoding a specific address); listings without that stay on **View listing** to the portal — by design. Requires `OPENAI_API_KEY` on the server.
 
 ---
 
@@ -53,8 +54,15 @@ Edit `.env` and fill in your values:
 | `VITE_MAPBOX_TOKEN` | Your Mapbox public token — get it at [account.mapbox.com](https://account.mapbox.com) |
 | `VITE_API_URL` | (Opțional) Nu e folosit de proxy-ul Express; URL-ul API Python e în `server/routes.ts`. Poți folosi variabila doar dacă adaugi tu logică client-side către alt host. |
 | `VEST_PYTHON_API_URL` | **Required in production** — FastAPI base URL (no trailing slash). Powers `/api/property/identify`, `/api/property/financial-analysis`, payments proxy, async report generation, and admin Nota Simple OCR. Without it, those routes return **503**. |
+| `MATIL_API_KEY` | Matil API key used by partner Nota Simple async processing (`/api/nota-partner/*`). |
+| `MATIL_DEPLOYMENT_ID` | Matil deployment UUID used for `POST /v3/deployments/{deployment_id}/async`. |
+| `MATIL_WEBHOOK_SECRET` | Shared secret used to validate `X-Matil-Signature` webhook callbacks. |
 | `VESTA_OVERPASS_URL` | (Optional) Overpass API endpoint for zone POI counts; default `https://overpass-api.de/api/interpreter`. |
 | `VESTA_ZONE_OSM_DISABLE` | Set to `1` to skip Overpass calls (tests / offline); zone counts fall back to estimates. |
+| `OPENAI_API_KEY` | **Required for property search chat** (`#/property-search`) — OpenAI API key; without it, `POST /api/spain-property-search/chat` returns **503**. The handler runs a short **agent loop** (tool calls) and returns JSON `{ reply, listings? }`. |
+| `OPENAI_MODEL` | Optional — defaults to `gpt-4o-mini` (e.g. `gpt-4o` if you prefer). |
+| `GET /api/spain-property-search/status` | (Auth) Returns `{ openaiConfigured: true|false }` — checks that `OPENAI_API_KEY` is non-empty; does not expose the key. |
+| `SESSION_SECRET` | Optional — secret for Express session signing; change in production if you like. Sessions use **in-memory** store: each deploy or extra replica clears logins — users must sign in again. |
 | `PORT` | Server port (default: 5000) |
 
 ### 4. Run in development
@@ -80,6 +88,11 @@ Never commit `.env` to git. Use `.env.example` as a template.
 VITE_MAPBOX_TOKEN=pk.your_mapbox_token_here
 VITE_API_URL=https://your-backend.up.railway.app
 VEST_PYTHON_API_URL=https://your-fastapi.up.railway.app
+MATIL_API_KEY=replace_with_matil_api_key
+MATIL_DEPLOYMENT_ID=replace_with_matil_deployment_id
+MATIL_WEBHOOK_SECRET=replace_with_matil_webhook_secret
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4o-mini
 PORT=5000
 NODE_ENV=development
 ```

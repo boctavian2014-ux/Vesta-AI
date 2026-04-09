@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
+/** Bump when replacing files in `public/` so clients bypass stale caches. Keep `client/index.html` favicon `href` in sync. */
+export const VESTA_BRAND_ASSET_QUERY = "?v=5";
+
 /** Official Vesta AI brand assets from `public/`. */
 function sanitizeBaseUrl(rawBaseUrl: string | undefined): string {
   const raw = String(rawBaseUrl ?? "").trim();
@@ -19,7 +22,8 @@ function buildAssetCandidates(fileName: string): string[] {
   const normalizedName = String(fileName).trim().replace(/^\/+/, "");
   if (!normalizedName) return [];
   const baseUrl = sanitizeBaseUrl(import.meta.env.BASE_URL as string | undefined);
-  const candidates = [`${baseUrl}${normalizedName}`, `/${normalizedName}`, normalizedName];
+  const q = VESTA_BRAND_ASSET_QUERY;
+  const candidates = [`${baseUrl}${normalizedName}${q}`, `/${normalizedName}${q}`, `${normalizedName}${q}`];
   return Array.from(new Set(candidates));
 }
 

@@ -168,6 +168,11 @@
 }
 
 /* Neon-style line : glow layer (blur) + sharp face; outer opacity fades both together */
+/* Full-page chat has its own bottom composer; hide neon whispers so they don’t cover the input. */
+html[data-vesta-page="property-search"] .app-ambient__whisper {
+  display: none;
+}
+
 .app-ambient__whisper {
   position: fixed;
   left: 50%;

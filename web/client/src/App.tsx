@@ -23,7 +23,9 @@ import AdminOrders from "@/pages/admin-orders";
 import LegalTermsPage from "@/pages/legal-terms";
 import LegalPrivacyPage from "@/pages/legal-privacy";
 import TutorialPage from "@/pages/tutorial";
+import PropertySearchChatPage from "@/pages/property-search-chat";
 import NotFound from "@/pages/not-found";
+import { VESTA_BRAND_ASSET_QUERY } from "@/components/vesta-brand-logo";
 
 // Apply dark mode by default
 function applyDefaultTheme() {
@@ -57,7 +59,7 @@ function AppRouter() {
         <div className="flex flex-col items-center gap-4 px-4">
           <div className="rounded-3xl glass-card px-6 py-4">
             <img
-              src="/vesta-logo.png?v=4"
+              src={`/vesta-logo.png${VESTA_BRAND_ASSET_QUERY}`}
               alt="Vesta AI"
               width={520}
               height={180}
@@ -97,6 +99,7 @@ function AppRouter() {
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/map" component={MapPage} />
+            <Route path="/property-search" component={PropertySearchChatPage} />
             <Route path="/trends" component={MarketTrends} />
             <Route path="/properties" component={SavedProperties} />
             <Route path="/reports" component={Reports} />

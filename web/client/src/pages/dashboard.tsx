@@ -14,7 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { TrendingUp, BarChart3, FileText, Map, ArrowRight } from "lucide-react";
+import { TrendingUp, BarChart3, FileText, Map, ArrowRight, MessageSquare } from "lucide-react";
 import { VestaBrandLogoMark } from "@/components/vesta-brand-logo";
 
 // Mock trend data for mini-chart
@@ -98,6 +98,7 @@ export default function Dashboard() {
         quickActions: "Acciones rápidas",
         quickActionsDesc: "Ir a funciones clave",
         analyzeProperty: "Analizar propiedad",
+        propertySearchAi: "Búsqueda de vivienda (IA)",
         viewTrends: "Ver tendencias",
         savedProperties: "Propiedades guardadas",
         reports: "Informes",
@@ -114,6 +115,7 @@ export default function Dashboard() {
         quickActions: "Quick Actions",
         quickActionsDesc: "Jump to key features",
         analyzeProperty: "Analyze Property",
+        propertySearchAi: "Property search (AI)",
         viewTrends: "View Trends",
         savedProperties: "Saved Properties",
         reports: "Reports",
@@ -270,6 +272,19 @@ export default function Dashboard() {
               <span className="flex items-center gap-2">
                 <Map className="h-4 w-4" />
                 {t.analyzeProperty}
+              </span>
+              <ArrowRight className="h-4 w-4 opacity-60" />
+            </Button>
+
+            <Button
+              variant="secondary"
+              className="w-full justify-between"
+              onClick={() => navigate("/property-search")}
+              data-testid="quick-action-property-search"
+            >
+              <span className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                {t.propertySearchAi}
               </span>
               <ArrowRight className="h-4 w-4 opacity-60" />
             </Button>

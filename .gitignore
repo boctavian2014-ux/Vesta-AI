@@ -27,3 +27,10 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Nested duplicate folder (second checkout inside repo — do not commit)
+/Vesta-AI/
+
+# Local tooling / scraper cache
+.kilo/
+.firecrawl/

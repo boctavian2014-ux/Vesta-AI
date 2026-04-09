@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { key: "dashboard", href: "/" },
   { key: "map", href: "/map" },
+  { key: "propertySearch", href: "/property-search" },
   { key: "marketTrends", href: "/trends" },
   { key: "savedProperties", href: "/properties" },
   { key: "reports", href: "/reports" },
@@ -94,6 +95,7 @@ export function AppSidebar() {
       ? {
           dashboard: "Panel",
           map: "Mapa",
+          propertySearch: "Búsqueda de vivienda",
           marketTrends: "Tendencias del mercado",
           savedProperties: "Propiedades guardadas",
           reports: "Informes",
@@ -109,6 +111,7 @@ export function AppSidebar() {
       : {
           dashboard: "Dashboard",
           map: "Map",
+          propertySearch: "Property search",
           marketTrends: "Market Trends",
           savedProperties: "Saved Properties",
           reports: "Reports",

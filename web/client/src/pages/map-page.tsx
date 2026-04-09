@@ -18,8 +18,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   TrendingUp, Bookmark, FileText, X, Loader2,
   AlertCircle, CheckCircle2,
-  CreditCard, Search, Map as MapIcon, Satellite,
+  CreditCard, Search,
+  ScanLine,
 } from "lucide-react";
+import { VESTA_BRAND_ASSET_QUERY } from "@/components/vesta-brand-logo";
+import { StreetViewModal } from "@/components/StreetViewModal";
 
 /** Aliniat cu pachetele comerciale cerute: analysis 15 EUR, expert 50 EUR. */
 const PRET_ANALYSIS_PACK_EUR =
@@ -31,7 +34,27 @@ const PRET_EXPERT_EUR =
   Number(import.meta.env.VITE_PRET_EXPERT_EUR) ||
   50;
 const MAP_UI_LOCALE_KEY = "vesta_map_ui_locale";
-const PROPERTY_ANALYSIS_LOGO_SRC = `${import.meta.env.BASE_URL}vesta-logo.png`;
+const PROPERTY_ANALYSIS_LOGO_SRC = `${import.meta.env.BASE_URL}vesta-logo.png${VESTA_BRAND_ASSET_QUERY}`;
+/** Satellite close-up targets (Google may cap zoom by area). */
+const MAP_STREET_ZOOM = 20;
+const MAP_MAX_ZOOM = 22;
+
+/** Parse `#/map?lat=&lon=` from the hash (e.g. deep link from property search). */
+function parseMapCoordsFromHash(): { lat: number; lon: number } | null {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash || "";
+  const q = hash.indexOf("?");
+  if (q < 0) return null;
+  const pathPart = hash.slice(0, q);
+  if (!pathPart.includes("/map")) return null;
+  const params = new URLSearchParams(hash.slice(q + 1));
+  const lat = Number(params.get("lat"));
+  const lon = Number(params.get("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
 type UiLocale = "en" | "es";
 
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
@@ -72,8 +95,6 @@ interface FinancialAnalysis {
   ineCapitalAppreciationPct?: number | string | null;
   [key: string]: any;
 }
-
-type GoogleMapTypeId = "roadmap" | "satellite";
 
 type GoogleAddressComponent = {
   long_name?: string;
@@ -969,6 +990,7 @@ export default function MapPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, navigate] = useHashLocation();
+  const mapDeepLinkConsumedRef = useRef(false);
 
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [propertyInfo, setPropertyInfo] = useState<PropertyInfo | null>(null);
@@ -979,7 +1001,9 @@ export default function MapPage() {
   const [paymentModalTier, setPaymentModalTier] = useState<ProductTier>("analysis_pack");
   const [mapInitError, setMapInitError] = useState<string | null>(null);
   const [mapReloadToken, setMapReloadToken] = useState(0);
-  const [mapType, setMapType] = useState<GoogleMapTypeId>("satellite");
+  const [streetViewOpen, setStreetViewOpen] = useState(false);
+  const [streetViewLat, setStreetViewLat] = useState<number | null>(null);
+  const [streetViewLng, setStreetViewLng] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchBusy, setSearchBusy] = useState(false);
   const [uiLocale, setUiLocale] = useState<UiLocale>(() => {
@@ -1013,8 +1037,8 @@ export default function MapPage() {
     ? {
         searchPlaceholder: "Buscar ciudad, direccion o lat,lon (Spain)",
         searchButton: "Buscar",
-        mapLabel: "Mapa",
-        satelliteLabel: "Satelite",
+        streetViewButton: "Street View",
+        streetViewSelectPointFirst: "Selecciona un punto en el mapa primero",
         searchingLocation: "Buscando ubicacion...",
         searchEmpty: "Escribe una ciudad, direccion o coordenadas.",
         searchNoResult: "No encontramos resultados para esa busqueda.",
@@ -1072,8 +1096,8 @@ export default function MapPage() {
     : {
         searchPlaceholder: "Search city, address or lat,lon (Spain)",
         searchButton: "Search",
-        mapLabel: "Map",
-        satelliteLabel: "Satellite",
+        streetViewButton: "Street View",
+        streetViewSelectPointFirst: "Select a point on the map first",
         searchingLocation: "Searching location...",
         searchEmpty: "Enter a city, address, or coordinates.",
         searchNoResult: "No results found for this query.",
@@ -1142,6 +1166,16 @@ export default function MapPage() {
       win.gm_authFailure = previousAuthFailureHandler;
     };
   }, [t.mapAuthFailed]);
+
+  const openStreetView = useCallback(() => {
+    if (!selectedCoords) {
+      toast({ title: t.streetViewSelectPointFirst, variant: "destructive" });
+      return;
+    }
+    setStreetViewLat(selectedCoords.lat);
+    setStreetViewLng(selectedCoords.lon);
+    setStreetViewOpen(true);
+  }, [selectedCoords, t.streetViewSelectPointFirst, toast]);
 
   // ── mutations ──────────────────────────────────────────────────────────
 
@@ -1225,7 +1259,7 @@ export default function MapPage() {
     onError: (err: any) => toast({ title: t.genericError, description: err.message, variant: "destructive" }),
   });
 
-  // ── Google Maps only (roadmap + Street View) ────────────────────────────
+  // ── Google Maps — satellite only + Street View modal ─────────────────────
 
   useLayoutEffect(() => {
     const key = getGoogleMapsBrowserKey();
@@ -1255,39 +1289,42 @@ export default function MapPage() {
       if (!googleMapRef.current) {
         googleMapRef.current = new g.Map(googleMapContainerRef.current, {
           center: { lat: 40.4168, lng: -3.7038 },
-          zoom: 17,
-          mapTypeId: mapType === "satellite" ? g.MapTypeId.SATELLITE : g.MapTypeId.ROADMAP,
-          tilt: mapType === "satellite" ? 45 : 0,
+          zoom: MAP_STREET_ZOOM,
+          mapTypeId: g.MapTypeId.SATELLITE,
+          tilt: 45,
+          maxZoom: MAP_MAX_ZOOM,
+          rotateControl: true,
           streetViewControl: false,
           mapTypeControl: false,
           fullscreenControl: true,
         });
         googleMapRef.current.addListener("click", (e: any) => {
-          // On map click, force satellite perspective for parcel inspection.
-          if (googleMapRef.current?.setMapTypeId) {
-            googleMapRef.current.setMapTypeId(g.MapTypeId.SATELLITE);
-          }
           if (googleMapRef.current?.setTilt) {
             googleMapRef.current.setTilt(45);
           }
-          setMapType("satellite");
           if (e.latLng) beginPropertySelectionRef.current(e.latLng.lat(), e.latLng.lng());
         });
-      } else if (googleMapRef.current?.setMapTypeId) {
-        googleMapRef.current.setMapTypeId(
-          mapType === "satellite" ? g.MapTypeId.SATELLITE : g.MapTypeId.ROADMAP
-        );
-        if (googleMapRef.current?.setTilt) {
-          googleMapRef.current.setTilt(mapType === "satellite" ? 45 : 0);
-        }
-        if (googleMapRef.current?.setOptions) {
-          googleMapRef.current.setOptions({
-            mapTypeControl: false,
-            streetViewControl: false,
-          });
-        }
+      } else if (googleMapRef.current?.setOptions) {
+        googleMapRef.current.setMapTypeId(g.MapTypeId.SATELLITE);
+        googleMapRef.current.setTilt(45);
+        googleMapRef.current.setOptions({
+          maxZoom: MAP_MAX_ZOOM,
+          rotateControl: true,
+          mapTypeControl: false,
+          streetViewControl: false,
+        });
       }
       setMapInitError(null);
+
+      if (!mapDeepLinkConsumedRef.current && googleMapRef.current) {
+        const deep = parseMapCoordsFromHash();
+        if (deep) {
+          mapDeepLinkConsumedRef.current = true;
+          googleMapRef.current.setCenter({ lat: deep.lat, lng: deep.lon });
+          googleMapRef.current.setZoom(MAP_STREET_ZOOM);
+          queueMicrotask(() => beginPropertySelectionRef.current(deep.lat, deep.lon));
+        }
+      }
 
       const sel = selectedCoordsRef.current;
       if (sel && googleMapRef.current && g.Marker) {
@@ -1316,7 +1353,7 @@ export default function MapPage() {
       cancelled = true;
       window.clearTimeout(initTimeout);
     };
-  }, [mapReloadToken, mapType, t.mapInitFailed, t.missingMapKey]);
+  }, [mapReloadToken, t.mapInitFailed, t.missingMapKey]);
 
   const closePanel = useCallback(() => {
     setPanelOpen(false);
@@ -1350,7 +1387,7 @@ export default function MapPage() {
       const coordinateHit = parseCoordinatesQuery(query);
       if (coordinateHit) {
         gm.setCenter({ lat: coordinateHit.lat, lng: coordinateHit.lon });
-        gm.setZoom(17);
+        gm.setZoom(MAP_STREET_ZOOM);
 
         const geocoder = new g.Geocoder();
         const reverse = await new Promise<{ results: GoogleGeocoderResult[]; status: string }>(
@@ -1465,7 +1502,7 @@ export default function MapPage() {
         }
       } else {
         gm.setCenter({ lat, lng: lon });
-        gm.setZoom(looksLikeAddressQuery ? 17 : 14);
+        gm.setZoom(looksLikeAddressQuery ? MAP_STREET_ZOOM : 14);
       }
     } catch {
       toast({ title: t.searchError, variant: "destructive" });
@@ -1518,7 +1555,7 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* Top bar — search + map mode + language */}
+      {/* Top bar — search + Street View + language */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
         <form
           className="flex items-center gap-2 rounded-full bg-sidebar border border-sidebar-border px-2 py-1.5"
@@ -1567,27 +1604,14 @@ export default function MapPage() {
         <div className="inline-flex items-center gap-1 rounded-full bg-sidebar border border-sidebar-border p-1">
           <button
             type="button"
-            onClick={() => setMapType("roadmap")}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors ${
-              mapType === "roadmap"
-                ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                : "text-sidebar-foreground hover:bg-sidebar-accent"
-            }`}
+            onClick={() => openStreetView()}
+            disabled={!selectedCoords}
+            title={selectedCoords ? t.streetViewButton : t.streetViewSelectPointFirst}
+            aria-label={selectedCoords ? t.streetViewButton : t.streetViewSelectPointFirst}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors enabled:bg-sidebar-primary enabled:text-sidebar-primary-foreground enabled:hover:bg-sidebar-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-sidebar-accent disabled:text-sidebar-foreground/55"
           >
-            <MapIcon className="h-3.5 w-3.5" />
-            {t.mapLabel}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMapType("satellite")}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors ${
-              mapType === "satellite"
-                ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                : "text-sidebar-foreground hover:bg-sidebar-accent"
-            }`}
-          >
-            <Satellite className="h-3.5 w-3.5" />
-            {t.satelliteLabel}
+            <ScanLine className="h-3.5 w-3.5 shrink-0" />
+            {t.streetViewButton}
           </button>
         </div>
       </div>
@@ -1604,30 +1628,39 @@ export default function MapPage() {
             className="absolute right-0 top-0 bottom-0 z-20 w-full max-w-[380px] flex flex-col"
           >
             <Card className="h-full rounded-none border-l border-y-0 border-r-0 border-sidebar-border/70 bg-sidebar text-sidebar-foreground overflow-hidden flex flex-col">
-              <CardHeader className="pb-3 pt-4 px-4 shrink-0">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={PROPERTY_ANALYSIS_LOGO_SRC}
-                      alt="Vesta AI"
-                      className="h-8 w-auto max-w-[3.25rem] shrink-0 rounded-md object-contain"
-                      decoding="async"
-                    />
-                    <CardTitle className="text-sidebar-foreground text-[2rem] font-extrabold leading-tight tracking-tight">
-                      {t.propertyAnalysis}
-                    </CardTitle>
+              <CardHeader className="shrink-0 space-y-0 border-b border-sidebar-border/50 bg-sidebar-accent/20 px-4 pb-4 pt-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-sm backdrop-blur-sm">
+                      <img
+                        src={PROPERTY_ANALYSIS_LOGO_SRC}
+                        alt="Vesta AI"
+                        className="h-8 w-8 object-contain"
+                        decoding="async"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 pr-1 pt-0.5">
+                      <CardTitle className="text-balance text-sidebar-foreground text-[1.05rem] font-semibold leading-snug tracking-tight sm:text-[1.125rem]">
+                        {t.propertyAnalysis}
+                      </CardTitle>
+                      {selectedCoords && (
+                        <p className="mt-2 font-mono text-[11px] leading-relaxed text-sidebar-foreground/45">
+                          {selectedCoords.lat.toFixed(5)}, {selectedCoords.lon.toFixed(5)}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={closePanel} className="h-7 w-7">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={closePanel}
+                    className="h-8 w-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    aria-label="Close panel"
+                  >
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
-                {selectedCoords && (
-                  <p className="text-sidebar-foreground/60 text-xs font-mono mt-1.5">
-                    {selectedCoords.lat.toFixed(5)}, {selectedCoords.lon.toFixed(5)}
-                  </p>
-                )}
               </CardHeader>
-              <Separator />
 
               <CardContent className="text-sidebar-foreground flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {/* Identifying */}
@@ -1826,6 +1859,14 @@ export default function MapPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <StreetViewModal
+        open={streetViewOpen}
+        lat={streetViewLat}
+        lng={streetViewLng}
+        locale={uiLocale}
+        onClose={() => setStreetViewOpen(false)}
+      />
 
       {/* Payment Modal */}
       <PaymentModal
