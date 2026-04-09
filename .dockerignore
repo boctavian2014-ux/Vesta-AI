@@ -1,0 +1,9 @@
+# Monorepo build context for Dockerfile.vesta-web (COPY web/ …)
+.git
+**/.git
+web/node_modules
+web/dist
+web/.env
+web/.env.*
+web/.DS_Store
+**/*.md
