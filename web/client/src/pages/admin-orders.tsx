@@ -76,6 +76,8 @@ export default function AdminOrders() {
         r.address || "",
         r.referenciaCatastral || "",
         r.stripeSessionId || "",
+        (r as any).providerOrderId || "",
+        (r as any).providerStatus || "",
       ].join(" ").toLowerCase();
       return hay.includes(q);
     });
@@ -105,6 +107,48 @@ export default function AdminOrders() {
     },
     onError: (err: any) => {
       toast({ title: "Status update failed", description: err?.message || "Unknown error", variant: "destructive" });
+    },
+  });
+
+  const submitToPartner = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const res = await fetch("/api/nota-partner/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId: id }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Partner submit failed");
+      }
+      return res.json();
+    },
+    onSuccess: async () => {
+      await refresh();
+      toast({ title: "Submitted to partner" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Partner submit failed", description: err?.message || "Unknown error", variant: "destructive" });
+    },
+  });
+
+  const retryPartner = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const res = await fetch(`/api/nota-partner/${id}/retry`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Partner retry failed");
+      }
+      return res.json();
+    },
+    onSuccess: async () => {
+      await refresh();
+      toast({ title: "Partner status refreshed" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Partner retry failed", description: err?.message || "Unknown error", variant: "destructive" });
     },
   });
 
@@ -202,7 +246,7 @@ export default function AdminOrders() {
             <p className="text-sm text-muted-foreground">No nota_simple orders found.</p>
           )}
           {!isLoading && filteredRows.map((report) => (
-            <div key={report.id} className="rounded-lg border border-border p-3 space-y-3">
+            <div key={report.id} className="rounded-lg glass-panel p-3 space-y-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="space-y-0.5">
                   <p className="text-sm font-semibold">Order #{report.id}</p>
@@ -223,6 +267,15 @@ export default function AdminOrders() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Stripe PI:</span> {report.stripeSessionId || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Provider:</span> {(report as any).providerName || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Provider status:</span> {(report as any).providerStatus || "-"}
+                </div>
+                <div className="md:col-span-2">
+                  <span className="text-muted-foreground">Provider order:</span> {(report as any).providerOrderId || "-"}
                 </div>
               </div>
 
@@ -291,10 +344,38 @@ export default function AdminOrders() {
                 >
                   {loadingAuditFor === report.id ? "Loading..." : "Load audit"}
                 </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => submitToPartner.mutate({ id: report.id })}
+                  disabled={submitToPartner.isPending}
+                >
+                  Submit partner
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => retryPartner.mutate({ id: report.id })}
+                  disabled={retryPartner.isPending}
+                >
+                  Retry partner
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => patchStatus.mutate({
+                    id: report.id,
+                    status: "submitted_manual",
+                    note: "Switched to manual flow",
+                  })}
+                  disabled={patchStatus.isPending}
+                >
+                  Switch to manual
+                </Button>
               </div>
 
               {auditByReport[report.id]?.length ? (
-                <div className="rounded-md border border-border bg-muted/20 p-2 space-y-1">
+                <div className="rounded-md glass-panel p-2 space-y-1">
                   <p className="text-xs font-medium text-foreground">Audit trail</p>
                   {auditByReport[report.id].map((ev) => (
                     <div key={ev.id} className="text-xs text-muted-foreground">

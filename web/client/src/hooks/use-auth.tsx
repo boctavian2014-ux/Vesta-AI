@@ -1,6 +1,6 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getQueryFn } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 
 interface User {
   id: number;
@@ -24,7 +24,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const { data: user, isLoading } = useQuery<User | null>({
     queryKey: ["/api/auth/me"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    queryFn: async () => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 7000);
+
+      try {
+        const res = await fetch("/api/auth/me", {
+          credentials: "include",
+          signal: controller.signal,
+        });
+
+        if (res.status === 401) return null;
+        if (!res.ok) return null;
+
+        return (await res.json()) as User;
+      } catch {
+        // Network hiccup / timeout should not block the whole app shell forever.
+        return null;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    },
+    retry: 0,
     staleTime: 1000 * 60 * 5,
   });
 

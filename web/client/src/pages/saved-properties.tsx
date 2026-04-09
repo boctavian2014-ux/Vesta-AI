@@ -9,7 +9,6 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import type { SavedProperty } from "@shared/schema";
 import {
-  Building2,
   MapPin,
   Trash2,
   Loader2,
@@ -18,6 +17,7 @@ import {
   Calendar,
   ArrowRight,
 } from "lucide-react";
+import { VestaBrandLogoMark } from "@/components/vesta-brand-logo";
 
 function PropertyCardSkeleton() {
   return (
@@ -41,7 +41,7 @@ function PropertyCardSkeleton() {
 function MetricBadge({ label, value }: { label: string; value?: string | null }) {
   if (!value || value === "null" || value === "undefined") return null;
   return (
-    <div className="flex flex-col items-center bg-muted/50 rounded-lg px-3 py-2 text-center min-w-0">
+    <div className="flex flex-col items-center glass-panel rounded-lg px-3 py-2 text-center min-w-0">
       <span className="text-xs text-muted-foreground truncate w-full">{label}</span>
       <span className="text-sm font-semibold text-foreground mt-0.5">{value}</span>
     </div>
@@ -72,7 +72,7 @@ function PropertyCard({
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <Building2 className="h-4 w-4 text-primary shrink-0" />
+              <VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />
               <CardTitle className="text-sm font-semibold truncate">
                 {property.address || "Unknown address"}
               </CardTitle>
@@ -171,8 +171,8 @@ function EmptyState() {
   const [, navigate] = useHashLocation();
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
-      <div className="p-4 rounded-full bg-muted">
-        <Building2 className="h-8 w-8 text-muted-foreground" />
+      <div className="rounded-full glass-panel p-4">
+        <VestaBrandLogoMark imgClassName="h-8 w-auto max-h-8 opacity-80" />
       </div>
       <div>
         <h3 className="text-base font-semibold text-foreground mb-1">

@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* VESTA AI — Dark Premium Real Estate Theme
-   Deep navy surfaces, warm gold accent, cool slate text */
+   Copper surfaces, warm gold accent, cream text */
 
 /* LIGHT MODE */
 :root {
@@ -46,7 +46,8 @@
   --chart-3: 160 50% 42%;
   --chart-4: 280 45% 50%;
   --chart-5: 15 75% 55%;
-  --font-sans: 'General Sans', 'Inter', sans-serif;
+  --font-sans: 'General Sans', 'Manrope', 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-report: 'Space Grotesk', 'General Sans', 'Manrope', sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: 'JetBrains Mono', monospace;
   --radius: .5rem;
@@ -77,55 +78,55 @@
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
-/* DARK MODE — Deep Navy Premium */
+/* DARK MODE — Cool chrome / brushed steel (blue-gray base, cyan accent) */
 .dark {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
-  --background: 222 30% 8%;
-  --foreground: 220 15% 90%;
-  --border: 222 18% 16%;
-  --card: 222 25% 11%;
-  --card-foreground: 220 15% 90%;
-  --card-border: 222 18% 15%;
-  --sidebar: 222 28% 10%;
-  --sidebar-foreground: 220 15% 90%;
-  --sidebar-border: 222 18% 15%;
-  --sidebar-primary: 38 65% 55%;
-  --sidebar-primary-foreground: 222 30% 8%;
-  --sidebar-accent: 222 18% 16%;
-  --sidebar-accent-foreground: 220 15% 90%;
-  --sidebar-ring: 38 65% 55%;
-  --popover: 222 25% 12%;
-  --popover-foreground: 220 15% 90%;
-  --popover-border: 222 18% 18%;
-  --primary: 38 65% 55%;
-  --primary-foreground: 222 30% 8%;
-  --secondary: 222 18% 18%;
-  --secondary-foreground: 220 15% 90%;
-  --muted: 222 15% 20%;
-  --muted-foreground: 220 10% 55%;
-  --accent: 222 14% 18%;
-  --accent-foreground: 220 15% 90%;
+  --elevate-1: rgba(255,255,255, .05);
+  --elevate-2: rgba(255,255,255, .11);
+  --background: 220 26% 9%;
+  --foreground: 210 22% 96%;
+  --border: 217 18% 24%;
+  --card: 218 22% 14.5%;
+  --card-foreground: 210 22% 96%;
+  --card-border: 218 18% 20%;
+  --sidebar: 222 28% 7.5%;
+  --sidebar-foreground: 210 22% 96%;
+  --sidebar-border: 220 20% 16%;
+  --sidebar-primary: 203 78% 52%;
+  --sidebar-primary-foreground: 222 40% 8%;
+  --sidebar-accent: 218 18% 17%;
+  --sidebar-accent-foreground: 210 22% 96%;
+  --sidebar-ring: 203 78% 52%;
+  --popover: 218 22% 15%;
+  --popover-foreground: 210 22% 96%;
+  --popover-border: 218 18% 21%;
+  --primary: 203 78% 52%;
+  --primary-foreground: 222 40% 8%;
+  --secondary: 218 18% 17%;
+  --secondary-foreground: 210 22% 96%;
+  --muted: 218 16% 19%;
+  --muted-foreground: 215 12% 58%;
+  --accent: 218 20% 16%;
+  --accent-foreground: 210 22% 96%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 98%;
-  --input: 222 15% 25%;
-  --ring: 38 65% 55%;
-  --chart-1: 38 65% 60%;
+  --input: 218 16% 24%;
+  --ring: 203 78% 52%;
+  --chart-1: 203 75% 55%;
   --chart-2: 200 55% 55%;
   --chart-3: 160 45% 50%;
   --chart-4: 280 40% 60%;
   --chart-5: 15 70% 60%;
-  --shadow-2xs: 0px 1px 2px hsl(0 0% 0% / 0.2);
-  --shadow-xs: 0px 1px 3px hsl(0 0% 0% / 0.25);
-  --shadow-sm: 0px 2px 4px hsl(0 0% 0% / 0.25);
-  --shadow: 0px 4px 8px hsl(0 0% 0% / 0.3);
-  --shadow-md: 0px 4px 12px hsl(0 0% 0% / 0.3);
-  --shadow-lg: 0px 8px 24px hsl(0 0% 0% / 0.35);
-  --shadow-xl: 0px 12px 32px hsl(0 0% 0% / 0.4);
-  --shadow-2xl: 0px 16px 48px hsl(0 0% 0% / 0.45);
+  --shadow-2xs: 0px 1px 2px hsl(0 0% 0% / 0.25);
+  --shadow-xs: 0px 1px 3px hsl(0 0% 0% / 0.3);
+  --shadow-sm: 0px 2px 4px hsl(0 0% 0% / 0.3);
+  --shadow: 0px 4px 8px hsl(0 0% 0% / 0.35);
+  --shadow-md: 0px 4px 12px hsl(0 0% 0% / 0.35);
+  --shadow-lg: 0px 8px 24px hsl(0 0% 0% / 0.4);
+  --shadow-xl: 0px 12px 32px hsl(0 0% 0% / 0.45);
+  --shadow-2xl: 0px 16px 48px hsl(0 0% 0% / 0.5);
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
@@ -150,25 +151,314 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+  /* Solid base; sheen + motion live in .app-ambient (see below). */
+  .dark body {
+    background-color: hsl(var(--background));
+  }
 }
 
-/* Mapbox overrides for dark theme */
+/* Slow ambient motion behind UI — shows through glass-card / glass-panel */
+.app-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* visible: fixed children + blobs must not be clipped (some browsers clip fixed under overflow:hidden) */
+  overflow: visible;
+}
+
+/* Neon-style line : glow layer (blur) + sharp face; outer opacity fades both together */
+.app-ambient__whisper {
+  position: fixed;
+  left: 50%;
+  bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  transform: translateX(-50%);
+  width: min(94vw, 32rem);
+  margin: 0;
+  padding: 0 0.75rem;
+  text-align: center;
+  font-size: 0.75rem;
+  pointer-events: none;
+  transition-property: opacity;
+  transition-timing-function: ease;
+}
+
+.app-ambient__whisper-inner {
+  position: relative;
+  display: block;
+}
+
+.app-ambient__whisper-glow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  pointer-events: none;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  font-weight: 500;
+  font-style: italic;
+  color: hsl(190 100% 55%);
+  opacity: 0.9;
+  filter: blur(10px);
+  transform: scale(1.04);
+  text-shadow:
+    0 0 20px hsl(190 100% 52% / 0.95),
+    0 0 44px hsl(200 100% 50% / 0.65),
+    0 0 72px hsl(205 95% 48% / 0.4);
+}
+
+.dark .app-ambient__whisper-glow {
+  color: hsl(188 100% 58%);
+  text-shadow:
+    0 0 16px hsl(188 100% 55% / 1),
+    0 0 36px hsl(195 100% 52% / 0.85),
+    0 0 64px hsl(203 95% 50% / 0.55),
+    0 0 96px hsl(210 90% 45% / 0.25);
+}
+
+.app-ambient__whisper-face {
+  position: relative;
+  z-index: 1;
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  font-style: italic;
+  color: hsl(186 45% 96%);
+  text-shadow:
+    0 0 1px hsl(190 100% 85% / 0.95),
+    0 0 12px hsl(192 100% 55% / 0.45),
+    0 2px 4px hsl(222 40% 4% / 0.85);
+}
+
+.dark .app-ambient__whisper-face {
+  color: hsl(186 40% 97%);
+}
+
+html:not(.dark) .app-ambient__whisper-glow {
+  color: hsl(32 100% 42%);
+  text-shadow:
+    0 0 18px hsl(38 95% 48% / 0.75),
+    0 0 40px hsl(28 90% 45% / 0.45);
+}
+
+html:not(.dark) .app-ambient__whisper-face {
+  color: hsl(28 30% 18%);
+  text-shadow:
+    0 0 12px hsl(38 90% 55% / 0.35),
+    0 1px 2px hsl(220 20% 98% / 0.9);
+}
+
+@media (min-width: 768px) {
+  .app-ambient__whisper {
+    bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+    width: min(42rem, 90vw);
+  }
+
+  .app-ambient__whisper-face {
+    font-size: 0.8125rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .app-ambient__whisper-glow {
+    animation: ambient-neon-breathe 4.5s ease-in-out infinite;
+  }
+}
+
+@keyframes ambient-neon-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(10px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(11px);
+  }
+}
+
+.app-ambient__base {
+  position: absolute;
+  inset: 0;
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(ellipse 130% 90% at 16% -6%, hsl(200 55% 48% / 0.18), transparent 52%),
+    radial-gradient(ellipse 100% 70% at 100% 108%, hsl(235 40% 5% / 0.55), transparent 48%),
+    linear-gradient(168deg, hsl(218 24% 11%) 0%, hsl(222 28% 7%) 100%);
+}
+
+html:not(.dark) .app-ambient__base {
+  background-image:
+    radial-gradient(ellipse 120% 85% at 12% 8%, hsl(38 70% 50% / 0.14), transparent 55%),
+    radial-gradient(ellipse 90% 70% at 92% 96%, hsl(220 35% 70% / 0.2), transparent 50%),
+    linear-gradient(168deg, hsl(220 20% 97%) 0%, hsl(220 22% 94%) 100%);
+}
+
+/* No mix-blend-mode: "screen" on dark base made blobs nearly invisible */
+.app-ambient__blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  will-change: transform;
+  opacity: 0.88;
+  /* slight saturation so color reads through translucent main chrome */
+}
+
+html:not(.dark) .app-ambient__blob {
+  filter: blur(52px);
+  opacity: 0.72;
+}
+
+.dark .app-ambient__blob--a {
+  width: min(72vw, 720px);
+  height: min(72vw, 720px);
+  top: -18%;
+  left: -20%;
+  background: radial-gradient(
+    circle at 35% 35%,
+    hsl(190 100% 58% / 0.72) 0%,
+    hsl(203 85% 50% / 0.45) 42%,
+    hsl(210 70% 40% / 0.12) 70%,
+    transparent 76%
+  );
+  animation: ambient-float-a 22s ease-in-out infinite;
+}
+
+.dark .app-ambient__blob--b {
+  width: min(64vw, 640px);
+  height: min(64vw, 640px);
+  bottom: -22%;
+  right: -18%;
+  background: radial-gradient(
+    circle at 50% 45%,
+    hsl(285 75% 58% / 0.55) 0%,
+    hsl(270 60% 48% / 0.38) 45%,
+    transparent 72%
+  );
+  animation: ambient-float-b 26s ease-in-out infinite;
+}
+
+.dark .app-ambient__blob--c {
+  width: min(56vw, 520px);
+  height: min(56vw, 520px);
+  top: 32%;
+  right: -8%;
+  background: radial-gradient(
+    circle at 40% 50%,
+    hsl(175 85% 48% / 0.5) 0%,
+    hsl(200 75% 45% / 0.28) 50%,
+    transparent 74%
+  );
+  animation: ambient-float-c 19s ease-in-out infinite;
+}
+
+html:not(.dark) .app-ambient__blob--a {
+  width: min(68vw, 680px);
+  height: min(68vw, 680px);
+  top: -16%;
+  left: -18%;
+  background: radial-gradient(
+    circle at 40% 40%,
+    hsl(38 90% 58% / 0.55) 0%,
+    hsl(32 85% 52% / 0.32) 50%,
+    transparent 74%
+  );
+  animation: ambient-float-a 24s ease-in-out infinite;
+}
+
+html:not(.dark) .app-ambient__blob--b {
+  width: min(58vw, 560px);
+  height: min(58vw, 560px);
+  bottom: -20%;
+  right: -14%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    hsl(205 75% 52% / 0.35) 0%,
+    hsl(220 55% 60% / 0.22) 55%,
+    transparent 72%
+  );
+  animation: ambient-float-b 28s ease-in-out infinite;
+}
+
+html:not(.dark) .app-ambient__blob--c {
+  width: min(50vw, 480px);
+  height: min(50vw, 480px);
+  top: 36%;
+  right: -6%;
+  background: radial-gradient(
+    circle at 45% 50%,
+    hsl(220 40% 72% / 0.45) 0%,
+    hsl(215 35% 78% / 0.25) 55%,
+    transparent 72%
+  );
+  animation: ambient-float-c 21s ease-in-out infinite;
+}
+
+@keyframes ambient-float-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6vw, 5vh) scale(1.06);
+  }
+}
+
+@keyframes ambient-float-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-7vw, -4vh) scale(1.08);
+  }
+}
+
+@keyframes ambient-float-c {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-4vw, 6vh) scale(1.04);
+  }
+  66% {
+    transform: translate(5vw, -3vh) scale(1.07);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-ambient__blob {
+    animation: none !important;
+  }
+
+  .app-ambient__whisper-glow {
+    animation: none !important;
+  }
+}
+
+/* Mapbox overrides for dark theme (aligned with .dark card / border) */
 .mapboxgl-popup-content {
-  background: hsl(222 25% 11%) !important;
-  color: hsl(220 15% 90%) !important;
+  background: hsl(218 22% 14.5%) !important;
+  color: hsl(210 22% 96%) !important;
   border-radius: 0.5rem !important;
   padding: 1rem !important;
-  border: 1px solid hsl(222 18% 18%) !important;
-  box-shadow: 0 8px 24px hsl(0 0% 0% / 0.35) !important;
+  border: 1px solid hsl(218 18% 21%) !important;
+  box-shadow: 0 8px 24px hsl(0 0% 0% / 0.4) !important;
 }
 
 .mapboxgl-popup-tip {
-  border-top-color: hsl(222 25% 11%) !important;
+  border-top-color: hsl(218 22% 14.5%) !important;
 }
 
 .mapboxgl-ctrl-group {
-  background: hsl(222 25% 11%) !important;
-  border: 1px solid hsl(222 18% 18%) !important;
+  background: hsl(218 22% 14.5%) !important;
+  border: 1px solid hsl(218 18% 21%) !important;
 }
 
 .mapboxgl-ctrl-group button {
@@ -243,6 +533,69 @@
   .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
   .border.active-elevate-2:not(.no-active-interaction-elevate)::after {
     inset: -1px;
+  }
+
+  /* Reusable glass surfaces for cards and floating panels. */
+  .glass-card {
+    @apply border backdrop-blur-md shadow-lg;
+    border-color: hsl(var(--border) / 0.58);
+    background-color: hsl(0 0% 100% / 0.08);
+  }
+
+  .glass-card-strong {
+    @apply border backdrop-blur-xl shadow-2xl;
+    border-color: hsl(var(--border) / 0.72);
+    background-color: hsl(0 0% 100% / 0.12);
+  }
+
+  .glass-panel {
+    @apply border backdrop-blur-md shadow-lg;
+    border-color: hsl(var(--border) / 0.58);
+    background-color: hsl(0 0% 100% / 0.08);
+  }
+
+  .font-report {
+    font-family: var(--font-report);
+    letter-spacing: -0.01em;
+  }
+
+  .report-heading {
+    @apply font-semibold tracking-tight;
+    letter-spacing: -0.02em;
+  }
+
+  .report-title {
+    @apply font-semibold;
+    letter-spacing: -0.015em;
+  }
+
+  .report-card-spacing {
+    @apply p-5 md:p-6;
+  }
+
+  .report-secondary {
+    color: hsl(var(--muted-foreground) / 0.82);
+    line-height: 1.72;
+  }
+
+  .report-aux-mobile {
+    font-size: 0.8125rem; /* 13px on mobile */
+  }
+
+  .report-aux-stack-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  @media (min-width: 768px) {
+    .report-aux-mobile {
+      font-size: 0.875rem; /* 14px from md+ */
+    }
+
+    .report-aux-stack-mobile {
+      gap: 0.5rem;
+    }
   }
 
   /* Map glass card: light text + dark halation for any satellite background */

@@ -10,10 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertCircle } from "lucide-react";
 import { VestaBrandLogoAuth } from "@/components/vesta-brand-logo";
+import { detectBrowserLocale } from "@/lib/locale";
 
 export default function AuthPage() {
   const [, navigate] = useHashLocation();
   const { login, register } = useAuth();
+  const locale = detectBrowserLocale();
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -55,11 +57,11 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="relative z-10 min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <VestaBrandLogoAuth />
 
-        <Card className="border-border shadow-lg">
+        <Card className="glass-card-strong border-border shadow-lg">
           <Tabs defaultValue="login">
             <CardHeader className="pb-2">
               <TabsList className="w-full" data-testid="auth-tabs">
@@ -209,19 +211,19 @@ export default function AuthPage() {
         </Card>
 
         <p className="text-center text-xs text-muted-foreground mt-6 leading-relaxed">
-          Continuând, confirmi că ai citit{" "}
+          {locale === "es" ? "Al continuar, confirmas que has leído " : "By continuing, you confirm you have read "}
           <Link
             href="/legal/terms"
             className="text-primary underline underline-offset-2 hover:text-primary/90"
           >
-            Termenii și condițiile
+            {locale === "es" ? "Términos y condiciones" : "Terms and conditions"}
           </Link>{" "}
-          și{" "}
+          {locale === "es" ? "y " : "and "}
           <Link
             href="/legal/privacy"
             className="text-primary underline underline-offset-2 hover:text-primary/90"
           >
-            Politica de confidențialitate
+            {locale === "es" ? "Política de privacidad" : "Privacy policy"}
           </Link>
           .
         </p>

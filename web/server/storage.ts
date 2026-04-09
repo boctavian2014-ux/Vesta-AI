@@ -8,7 +8,8 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, and } from "drizzle-orm";
 
-const sqlite = new Database("data.db");
+const dbPath = (process.env.SQLITE_PATH || "data.db").trim() || "data.db";
+const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
@@ -47,12 +48,19 @@ function ensureSchema() {
       status TEXT NOT NULL DEFAULT 'pending',
       stripe_session_id TEXT,
       stripe_job_id TEXT,
+      pdf_url TEXT,
       referencia_catastral TEXT,
       address TEXT,
       cadastral_json TEXT,
       financial_json TEXT,
       nota_simple_json TEXT,
       report_json TEXT,
+      provider_name TEXT,
+      provider_order_id TEXT,
+      provider_status TEXT,
+      provider_raw_json TEXT,
+      requested_at TEXT,
+      completed_at TEXT,
       created_at TEXT NOT NULL DEFAULT 'now',
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
@@ -71,6 +79,31 @@ function ensureSchema() {
       FOREIGN KEY (actor_user_id) REFERENCES users(id)
     );
   `);
+
+  // Backward compatibility for existing local databases created before `pdf_url`.
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN pdf_url TEXT;`);
+  } catch {
+    // Ignore if the column already exists.
+  }
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_name TEXT;`);
+  } catch {}
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_order_id TEXT;`);
+  } catch {}
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_status TEXT;`);
+  } catch {}
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_raw_json TEXT;`);
+  } catch {}
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN requested_at TEXT;`);
+  } catch {}
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN completed_at TEXT;`);
+  } catch {}
 }
 
 ensureSchema();
@@ -88,15 +121,17 @@ export interface IStorage {
   getReports(userId: number): Promise<Report[]>;
   getReport(id: number, userId: number): Promise<Report | undefined>;
   getReportAdmin(id: number): Promise<Report | undefined>;
+  getReportByProviderOrderId(providerOrderId: string): Promise<Report | undefined>;
   getAllReports(): Promise<Report[]>;
   createReport(report: InsertReport): Promise<Report>;
   updateReport(id: number, userId: number, data: Partial<Report>): Promise<Report | undefined>;
   updateReportAdmin(id: number, data: Partial<Report>): Promise<Report | undefined>;
+  updateReportByProviderOrderId(providerOrderId: string, data: Partial<Report>): Promise<Report | undefined>;
   updateReportStatus(id: number, status: string): Promise<void>;
   /** Legătură cu PaymentIntent Python (`stripe_session_id` pe DetailedReport). */
   updateReportByStripeSessionId(
     stripeSessionId: string,
-    data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId">>
+    data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId" | "pdfUrl">>
   ): Promise<Report | undefined>;
   createReportStatusEvent(
     event: Omit<ReportStatusEvent, "id" | "createdAt">
@@ -153,6 +188,10 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(reports).where(eq(reports.id, id)).get();
   }
 
+  async getReportByProviderOrderId(providerOrderId: string): Promise<Report | undefined> {
+    return db.select().from(reports).where(eq(reports.providerOrderId, providerOrderId)).get();
+  }
+
   async getAllReports(): Promise<Report[]> {
     return db.select().from(reports).all();
   }
@@ -174,13 +213,20 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(reports).where(eq(reports.id, id)).get();
   }
 
+  async updateReportByProviderOrderId(providerOrderId: string, data: Partial<Report>): Promise<Report | undefined> {
+    const row = await this.getReportByProviderOrderId(providerOrderId);
+    if (!row) return undefined;
+    db.update(reports).set(data).where(eq(reports.id, row.id)).run();
+    return db.select().from(reports).where(eq(reports.id, row.id)).get();
+  }
+
   async updateReportStatus(id: number, status: string): Promise<void> {
     db.update(reports).set({ status }).where(eq(reports.id, id)).run();
   }
 
   async updateReportByStripeSessionId(
     stripeSessionId: string,
-    data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId">>
+    data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId" | "pdfUrl">>
   ): Promise<Report | undefined> {
     const row = db.select().from(reports).where(eq(reports.stripeSessionId, stripeSessionId)).get();
     if (!row) return undefined;

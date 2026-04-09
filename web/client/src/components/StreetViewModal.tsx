@@ -219,7 +219,7 @@ export function StreetViewModal({
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm">
-      <div className="absolute inset-x-3 bottom-3 top-3 overflow-hidden rounded-2xl border border-white/10 bg-card text-card-foreground shadow-2xl md:inset-x-8 md:bottom-6 md:top-6">
+      <div className="absolute inset-x-3 bottom-3 top-3 overflow-hidden rounded-2xl glass-card text-card-foreground md:inset-x-8 md:bottom-6 md:top-6">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold">Street View</h2>

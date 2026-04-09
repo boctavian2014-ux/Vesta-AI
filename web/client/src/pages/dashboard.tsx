@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useHashLocation } from "wouter/use-hash-location";
 import { useAuth } from "@/hooks/use-auth";
 import { useUiLocale } from "@/lib/ui-locale";
@@ -13,7 +14,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Building2, TrendingUp, BarChart3, FileText, Map, ArrowRight } from "lucide-react";
+import { TrendingUp, BarChart3, FileText, Map, ArrowRight } from "lucide-react";
+import { VestaBrandLogoMark } from "@/components/vesta-brand-logo";
 
 // Mock trend data for mini-chart
 const TREND_DATA = [
@@ -26,32 +28,40 @@ const TREND_DATA = [
   { month: "Apr", ipv: 187 },
 ];
 
-const KPI_CARDS = [
+type KpiCardDef = {
+  label: string;
+  value: string;
+  description: string;
+  badge: string;
+  icon: ReactNode;
+};
+
+const KPI_CARDS: KpiCardDef[] = [
   {
     label: "Properties Analyzed",
     value: "47",
-    icon: Building2,
+    icon: <VestaBrandLogoMark imgClassName="h-3.5 w-auto max-h-3.5" />,
     description: "Total properties reviewed",
     badge: "+3 this week",
   },
   {
     label: "Avg. Gross Yield",
     value: "6.2%",
-    icon: TrendingUp,
+    icon: <TrendingUp className="h-3.5 w-3.5 text-primary" />,
     description: "Average across saved properties",
     badge: "Above market",
   },
   {
     label: "Market Score",
     value: "72/100",
-    icon: BarChart3,
+    icon: <BarChart3 className="h-3.5 w-3.5 text-primary" />,
     description: "Spain housing market health",
     badge: "Stable",
   },
   {
     label: "Reports Generated",
     value: "12",
-    icon: FileText,
+    icon: <FileText className="h-3.5 w-3.5 text-primary" />,
     description: "Detailed property reports",
     badge: "2 pending",
   },
@@ -60,7 +70,7 @@ const KPI_CARDS = [
 function CustomTooltip({ active, payload, label }: any) {
   if (active && payload && payload.length) {
     return (
-      <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-md">
+      <div className="rounded-lg glass-panel px-3 py-2">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-sm font-semibold text-foreground">
           IPV {payload[0].value}
@@ -109,12 +119,36 @@ export default function Dashboard() {
         reports: "Reports",
       };
 
-  const kpiCards = locale === "es"
+  const kpiCards: KpiCardDef[] = locale === "es"
     ? [
-        { label: "Propiedades analizadas", value: "47", icon: Building2, description: "Total de propiedades revisadas", badge: "+3 esta semana" },
-        { label: "Rentabilidad bruta media", value: "6.2%", icon: TrendingUp, description: "Promedio en propiedades guardadas", badge: "Por encima del mercado" },
-        { label: "Puntuación de mercado", value: "72/100", icon: BarChart3, description: "Salud del mercado inmobiliario español", badge: "Estable" },
-        { label: "Informes generados", value: "12", icon: FileText, description: "Informes detallados de propiedades", badge: "2 pendientes" },
+        {
+          label: "Propiedades analizadas",
+          value: "47",
+          icon: <VestaBrandLogoMark imgClassName="h-3.5 w-auto max-h-3.5" />,
+          description: "Total de propiedades revisadas",
+          badge: "+3 esta semana",
+        },
+        {
+          label: "Rentabilidad bruta media",
+          value: "6.2%",
+          icon: <TrendingUp className="h-3.5 w-3.5 text-primary" />,
+          description: "Promedio en propiedades guardadas",
+          badge: "Por encima del mercado",
+        },
+        {
+          label: "Puntuación de mercado",
+          value: "72/100",
+          icon: <BarChart3 className="h-3.5 w-3.5 text-primary" />,
+          description: "Salud del mercado inmobiliario español",
+          badge: "Estable",
+        },
+        {
+          label: "Informes generados",
+          value: "12",
+          icon: <FileText className="h-3.5 w-3.5 text-primary" />,
+          description: "Informes detallados de propiedades",
+          badge: "2 pendientes",
+        },
       ]
     : KPI_CARDS;
 
@@ -151,8 +185,8 @@ export default function Dashboard() {
                 <CardDescription className="text-xs font-medium uppercase tracking-wide">
                   {card.label}
                 </CardDescription>
-                <div className="p-1.5 rounded-md bg-primary/10">
-                  <card.icon className="h-3.5 w-3.5 text-primary" />
+                <div className="p-1.5 rounded-md bg-primary/10 flex items-center justify-center min-w-[1.75rem] min-h-[1.75rem]">
+                  {card.icon}
                 </div>
               </div>
             </CardHeader>
@@ -260,7 +294,7 @@ export default function Dashboard() {
               data-testid="quick-action-properties"
             >
               <span className="flex items-center gap-2">
-                <Building2 className="h-4 w-4" />
+                <VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />
                 {t.savedProperties}
               </span>
               <ArrowRight className="h-4 w-4 opacity-60" />

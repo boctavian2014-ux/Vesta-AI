@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/s
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AmbientBackground } from "@/components/ambient-background";
 
 import AuthPage from "@/pages/auth";
 import Dashboard from "@/pages/dashboard";
@@ -21,6 +22,7 @@ import ReportDetail from "@/pages/report-detail";
 import AdminOrders from "@/pages/admin-orders";
 import LegalTermsPage from "@/pages/legal-terms";
 import LegalPrivacyPage from "@/pages/legal-privacy";
+import TutorialPage from "@/pages/tutorial";
 import NotFound from "@/pages/not-found";
 
 // Apply dark mode by default
@@ -31,31 +33,39 @@ function applyDefaultTheme() {
 function AppRouter() {
   const { user, isLoading } = useAuth();
   const [location] = useHashLocation();
+  const [authGateTimedOut, setAuthGateTimedOut] = useState(false);
 
   const isLegalRoute =
     location === "/legal/terms" || location === "/legal/privacy";
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isLoading) {
+      setAuthGateTimedOut(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setAuthGateTimedOut(true);
+    }, 8000);
+
+    return () => window.clearTimeout(timer);
+  }, [isLoading]);
+
+  if (isLoading && !authGateTimedOut) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <svg
-            width="40"
-            height="40"
-            viewBox="0 0 32 32"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="animate-pulse"
-          >
-            <rect width="32" height="32" rx="8" fill="hsl(38 70% 50%)" />
-            <path
-              d="M16 8L25 15V25H20V19H12V25H7V15L16 8Z"
-              fill="white"
-              fillOpacity="0.9"
+      <div className="relative z-10 flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4 px-4">
+          <div className="rounded-3xl glass-card px-6 py-4">
+            <img
+              src="/vesta-logo.png?v=4"
+              alt="Vesta AI"
+              width={520}
+              height={180}
+              className="h-auto w-full max-w-[520px] object-contain animate-pulse"
+              decoding="async"
             />
-            <rect x="13.5" y="19" width="5" height="6" rx="1" fill="hsl(38 70% 50%)" />
-          </svg>
-          <p className="text-sm text-muted-foreground">Loading Vesta AI…</p>
+          </div>
+          <p className="text-sm text-muted-foreground">Loading Vesta AI...</p>
         </div>
       </div>
     );
@@ -91,6 +101,7 @@ function AppRouter() {
             <Route path="/properties" component={SavedProperties} />
             <Route path="/reports" component={Reports} />
             <Route path="/reports/:id" component={ReportDetail} />
+            <Route path="/tutorial" component={TutorialPage} />
             {user?.isAdmin && <Route path="/admin/orders" component={AdminOrders} />}
             <Route path="/legal/terms" component={LegalTermsPage} />
             <Route path="/legal/privacy" component={LegalPrivacyPage} />
@@ -108,18 +119,23 @@ function App() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <UiLocaleProvider>
-        <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router hook={useHashLocation}>
-              <AppRouter />
-            </Router>
-          </TooltipProvider>
-        </AuthProvider>
-      </UiLocaleProvider>
-    </QueryClientProvider>
+    <div className="relative min-h-svh">
+      <QueryClientProvider client={queryClient}>
+        <UiLocaleProvider>
+          <AmbientBackground />
+          <div className="relative z-10 min-h-svh">
+            <AuthProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Router hook={useHashLocation}>
+                  <AppRouter />
+                </Router>
+              </TooltipProvider>
+            </AuthProvider>
+          </div>
+        </UiLocaleProvider>
+      </QueryClientProvider>
+    </div>
   );
 }
 

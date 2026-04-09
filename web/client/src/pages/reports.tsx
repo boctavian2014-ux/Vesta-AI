@@ -48,6 +48,18 @@ function StatusBadge({
         "bg-blue-500/15 text-blue-400 border-blue-500/30 hover:bg-blue-500/20",
       icon: <Loader2 className="h-3 w-3 animate-spin" />,
     },
+    waiting_partner: {
+      label: s.statusWaitingPartner,
+      className:
+        "bg-indigo-500/15 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20",
+      icon: <Clock className="h-3 w-3" />,
+    },
+    pdf_received: {
+      label: s.statusPdfReceived,
+      className:
+        "bg-cyan-500/15 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20",
+      icon: <FileText className="h-3 w-3" />,
+    },
     completed: {
       label: s.statusCompleted,
       className:
@@ -58,6 +70,12 @@ function StatusBadge({
       label: s.statusFailed,
       className:
         "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/20",
+      icon: <XCircle className="h-3 w-3" />,
+    },
+    failed_refundable: {
+      label: s.statusFailedRefundable,
+      className:
+        "bg-rose-500/15 text-rose-400 border-rose-500/30 hover:bg-rose-500/20",
       icon: <XCircle className="h-3 w-3" />,
     },
   };
@@ -98,14 +116,7 @@ function ReportTypeLabel({
 }
 
 function formatDate(dateStr: string, locale: AppLocale) {
-  const tag =
-    locale === "ro"
-      ? "ro-RO"
-      : locale === "es"
-        ? "es-ES"
-        : locale === "de"
-          ? "de-DE"
-          : "en-GB";
+  const tag = locale === "es" ? "es-ES" : "en-GB";
   try {
     const d = new Date(dateStr);
     return d.toLocaleDateString(tag, {
@@ -123,7 +134,7 @@ function formatDate(dateStr: string, locale: AppLocale) {
 function ReportSkeleton() {
   return (
     <Card className="border-border">
-      <CardContent className="p-4">
+      <CardContent className="report-card-spacing">
         <div className="flex items-center gap-3">
           <Skeleton className="h-9 w-9 rounded-lg" />
           <div className="flex-1 space-y-2">
@@ -152,7 +163,7 @@ function ReportCard({
         className="border-border hover:border-primary/30 transition-colors cursor-pointer"
         data-testid={`report-card-${report.id}`}
       >
-        <CardContent className="p-4">
+        <CardContent className="report-card-spacing">
           <div className="flex items-start gap-3">
             <div className="p-2.5 rounded-lg bg-primary/10 shrink-0">
               <FileText className="h-4 w-4 text-primary" />
@@ -169,7 +180,7 @@ function ReportCard({
               {(report as any).referenciaCatastral && (
                 <p className="text-xs text-muted-foreground font-mono mt-0.5">{(report as any).referenciaCatastral}</p>
               )}
-              <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1 md:gap-1.5 mt-1 md:mt-1.5 text-xs text-muted-foreground report-aux-mobile">
                 <CalendarDays className="h-3 w-3" />
                 <span>{formatDate(report.createdAt, locale)}</span>
               </div>
@@ -194,7 +205,7 @@ function EmptyState({ s }: { s: ReturnType<typeof getReportsStrings> }) {
         <h3 className="text-base font-semibold text-foreground mb-1">
           {s.emptyTitle}
         </h3>
-        <p className="text-sm text-muted-foreground max-w-xs">
+        <p className="report-secondary report-aux-mobile max-w-xs">
           {s.emptyDescription}
         </p>
       </div>
@@ -211,7 +222,15 @@ function EmptyState({ s }: { s: ReturnType<typeof getReportsStrings> }) {
   );
 }
 
-const STATUS_ORDER = ["processing", "pending", "completed", "failed"];
+const STATUS_ORDER = [
+  "processing",
+  "pending",
+  "waiting_partner",
+  "pdf_received",
+  "completed",
+  "failed_refundable",
+  "failed",
+];
 
 export default function Reports() {
   const locale = detectBrowserLocale();
@@ -236,11 +255,11 @@ export default function Reports() {
       : s.reportsSubtitleLoading;
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl mx-auto">
+    <div className="p-6 space-y-6 max-w-3xl mx-auto font-report">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-foreground">{s.reportsTitle}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{countSubtitle}</p>
+          <h1 className="report-heading text-2xl md:text-[2rem] text-foreground">{s.reportsTitle}</h1>
+          <p className="report-secondary report-aux-mobile mt-1 tracking-[-0.005em]">{countSubtitle}</p>
         </div>
 
         {counts && (
@@ -255,9 +274,24 @@ export default function Reports() {
                 {counts.pending} {s.countPending}
               </span>
             )}
+            {counts.waiting_partner && (
+              <span className="text-xs text-indigo-400">
+                {counts.waiting_partner} {s.countWaitingPartner}
+              </span>
+            )}
+            {counts.pdf_received && (
+              <span className="text-xs text-cyan-400">
+                {counts.pdf_received} {s.countPdfReceived}
+              </span>
+            )}
             {counts.completed && (
               <span className="text-xs text-emerald-400">
                 {counts.completed} {s.countCompleted}
+              </span>
+            )}
+            {counts.failed_refundable && (
+              <span className="text-xs text-rose-400">
+                {counts.failed_refundable} {s.countFailedRefundable}
               </span>
             )}
             {counts.failed && (

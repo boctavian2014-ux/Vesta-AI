@@ -12,15 +12,21 @@ const STRINGS: Record<
     analyzeProperty: string;
     statusPending: string;
     statusProcessing: string;
+    statusWaitingPartner: string;
+    statusPdfReceived: string;
     statusCompleted: string;
     statusFailed: string;
+    statusFailedRefundable: string;
     typeAnalysisPack: string;
     typeNotaSimple: string;
     typeExpertReport: string;
     countProcessing: string;
     countPending: string;
+    countWaitingPartner: string;
+    countPdfReceived: string;
     countCompleted: string;
     countFailed: string;
+    countFailedRefundable: string;
   }
 > = {
   en: {
@@ -34,36 +40,21 @@ const STRINGS: Record<
     analyzeProperty: "Analyze a property",
     statusPending: "Pending",
     statusProcessing: "Processing",
+    statusWaitingPartner: "Waiting partner",
+    statusPdfReceived: "PDF received",
     statusCompleted: "Completed",
     statusFailed: "Failed",
-    typeAnalysisPack: "Property + financial analysis",
+    statusFailedRefundable: "Failed (refundable)",
+    typeAnalysisPack: "Analysis pack (15€)",
     typeNotaSimple: "Nota Simple",
-    typeExpertReport: "Expert report",
+    typeExpertReport: "Expert report + Nota Simple (50€)",
     countProcessing: "processing",
     countPending: "pending",
+    countWaitingPartner: "waiting partner",
+    countPdfReceived: "pdf received",
     countCompleted: "completed",
     countFailed: "failed",
-  },
-  ro: {
-    reportsTitle: "Rapoarte",
-    reportsSubtitleLoading: "Rapoartele tale pentru proprietăți",
-    reportsCount: "rapoarte comandate",
-    reportsCountOne: "raport comandat",
-    emptyTitle: "Încă nu ai rapoarte",
-    emptyDescription:
-      "Comandă primul raport pentru o proprietate analizând-o pe hartă.",
-    analyzeProperty: "Analizează o proprietate",
-    statusPending: "În așteptare",
-    statusProcessing: "În procesare",
-    statusCompleted: "Finalizat",
-    statusFailed: "Eșuat",
-    typeAnalysisPack: "Analiză proprietate + financiară",
-    typeNotaSimple: "Nota Simple",
-    typeExpertReport: "Raport expert",
-    countProcessing: "în procesare",
-    countPending: "în așteptare",
-    countCompleted: "finalizate",
-    countFailed: "eșuate",
+    countFailedRefundable: "failed refundable",
   },
   es: {
     reportsTitle: "Informes",
@@ -76,36 +67,21 @@ const STRINGS: Record<
     analyzeProperty: "Analizar una propiedad",
     statusPending: "Pendiente",
     statusProcessing: "En proceso",
+    statusWaitingPartner: "Esperando proveedor",
+    statusPdfReceived: "PDF recibido",
     statusCompleted: "Completado",
     statusFailed: "Fallido",
-    typeAnalysisPack: "Analisis de propiedad + financiero",
+    statusFailedRefundable: "Fallido (reembolsable)",
+    typeAnalysisPack: "Paquete analisis (15€)",
     typeNotaSimple: "Nota Simple",
-    typeExpertReport: "Informe experto",
+    typeExpertReport: "Informe experto + Nota Simple (50€)",
     countProcessing: "en proceso",
     countPending: "pendientes",
+    countWaitingPartner: "esperando proveedor",
+    countPdfReceived: "pdf recibido",
     countCompleted: "completados",
     countFailed: "fallidos",
-  },
-  de: {
-    reportsTitle: "Berichte",
-    reportsSubtitleLoading: "Ihre Immobilienberichte",
-    reportsCount: "bestellte Berichte",
-    reportsCountOne: "bestellter Bericht",
-    emptyTitle: "Noch keine Berichte",
-    emptyDescription:
-      "Bestellen Sie Ihren ersten Bericht, indem Sie eine Immobilie auf der Karte analysieren.",
-    analyzeProperty: "Immobilie analysieren",
-    statusPending: "Ausstehend",
-    statusProcessing: "In Bearbeitung",
-    statusCompleted: "Abgeschlossen",
-    statusFailed: "Fehlgeschlagen",
-    typeAnalysisPack: "Objekt- und Finanzanalyse",
-    typeNotaSimple: "Nota Simple",
-    typeExpertReport: "Expertenbericht",
-    countProcessing: "in Bearbeitung",
-    countPending: "ausstehend",
-    countCompleted: "abgeschlossen",
-    countFailed: "fehlgeschlagen",
+    countFailedRefundable: "fallido reembolsable",
   },
 };
 

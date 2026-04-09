@@ -4,12 +4,11 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { createCompletedDemoReport } from "@/lib/create-demo-report";
 import { detectBrowserLocale } from "@/lib/locale";
 import { useHashLocation } from "wouter/use-hash-location";
-import { StreetViewModal } from "@/components/StreetViewModal";
-import { identifyProperty, checkStreetViewAvailability } from "@/lib/propertyApi";
+import { identifyProperty } from "@/lib/propertyApi";
 import { getGoogleMapsBrowserKey, loadGoogleMapsJs } from "@/lib/googleMapsLoader";
-import type { PropertyPin, StreetViewMetadataResult } from "@/types/property";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -17,21 +16,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
-  MapPin, TrendingUp, Bookmark, FileText, X, Loader2,
-  AlertCircle, CheckCircle2, Building2,
-  CreditCard, Eye,
+  TrendingUp, Bookmark, FileText, X, Loader2,
+  AlertCircle, CheckCircle2,
+  CreditCard, Search, Map as MapIcon, Satellite,
 } from "lucide-react";
 
-/** Aliniat cu PRET_ANALYSIS_PACK_EUR / PRET_RAPORT_EXPERT_EUR pe API Python (Railway). */
+/** Aliniat cu pachetele comerciale cerute: analysis 15 EUR, expert 50 EUR. */
 const PRET_ANALYSIS_PACK_EUR =
   Number(import.meta.env.VITE_PRET_ANALYSIS_PACK_EUR) ||
-  Number(import.meta.env.VITE_PRET_NOTA_SIMPLE_EUR) ||
-  20;
+  Number(import.meta.env.VITE_PRET_PROPERTY_ANALYSIS_EUR) ||
+  15;
 const PRET_EXPERT_EUR =
   Number(import.meta.env.VITE_PRET_RAPORT_EXPERT_EUR) ||
   Number(import.meta.env.VITE_PRET_EXPERT_EUR) ||
   50;
 const MAP_UI_LOCALE_KEY = "vesta_map_ui_locale";
+const PROPERTY_ANALYSIS_LOGO_SRC = `${import.meta.env.BASE_URL}vesta-logo.png`;
 type UiLocale = "en" | "es";
 
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
@@ -73,16 +73,285 @@ interface FinancialAnalysis {
   [key: string]: any;
 }
 
+type GoogleMapTypeId = "roadmap" | "satellite";
+
+type GoogleAddressComponent = {
+  long_name?: string;
+  short_name?: string;
+  types?: string[];
+};
+
+type GoogleGeocoderViewport = {
+  getNorthEast?: () => { lat?: (() => number) | number; lng?: (() => number) | number };
+  getSouthWest?: () => { lat?: (() => number) | number; lng?: (() => number) | number };
+  north?: number;
+  south?: number;
+  east?: number;
+  west?: number;
+  northeast?: { lat?: number; lng?: number };
+  southwest?: { lat?: number; lng?: number };
+} | Record<string, unknown>;
+
+type GoogleGeocoderResult = {
+  formatted_address?: string;
+  address_components?: GoogleAddressComponent[];
+  geometry?: {
+    location?: {
+      lat?: (() => number) | number;
+      lng?: (() => number) | number;
+    };
+    viewport?: GoogleGeocoderViewport;
+  };
+};
+
+type NominatimAddress = {
+  country?: string;
+  country_code?: string;
+  state?: string;
+  county?: string;
+  city?: string;
+  town?: string;
+  village?: string;
+  municipality?: string;
+  road?: string;
+  house_number?: string;
+  postcode?: string;
+};
+
+type NominatimResult = {
+  lat?: string;
+  lon?: string;
+  display_name?: string;
+  boundingbox?: string[];
+  address?: NominatimAddress;
+};
+
+function makeAddressComponent(
+  longName: string | undefined,
+  shortName: string | undefined,
+  types: string[]
+): GoogleAddressComponent | null {
+  const long = String(longName ?? "").trim();
+  const short = String(shortName ?? "").trim();
+  if (!long && !short) return null;
+  return {
+    long_name: long || short,
+    short_name: short || long,
+    types,
+  };
+}
+
+function mapNominatimResultToGeocoderResult(row: NominatimResult): GoogleGeocoderResult | null {
+  const lat = Number(row?.lat);
+  const lon = Number(row?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  const address = row.address ?? {};
+  const cityLike = address.city || address.town || address.village || address.municipality;
+  const components = [
+    makeAddressComponent(address.country, (address.country_code || "").toUpperCase(), ["country"]),
+    makeAddressComponent(address.state, undefined, ["administrative_area_level_1"]),
+    makeAddressComponent(address.county, undefined, ["administrative_area_level_2"]),
+    makeAddressComponent(cityLike, undefined, ["locality"]),
+    makeAddressComponent(address.road, undefined, ["route"]),
+    makeAddressComponent(address.house_number, undefined, ["street_number"]),
+    makeAddressComponent(address.postcode, undefined, ["postal_code"]),
+  ].filter(Boolean) as GoogleAddressComponent[];
+
+  const bbox = Array.isArray(row.boundingbox) ? row.boundingbox : [];
+  const south = Number(bbox[0]);
+  const north = Number(bbox[1]);
+  const west = Number(bbox[2]);
+  const east = Number(bbox[3]);
+  const viewport =
+    Number.isFinite(north) && Number.isFinite(south) && Number.isFinite(east) && Number.isFinite(west)
+      ? { north, south, east, west }
+      : undefined;
+
+  return {
+    formatted_address: row.display_name,
+    address_components: components,
+    geometry: {
+      location: { lat, lng: lon },
+      viewport,
+    },
+  };
+}
+
+async function geocodeViaNominatim(query: string): Promise<{ status: string; results: GoogleGeocoderResult[] }> {
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&countrycodes=es&q=${encodeURIComponent(
+    query
+  )}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) {
+      return { status: "ERROR", results: [] };
+    }
+    const payload = (await res.json()) as NominatimResult[] | unknown;
+    if (!Array.isArray(payload) || payload.length === 0) {
+      return { status: "ZERO_RESULTS", results: [] };
+    }
+    const mapped = payload
+      .map((row) => mapNominatimResultToGeocoderResult(row))
+      .filter(Boolean) as GoogleGeocoderResult[];
+    return mapped.length ? { status: "OK", results: mapped } : { status: "ZERO_RESULTS", results: [] };
+  } catch {
+    return { status: "ERROR", results: [] };
+  }
+}
+
+function resolveLatLngValue(value: unknown): number | null {
+  if (typeof value === "function") {
+    try {
+      const result = (value as () => unknown)();
+      return typeof result === "number" && Number.isFinite(result) ? result : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
+function getLatLonFromGeocodeResult(
+  result: GoogleGeocoderResult | null | undefined
+): { lat: number; lon: number } | null {
+  const location = result?.geometry?.location;
+  const lat = resolveLatLngValue(location?.lat);
+  const lon = resolveLatLngValue(location?.lng);
+  if (lat === null || lon === null) return null;
+  return { lat, lon };
+}
+
+function normalizeViewportForFitBounds(
+  viewport: GoogleGeocoderViewport | undefined
+): { north: number; south: number; east: number; west: number } | null {
+  if (!viewport) return null;
+  const direct = viewport as {
+    north?: unknown;
+    south?: unknown;
+    east?: unknown;
+    west?: unknown;
+    northeast?: { lat?: unknown; lng?: unknown };
+    southwest?: { lat?: unknown; lng?: unknown };
+  };
+  const north = resolveLatLngValue(direct.north);
+  const south = resolveLatLngValue(direct.south);
+  const east = resolveLatLngValue(direct.east);
+  const west = resolveLatLngValue(direct.west);
+  if (north !== null && south !== null && east !== null && west !== null) {
+    return { north, south, east, west };
+  }
+
+  const neLat = resolveLatLngValue(direct.northeast?.lat);
+  const neLng = resolveLatLngValue(direct.northeast?.lng);
+  const swLat = resolveLatLngValue(direct.southwest?.lat);
+  const swLng = resolveLatLngValue(direct.southwest?.lng);
+  if (neLat !== null && neLng !== null && swLat !== null && swLng !== null) {
+    return { north: neLat, east: neLng, south: swLat, west: swLng };
+  }
+
+  const methodViewport = viewport as {
+    getNorthEast?: () => { lat?: unknown; lng?: unknown };
+    getSouthWest?: () => { lat?: unknown; lng?: unknown };
+  };
+  if (typeof methodViewport.getNorthEast === "function" && typeof methodViewport.getSouthWest === "function") {
+    const ne = methodViewport.getNorthEast();
+    const sw = methodViewport.getSouthWest();
+    const methodNeLat = resolveLatLngValue(ne?.lat);
+    const methodNeLng = resolveLatLngValue(ne?.lng);
+    const methodSwLat = resolveLatLngValue(sw?.lat);
+    const methodSwLng = resolveLatLngValue(sw?.lng);
+    if (methodNeLat !== null && methodNeLng !== null && methodSwLat !== null && methodSwLng !== null) {
+      return { north: methodNeLat, east: methodNeLng, south: methodSwLat, west: methodSwLng };
+    }
+  }
+
+  return null;
+}
+
+function parseCoordinatesQuery(input: string): { lat: number; lon: number } | null {
+  const cleaned = input.trim();
+  const match = cleaned.match(
+    /^\s*(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)\s*$/
+  );
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lon = Number(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return { lat, lon };
+}
+
+function isSpainGeocodeResult(result: GoogleGeocoderResult | null | undefined): boolean | null {
+  const components = result?.address_components;
+  if (!Array.isArray(components) || components.length === 0) return null;
+  const countryComponent = components.find((component) =>
+    Array.isArray(component.types) && component.types.includes("country")
+  );
+  if (!countryComponent) return null;
+  const shortCountry = String(countryComponent.short_name ?? "").toUpperCase();
+  if (shortCountry) return shortCountry === "ES";
+  const longCountry = String(countryComponent.long_name ?? "").trim().toLowerCase();
+  return longCountry === "spain" || longCountry === "españa" || longCountry === "espana";
+}
+
+function extractCityFromGeocodeResult(result: GoogleGeocoderResult | null | undefined): string | null {
+  const components = result?.address_components;
+  if (!Array.isArray(components) || components.length === 0) return null;
+
+  const cityComponent =
+    components.find((component) => Array.isArray(component.types) && component.types.includes("locality")) ||
+    components.find((component) => Array.isArray(component.types) && component.types.includes("postal_town")) ||
+    components.find((component) => Array.isArray(component.types) && component.types.includes("administrative_area_level_2")) ||
+    components.find((component) => Array.isArray(component.types) && component.types.includes("administrative_area_level_1"));
+
+  const value = String(cityComponent?.long_name ?? cityComponent?.short_name ?? "").trim();
+  return value || null;
+}
+
+function isAddressLikeQuery(query: string): boolean {
+  const q = query.trim().toLowerCase();
+  // Heuristic: has digits/comma or common street tokens -> treat as address.
+  return (
+    /\d/.test(q) ||
+    q.includes(",") ||
+    /\b(calle|calleja|cl|avenida|av|plaza|pl|paseo|pg|carretera|cr|camino|cm|rua|ronda|street|st|road|rd|blvd|boulevard)\b/i.test(q)
+  );
+}
+
+function isCityLikeResult(result: GoogleGeocoderResult | null | undefined): boolean {
+  const components = result?.address_components;
+  if (!Array.isArray(components) || components.length === 0) return false;
+  const types = new Set(
+    components.flatMap((component) => (Array.isArray(component.types) ? component.types : []))
+  );
+  const hasCitySignal =
+    types.has("locality") ||
+    types.has("administrative_area_level_2") ||
+    types.has("administrative_area_level_1");
+  const hasExactAddressSignal =
+    types.has("street_number") ||
+    types.has("route") ||
+    types.has("premise") ||
+    types.has("subpremise");
+  return hasCitySignal && !hasExactAddressSignal;
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function MetricRow({ label, value, highlight }: { label: string; value?: string | number | null; highlight?: boolean }) {
   const v = value !== undefined && value !== null && value !== "" ? String(value) : "—";
   return (
-    <div className="flex items-start justify-between gap-3 py-2 border-b border-border/50 last:border-0">
-      <span className="map-neon-muted min-w-0 flex-1 text-sm font-medium leading-snug">{label}</span>
+    <div className="flex items-start justify-between gap-3 py-2 border-b border-sidebar-border/50 last:border-0">
+      <span className="text-sidebar-foreground/80 min-w-0 flex-1 text-sm font-medium leading-snug">{label}</span>
       <span
         className={`max-w-[58%] shrink-0 text-right text-sm font-bold tabular-nums leading-snug break-words ${
-          highlight ? "map-neon-strong" : "map-neon-text"
+          highlight ? "text-[#7CFF32]" : "text-sidebar-foreground"
         }`}
       >
         {v}
@@ -120,12 +389,24 @@ function PaymentModalStripeForm({
   const stripe = useStripe();
   const elements = useElements();
   const [busy, setBusy] = useState(false);
+  const [paymentElementReady, setPaymentElementReady] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!stripe || !elements) return;
+    const mountedPaymentElement = elements.getElement(PaymentElement);
+    if (!mountedPaymentElement || !paymentElementReady) {
+      onError("Payment form is not ready yet. Please wait a second and try again.");
+      return;
+    }
     setBusy(true);
     try {
+      const submitResult = await elements.submit();
+      if (submitResult.error) {
+        onError(submitResult.error.message || "Payment form validation failed");
+        setBusy(false);
+        return;
+      }
       const base = `${window.location.origin}${window.location.pathname || "/"}`;
       const { error } = await stripe.confirmPayment({
         elements,
@@ -148,8 +429,12 @@ function PaymentModalStripeForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
-      <Button type="submit" className="w-full gap-2" disabled={!stripe || busy}>
+      <PaymentElement onReady={() => setPaymentElementReady(true)} />
+      <Button
+        type="submit"
+        className="w-full gap-2"
+        disabled={!stripe || busy}
+      >
         {busy ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : null}
         {submitLabel}
       </Button>
@@ -158,7 +443,7 @@ function PaymentModalStripeForm({
 }
 
 function PaymentModal({
-  open, onClose, onSuccess, propertyInfo, financialData, selectedCoords, uiLocale, initialTier,
+  open, onClose, onSuccess, propertyInfo, financialData, selectedCoords, fallbackCoords, uiLocale, initialTier,
 }: {
   open: boolean;
   onClose: () => void;
@@ -166,6 +451,7 @@ function PaymentModal({
   propertyInfo: PropertyInfo | null;
   financialData: FinancialAnalysis | null;
   selectedCoords: { lat: number; lon: number } | null;
+  fallbackCoords?: { lat: number; lon: number } | null;
   uiLocale: UiLocale;
   initialTier: ProductTier;
 }) {
@@ -185,16 +471,16 @@ function PaymentModal({
         networkError: "Error de red",
         bulletsAnalysis1: "Analisis de propiedad + analisis financiero",
         bulletsAnalysis2: "Scor de oportunidad, rentabilidad, ROI y valoracion",
-        bulletsAnalysis3: "Entrega en la seccion Informes tras confirmar el pago",
+        bulletsAnalysis3: "Entrega en Informes con analisis de zona y mercado local",
         bulletsExpert1: "Incluye paquete de analisis + Nota Simple oficial",
         bulletsExpert2: "Informe experto AI: riesgos, resumen para inversor, due diligence",
         bulletsExpert3: "Soporte completo para decision de compra/inversion",
         orderDocs: "Solicitar paquete",
-        twoPacks: "Dos paquetes: Analisis (20€) o Expert report + Nota Simple (50€).",
+        twoPacks: "Dos paquetes: Analisis (15€) o Expert report + Nota Simple (50€).",
         catastroRef: "Referencia Catastro",
         choosePack: "Elige paquete",
         analysisTitle: "Analisis de propiedad + financiero",
-        analysisSub: "Evaluacion AI de inversion para el inmueble seleccionado",
+        analysisSub: "Evaluacion AI: precio zona, vecinos, seguridad, servicios y rentabilidad",
         expertTitle: "Informe experto completo",
         expertSub: "Nota Simple oficial + analisis AI y due diligence",
         include: "Que incluye",
@@ -203,18 +489,30 @@ function PaymentModal({
         registeringOrder: "Registrando paquete",
         generatingReport: "Generando informe",
         sendingRequest: "Procesando tu paquete de analisis",
-        waitingAI: "Despues del pago: Nota Simple de colaboradores y analisis AI; puede tardar unos minutos",
+        waitingAI: "Analisis AI del inmueble y de la zona en curso; puede tardar unos minutos",
+        postPaymentFlow: "Proceso despues del pago",
+        analysisFlow1: "Pago confirmado",
+        analysisFlow2: "Analisis de zona: precio, servicios, seguridad y puntos de interes",
+        analysisFlow3: "Informe final disponible en Informes",
+        expertFlow1: "Pago confirmado",
+        expertFlow2: "Solicitud de Nota Simple a colaboradores",
+        expertFlow3: "PDF recibido y OCR legal extraido",
+        expertFlow4: "Analisis AI experto en ejecucion",
+        expertFlow5: "Informe final disponible en Informes",
         elapsed: "transcurridos",
         orderRegistered: "Paquete registrado",
         reportProgress: "Informe en curso / generado",
-        analysisDelivered: "Tu analisis se entregara en Informes en breve.",
+        analysisDelivered: "Tu analisis completo de propiedad y zona ya esta disponible en Informes.",
         notaDelivered: "La Nota Simple oficial se entregara por el flujo de colaboradores. Revisa en Informes.",
         redirecting: "Redirigiendo al detalle del informe...",
         cancel: "Cancelar",
-        payNow: "Pagar",
+        payNow: "Generar ahora",
         missingStripePk: "Falta VITE_STRIPE_PUBLISHABLE_KEY en el build. Anade la clave publica de Stripe.",
         securePay: "Pagar con tarjeta",
         backToPacks: "Volver a paquetes",
+        previewDemo: "Ver demo del resultado (sin pago)",
+        previewDemoHint: "Generacion temporal sin payment para validar entregable.",
+        creatingDemo: "Creando demo del informe...",
       }
     : {
         missingCoords: "Missing coordinates",
@@ -231,16 +529,16 @@ function PaymentModal({
         networkError: "Network error",
         bulletsAnalysis1: "Property analysis + financial analysis",
         bulletsAnalysis2: "Opportunity score, yield, ROI, valuation snapshot",
-        bulletsAnalysis3: "Delivered in Reports after payment confirmation",
+        bulletsAnalysis3: "Delivered in Reports with local zone and market analysis",
         bulletsExpert1: "Includes analysis pack + official Nota Simple",
         bulletsExpert2: "AI expert report: risk review, investor summary, due diligence",
         bulletsExpert3: "Full package for acquisition/investment decision",
         orderDocs: "Order package",
-        twoPacks: "Two packages: Analysis (20€) or Expert report + Nota Simple (50€).",
+        twoPacks: "Two packages: Analysis (15€) or Expert report + Nota Simple (50€).",
         catastroRef: "Catastro reference",
         choosePack: "Choose package",
         analysisTitle: "Property + financial analysis",
-        analysisSub: "AI investment evaluation for the selected property",
+        analysisSub: "AI evaluation: local pricing, neighborhood, safety, services and returns",
         expertTitle: "Full expert report",
         expertSub: "Official Nota Simple + AI analysis and due diligence",
         include: "Includes",
@@ -249,18 +547,30 @@ function PaymentModal({
         registeringOrder: "Registering package",
         generatingReport: "Generating report",
         sendingRequest: "Processing your analysis package",
-        waitingAI: "After payment: Nota Simple from collaborators, then AI analysis — this may take a few minutes",
+        waitingAI: "AI property and zone analysis in progress — this may take a few minutes",
+        postPaymentFlow: "Post-payment process",
+        analysisFlow1: "Payment confirmed",
+        analysisFlow2: "Zone analysis: pricing, services, safety and points of interest",
+        analysisFlow3: "Final report available in Reports",
+        expertFlow1: "Payment confirmed",
+        expertFlow2: "Nota Simple requested via collaborators",
+        expertFlow3: "PDF received and legal OCR extracted",
+        expertFlow4: "Expert AI analysis in progress",
+        expertFlow5: "Final report available in Reports",
         elapsed: "elapsed",
         orderRegistered: "Package registered",
         reportProgress: "Report in progress / generated",
-        analysisDelivered: "Your analysis package will be available in Reports shortly.",
+        analysisDelivered: "Your full property + zone analysis is now available in Reports.",
         notaDelivered: "The official Nota Simple will be delivered via collaborators flow. Track it in Reports.",
         redirecting: "Redirecting to report details...",
         cancel: "Cancel",
-        payNow: "Pay",
+        payNow: "Generate now",
         missingStripePk: "Missing VITE_STRIPE_PUBLISHABLE_KEY in the build. Add your Stripe publishable key.",
         securePay: "Pay securely",
         backToPacks: "Back to packages",
+        previewDemo: "Preview deliverable (no payment)",
+        previewDemoHint: "Temporary no-payment generation to validate the deliverable.",
+        creatingDemo: "Creating report preview...",
       };
 
   const { toast } = useToast();
@@ -273,6 +583,7 @@ function PaymentModal({
   const qc = useQueryClient();
 
   const priceForTier = tier === "expert_report" ? PRET_EXPERT_EUR : PRET_ANALYSIS_PACK_EUR;
+  const resolvedCoords = selectedCoords ?? fallbackCoords ?? null;
 
   // Reset when opened; clear poll timer when modal closes
   useEffect(() => {
@@ -290,46 +601,7 @@ function PaymentModal({
 
   // Step 1: create payment intent
   const startPayment = async () => {
-    if (!propertyInfo) return;
-    if (!selectedCoords) {
-      toast({ title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
-      return;
-    }
-    setStep("paying");
-    try {
-      const payload: Record<string, unknown> = {
-        email: "",
-        property_id: 0,
-        tip: tier,
-        referencia_catastral: propertyInfo.referenciaCatastral ?? "",
-        address: propertyInfo.address ?? "",
-        lat: selectedCoords.lat,
-        lon: selectedCoords.lon,
-      };
-      payload.context_json = JSON.stringify({
-        cadastral_json: propertyInfo ?? {},
-        financial_data: financialData ?? {},
-        market_data: {},
-        output_language: uiLocale,
-      });
-      const res = await apiRequest("POST", "/api/payment/create", payload);
-      const data = await res.json();
-      if (!data.clientSecret) throw new Error("No client secret");
-      const pi =
-        typeof data.paymentIntentId === "string" ? data.paymentIntentId : undefined;
-      if (!pi) throw new Error(tr.missingPaymentId);
-      if (!stripePromise) {
-        toast({ title: tr.payError, description: tr.missingStripePk, variant: "destructive" });
-        setStep("confirm");
-        return;
-      }
-      setClientSecret(data.clientSecret);
-      setPaymentIntentId(pi);
-      setStep("payment");
-    } catch (err: any) {
-      toast({ title: tr.payError, description: err.message, variant: "destructive" });
-      setStep("confirm");
-    }
+    await startDemoPreview();
   };
 
   const confirmAndProcess = async (productTier: ProductTier, pi: string | null) => {
@@ -364,7 +636,30 @@ function PaymentModal({
     }
   };
 
-  /** Așteaptă webhook Stripe → Nota Simple → job AI (backend Python), nu /report/generate-async gol. */
+  const startDemoPreview = async () => {
+    if (!resolvedCoords) {
+      toast({ title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
+      return;
+    }
+    setStep("paying");
+    try {
+      const report = await createCompletedDemoReport(tier, {
+        locale: uiLocale,
+        coords: resolvedCoords,
+        propertyInfo: propertyInfo ?? {},
+        financialData: financialData ?? {},
+      });
+      qc.invalidateQueries({ queryKey: ["/api/reports"] });
+      toast({ title: tr.creatingDemo, description: tr.previewDemoHint });
+      setStep("done");
+      onSuccess(report.id);
+    } catch (err: any) {
+      toast({ title: tr.payError, description: err?.message ?? "Demo failed", variant: "destructive" });
+      setStep("confirm");
+    }
+  };
+
+  /** Waits for Stripe webhook -> Nota Simple -> AI job (Python backend), not empty /report/generate-async. */
   const pollPaymentFlowStatus = async (pi: string, rid: number) => {
     let attempts = 0;
     const maxAttempts = 120;
@@ -449,6 +744,26 @@ function PaymentModal({
     tr.bulletsExpert2,
     tr.bulletsExpert3,
   ];
+  const processingSteps =
+    tier === "analysis_pack"
+      ? [tr.analysisFlow1, tr.analysisFlow2, tr.analysisFlow3]
+      : [tr.expertFlow1, tr.expertFlow2, tr.expertFlow3, tr.expertFlow4, tr.expertFlow5];
+  const activeProcessingStep =
+    tier === "analysis_pack"
+      ? pollCount >= 6
+        ? 2
+        : pollCount >= 2
+          ? 1
+          : 0
+      : pollCount >= 22
+        ? 4
+        : pollCount >= 14
+          ? 3
+          : pollCount >= 8
+            ? 2
+            : pollCount >= 3
+              ? 1
+              : 0;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -465,7 +780,7 @@ function PaymentModal({
 
         <div className="space-y-4 py-2">
           {propertyInfo?.referenciaCatastral && (
-            <div className="rounded-lg bg-muted/50 border border-border px-3 py-2.5 space-y-1">
+            <div className="rounded-lg glass-panel px-3 py-2.5 space-y-1">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tr.catastroRef}</p>
               <p className="text-sm font-bold text-primary font-mono">{propertyInfo.referenciaCatastral}</p>
               {propertyInfo.address && <p className="text-xs text-muted-foreground">{propertyInfo.address}</p>}
@@ -567,7 +882,7 @@ function PaymentModal({
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 text-primary animate-spin" />
               </div>
-              <div className="text-center">
+              <div className="text-center max-w-md">
                 <p className="text-sm font-semibold text-foreground">
                   {tier === "analysis_pack" ? tr.registeringOrder : tr.generatingReport}
                 </p>
@@ -576,6 +891,31 @@ function PaymentModal({
                     ? tr.sendingRequest
                     : tr.waitingAI}
                 </p>
+              </div>
+              <div className="w-full rounded-lg glass-panel p-3 space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {tr.postPaymentFlow}
+                </p>
+                <div className="space-y-1.5">
+                  {processingSteps.map((label, idx) => {
+                    const done = idx < activeProcessingStep;
+                    const active = idx === activeProcessingStep;
+                    return (
+                      <div key={label} className="flex items-center gap-2 text-xs">
+                        {done ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        ) : active ? (
+                          <Loader2 className="h-3.5 w-3.5 text-primary animate-spin shrink-0" />
+                        ) : (
+                          <span className="h-3.5 w-3.5 rounded-full border border-border shrink-0" />
+                        )}
+                        <span className={done ? "text-foreground" : "text-muted-foreground"}>
+                          {label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
                 <div
@@ -603,12 +943,15 @@ function PaymentModal({
         </div>
 
         {step === "confirm" && (
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={onClose} className="flex-1">{tr.cancel}</Button>
-            <Button onClick={startPayment} className="flex-1 gap-2">
-              <CreditCard className="h-4 w-4" />
-              {tr.payNow} {priceForTier} €
-            </Button>
+          <div className="space-y-2 pt-2">
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose} className="flex-1">{tr.cancel}</Button>
+              <Button onClick={startPayment} className="flex-1 gap-2">
+                <CreditCard className="h-4 w-4" />
+                {tr.payNow} {priceForTier} €
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground text-center">{tr.previewDemoHint}</p>
           </div>
         )}
 
@@ -634,9 +977,11 @@ export default function MapPage() {
   const [identifyError, setIdentifyError] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentModalTier, setPaymentModalTier] = useState<ProductTier>("analysis_pack");
-  const [streetViewOpen, setStreetViewOpen] = useState(false);
-  const [checkingStreetView, setCheckingStreetView] = useState(false);
-  const [streetViewMeta, setStreetViewMeta] = useState<StreetViewMetadataResult | null>(null);
+  const [mapInitError, setMapInitError] = useState<string | null>(null);
+  const [mapReloadToken, setMapReloadToken] = useState(0);
+  const [mapType, setMapType] = useState<GoogleMapTypeId>("satellite");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchBusy, setSearchBusy] = useState(false);
   const [uiLocale, setUiLocale] = useState<UiLocale>(() => {
     if (typeof window !== "undefined") {
       const saved = window.localStorage.getItem(MAP_UI_LOCALE_KEY);
@@ -651,14 +996,35 @@ export default function MapPage() {
     }
   }, [uiLocale]);
 
+  const fallbackCoordsFromMapCenter = (() => {
+    try {
+      const center = googleMapRef.current?.getCenter?.();
+      if (!center) return null;
+      const lat = Number(center.lat?.());
+      const lon = Number(center.lng?.());
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return { lat, lon };
+    } catch {
+      return null;
+    }
+  })();
+
   const t = uiLocale === "es"
     ? {
-        streetView: "Street View",
-        clickBuilding: "Haz clic en un edificio",
+        searchPlaceholder: "Buscar ciudad, direccion o lat,lon (Spain)",
+        searchButton: "Buscar",
+        mapLabel: "Mapa",
+        satelliteLabel: "Satelite",
+        searchingLocation: "Buscando ubicacion...",
+        searchEmpty: "Escribe una ciudad, direccion o coordenadas.",
+        searchNoResult: "No encontramos resultados para esa busqueda.",
+        searchError: "No se pudo completar la busqueda.",
+        addressOtherCity: "La direccion no corresponde: es de otra ciudad.",
+        outsideSpainWarning: "Resultado fuera de Espana (se permite continuar).",
         propertyAnalysis: "Analisis de propiedad",
         queryingCatastro: "Consultando Catastro...",
         noBuildingTitle: "No se encontro edificio",
-        noBuildingDesc: "Haz clic directamente sobre el tejado de un edificio. Haz zoom para mayor precision.",
+        noBuildingDesc: "No se encontro edificio en ese punto. Prueba otra zona o aumenta el zoom.",
         catastroRef: "Referencia Catastro",
         propertyData: "Datos del inmueble",
         address: "Direccion",
@@ -669,6 +1035,7 @@ export default function MapPage() {
         yearBuilt: "Ano de construccion",
         aiFinancial: "Analisis financiero AI para este inmueble",
         financialAnalysis: "Analisis financiero",
+        expertAnalysisOrder: "Informe experto",
         calculatingYield: "Calculando rentabilidad...",
         financialSection: "Analisis financiero",
         grossYield: "Rentabilidad bruta",
@@ -690,24 +1057,33 @@ export default function MapPage() {
         dataSource: "Fuente datos",
         ineCapApp: "Apreciacion INE (serie)",
         saveProperty: "Guardar propiedad",
-        orderReport: "Pedir — Expert report + Nota Simple (50€)",
-        streetViewUnavailable: "Street View no disponible",
-        missingStreetKey: "Falta VITE_GOOGLE_MAPS_JS_API_KEY.",
-        status: "Estado",
-        noBuildingError: "No se encontro edificio. Haz clic directamente en un edificio.",
+        noBuildingError: "No se encontro edificio en ese punto.",
         analysisFailed: "Analisis fallido",
         retryAnalysis: "Reintentar analisis",
         propertySaved: "Propiedad guardada",
         genericError: "Error",
         selectedProperty: "Inmueble seleccionado",
+        mapUnavailable: "Mapa no disponible",
+        mapInitFailed: "No pudimos iniciar Google Maps.",
+        mapRetry: "Reintentar mapa",
+        missingMapKey: "Falta VITE_GOOGLE_MAPS_JS_API_KEY.",
+        mapAuthFailed: "Google Maps rechazo la clave API (verifica restricciones de dominio y facturacion).",
       }
     : {
-        streetView: "Street View",
-        clickBuilding: "Click a building",
+        searchPlaceholder: "Search city, address or lat,lon (Spain)",
+        searchButton: "Search",
+        mapLabel: "Map",
+        satelliteLabel: "Satellite",
+        searchingLocation: "Searching location...",
+        searchEmpty: "Enter a city, address, or coordinates.",
+        searchNoResult: "No results found for this query.",
+        searchError: "Could not complete search.",
+        addressOtherCity: "Address does not match current city; it belongs to a different city.",
+        outsideSpainWarning: "Result is outside Spain (continuing anyway).",
         propertyAnalysis: "Property analysis",
         queryingCatastro: "Querying Catastro...",
         noBuildingTitle: "No building found",
-        noBuildingDesc: "Click directly on a building roof. Zoom in for better precision.",
+        noBuildingDesc: "No building found at this location. Try another area or zoom in.",
         catastroRef: "Catastro reference",
         propertyData: "Property data",
         address: "Address",
@@ -718,6 +1094,7 @@ export default function MapPage() {
         yearBuilt: "Year built",
         aiFinancial: "AI financial analysis for this property",
         financialAnalysis: "Financial analysis",
+        expertAnalysisOrder: "Expert analysis",
         calculatingYield: "Calculating yield...",
         financialSection: "Financial analysis",
         grossYield: "Gross yield",
@@ -739,17 +1116,32 @@ export default function MapPage() {
         dataSource: "Data source",
         ineCapApp: "INE series appreciation",
         saveProperty: "Save property",
-        orderReport: "Order — Expert report + Nota Simple (50€)",
-        streetViewUnavailable: "Street View unavailable",
-        missingStreetKey: "Missing VITE_GOOGLE_MAPS_JS_API_KEY.",
-        status: "Status",
-        noBuildingError: "No building found. Click directly on a building.",
+        noBuildingError: "No building found at this location.",
         analysisFailed: "Analysis failed",
         retryAnalysis: "Retry analysis",
         propertySaved: "Property saved",
         genericError: "Error",
         selectedProperty: "Selected property",
+        mapUnavailable: "Map unavailable",
+        mapInitFailed: "We could not initialize Google Maps.",
+        mapRetry: "Retry map",
+        missingMapKey: "Missing VITE_GOOGLE_MAPS_JS_API_KEY.",
+        mapAuthFailed: "Google Maps rejected the API key (check referrer restrictions and billing).",
       };
+
+  useEffect(() => {
+    const win = window as Window & { gm_authFailure?: () => void };
+    const previousAuthFailureHandler = win.gm_authFailure;
+    win.gm_authFailure = () => {
+      setMapInitError(t.mapAuthFailed);
+      if (typeof previousAuthFailureHandler === "function") {
+        previousAuthFailureHandler();
+      }
+    };
+    return () => {
+      win.gm_authFailure = previousAuthFailureHandler;
+    };
+  }, [t.mapAuthFailed]);
 
   // ── mutations ──────────────────────────────────────────────────────────
 
@@ -783,9 +1175,6 @@ export default function MapPage() {
       setPropertyInfo(null);
       setFinancialData(null);
       setIdentifyError(null);
-      setStreetViewOpen(false);
-      setStreetViewMeta(null);
-      setCheckingStreetView(false);
       setPanelOpen(true);
 
       const g = (typeof window !== "undefined" ? (window as any).google : null)?.maps;
@@ -841,27 +1230,64 @@ export default function MapPage() {
   useLayoutEffect(() => {
     const key = getGoogleMapsBrowserKey();
     const container = googleMapContainerRef.current;
-    if (!key || !container) return;
+    if (!container) return;
+    if (!key) {
+      setMapInitError(t.missingMapKey);
+      return;
+    }
 
     let cancelled = false;
+    setMapInitError(null);
+    const initTimeout = window.setTimeout(() => {
+      if (!cancelled && !googleMapRef.current) {
+        setMapInitError(t.mapInitFailed);
+      }
+    }, 10000);
+
     loadGoogleMapsJs(key).then(() => {
       if (cancelled || !googleMapContainerRef.current) return;
       const g = (window as any).google?.maps;
-      if (!g?.Map) return;
+      if (!g?.Map) {
+        setMapInitError(t.mapInitFailed);
+        return;
+      }
 
       if (!googleMapRef.current) {
         googleMapRef.current = new g.Map(googleMapContainerRef.current, {
           center: { lat: 40.4168, lng: -3.7038 },
           zoom: 17,
-          mapTypeId: g.MapTypeId.ROADMAP,
+          mapTypeId: mapType === "satellite" ? g.MapTypeId.SATELLITE : g.MapTypeId.ROADMAP,
+          tilt: mapType === "satellite" ? 45 : 0,
           streetViewControl: false,
-          mapTypeControl: true,
+          mapTypeControl: false,
           fullscreenControl: true,
         });
         googleMapRef.current.addListener("click", (e: any) => {
+          // On map click, force satellite perspective for parcel inspection.
+          if (googleMapRef.current?.setMapTypeId) {
+            googleMapRef.current.setMapTypeId(g.MapTypeId.SATELLITE);
+          }
+          if (googleMapRef.current?.setTilt) {
+            googleMapRef.current.setTilt(45);
+          }
+          setMapType("satellite");
           if (e.latLng) beginPropertySelectionRef.current(e.latLng.lat(), e.latLng.lng());
         });
+      } else if (googleMapRef.current?.setMapTypeId) {
+        googleMapRef.current.setMapTypeId(
+          mapType === "satellite" ? g.MapTypeId.SATELLITE : g.MapTypeId.ROADMAP
+        );
+        if (googleMapRef.current?.setTilt) {
+          googleMapRef.current.setTilt(mapType === "satellite" ? 45 : 0);
+        }
+        if (googleMapRef.current?.setOptions) {
+          googleMapRef.current.setOptions({
+            mapTypeControl: false,
+            streetViewControl: false,
+          });
+        }
       }
+      setMapInitError(null);
 
       const sel = selectedCoordsRef.current;
       if (sel && googleMapRef.current && g.Marker) {
@@ -875,12 +1301,22 @@ export default function MapPage() {
           });
         }
       }
+    }).catch((err: unknown) => {
+      if (!cancelled) {
+        const errorDetails = err instanceof Error ? err.message : "";
+        setMapInitError(
+          errorDetails ? `${t.mapInitFailed} (${errorDetails})` : t.mapInitFailed
+        );
+      }
+    }).finally(() => {
+      window.clearTimeout(initTimeout);
     });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(initTimeout);
     };
-  }, []);
+  }, [mapReloadToken, mapType, t.mapInitFailed, t.missingMapKey]);
 
   const closePanel = useCallback(() => {
     setPanelOpen(false);
@@ -888,115 +1324,272 @@ export default function MapPage() {
     setFinancialData(null);
     setSelectedCoords(null);
     setIdentifyError(null);
-    setStreetViewOpen(false);
-    setStreetViewMeta(null);
-    setCheckingStreetView(false);
     if (googleMarkerRef.current) {
       googleMarkerRef.current.setMap(null);
       googleMarkerRef.current = null;
     }
   }, []);
 
-  const selectedProperty = useMemo<PropertyPin | null>(() => {
-    if (!selectedCoords) return null;
-    const ref = propertyInfo?.referenciaCatastral || `${selectedCoords.lat},${selectedCoords.lon}`;
-    const title =
-      propertyInfo?.address ||
-      (propertyInfo?.referenciaCatastral
-        ? `${t.selectedProperty} ${propertyInfo.referenciaCatastral}`
-        : t.selectedProperty);
-    const scoreRaw = financialData?.opportunityScore ?? propertyInfo?.oportunityScore;
-    const scoreNum = scoreRaw != null ? Number(scoreRaw) : undefined;
-    return {
-      id: String(ref),
-      title,
-      lat: selectedCoords.lat,
-      lng: selectedCoords.lon,
-      address: propertyInfo?.address,
-      opportunityScore: Number.isFinite(scoreNum as number) ? scoreNum : undefined,
-    };
-  }, [selectedCoords, propertyInfo, financialData]);
-
   const isIdentifying = identifyMutation.isPending;
-  const streetViewAvailable = !checkingStreetView && streetViewMeta?.status === "OK";
 
-  useEffect(() => {
-    if (!selectedProperty) {
-      setStreetViewMeta(null);
-      setCheckingStreetView(false);
+  const runSearch = useCallback(async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      toast({ title: t.searchEmpty, variant: "destructive" });
       return;
     }
-    let cancelled = false;
-    setCheckingStreetView(true);
-    checkStreetViewAvailability(selectedProperty.lat, selectedProperty.lng, {
-      source: "outdoor",
-      radius: 25,
-    })
-      .then((meta) => {
-        if (!cancelled) setStreetViewMeta(meta);
-      })
-      .finally(() => {
-        if (!cancelled) setCheckingStreetView(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedProperty]);
-
-  const openStreetView = useCallback(() => {
-    if (!selectedProperty) return;
-    if (checkingStreetView) return;
-    if (!streetViewAvailable) {
-      toast({
-        title: t.streetViewUnavailable,
-        description: streetViewMeta?.status === "MISSING_API_KEY"
-          ? t.missingStreetKey
-          : `${t.status}: ${streetViewMeta?.status ?? "UNKNOWN"}`,
-        variant: "destructive",
-      });
+    const g = (window as any).google?.maps;
+    const gm = googleMapRef.current;
+    if (!g || !gm) {
+      toast({ title: t.mapInitFailed, variant: "destructive" });
       return;
     }
-    setStreetViewOpen(true);
-  }, [selectedProperty, checkingStreetView, streetViewAvailable, streetViewMeta, toast, t.missingStreetKey, t.status, t.streetViewUnavailable]);
+
+    setSearchBusy(true);
+    try {
+      const coordinateHit = parseCoordinatesQuery(query);
+      if (coordinateHit) {
+        gm.setCenter({ lat: coordinateHit.lat, lng: coordinateHit.lon });
+        gm.setZoom(17);
+
+        const geocoder = new g.Geocoder();
+        const reverse = await new Promise<{ results: GoogleGeocoderResult[]; status: string }>(
+          (resolve) => {
+            geocoder.geocode(
+              { location: { lat: coordinateHit.lat, lng: coordinateHit.lon } },
+              (results: GoogleGeocoderResult[] = [], status: string) => resolve({ results, status })
+            );
+          }
+        );
+        if (reverse.status === "OK" && reverse.results?.length) {
+          const inSpain = isSpainGeocodeResult(reverse.results[0]);
+          if (inSpain === false) {
+            toast({ title: t.outsideSpainWarning });
+          }
+        }
+        return;
+      }
+
+      const geocoder = new g.Geocoder();
+      const geocodeOnce = (request: Record<string, unknown>) =>
+        new Promise<{ results: GoogleGeocoderResult[]; status: string }>((resolve) => {
+          geocoder.geocode(
+            request,
+            (results: GoogleGeocoderResult[] = [], status: string) => resolve({ results, status })
+          );
+        });
+
+      let geocodeResult = await geocodeOnce({
+        address: query,
+        region: "es",
+        componentRestrictions: { country: "ES" },
+      });
+
+      if (geocodeResult.status !== "OK" || !geocodeResult.results?.length) {
+        geocodeResult = await geocodeOnce({
+          address: `${query}, Spain`,
+          region: "es",
+        });
+      }
+
+      if (geocodeResult.status !== "OK" || !geocodeResult.results?.length) {
+        geocodeResult = await geocodeOnce({ address: query });
+      }
+
+      if (geocodeResult.status !== "OK" || !geocodeResult.results?.length) {
+        // Browser-side Google geocode REST can fail due CORS or key restrictions.
+        // Fallback to Nominatim so city/address search still works.
+        geocodeResult = await geocodeViaNominatim(query);
+      }
+
+      if (geocodeResult.status !== "OK" || !geocodeResult.results?.length) {
+        if (geocodeResult.status === "ZERO_RESULTS") {
+          toast({ title: t.searchNoResult, variant: "destructive" });
+        } else {
+          toast({ title: t.searchError, variant: "destructive" });
+        }
+        return;
+      }
+
+      const first = geocodeResult.results[0];
+      const coords = getLatLonFromGeocodeResult(first);
+      if (!coords) {
+        toast({ title: t.searchError, variant: "destructive" });
+        return;
+      }
+      const { lat, lon } = coords;
+
+      const inSpain = isSpainGeocodeResult(first);
+      if (inSpain === false) {
+        toast({ title: t.outsideSpainWarning });
+      }
+
+      const queryLooksLikeAddress = isAddressLikeQuery(query);
+      if (queryLooksLikeAddress) {
+        const currentCenter = gm.getCenter?.();
+        const centerLat = currentCenter?.lat?.();
+        const centerLng = currentCenter?.lng?.();
+        if (typeof centerLat === "number" && typeof centerLng === "number") {
+          const centerReverse = await new Promise<{ results: GoogleGeocoderResult[]; status: string }>(
+            (resolve) => {
+              geocoder.geocode(
+                { location: { lat: centerLat, lng: centerLng } },
+                (results: GoogleGeocoderResult[] = [], status: string) => resolve({ results, status })
+              );
+            }
+          );
+          if (centerReverse.status === "OK" && centerReverse.results?.length) {
+            const currentCity = extractCityFromGeocodeResult(centerReverse.results[0]);
+            const searchedCity = extractCityFromGeocodeResult(first);
+            if (
+              currentCity &&
+              searchedCity &&
+              currentCity.localeCompare(searchedCity, undefined, { sensitivity: "base" }) !== 0
+            ) {
+              toast({ title: t.addressOtherCity, variant: "destructive" });
+              return;
+            }
+          }
+        }
+      }
+
+      const looksLikeAddressQuery = isAddressLikeQuery(query);
+      const isCityResult = isCityLikeResult(first);
+
+      const normalizedViewport = normalizeViewportForFitBounds(first.geometry?.viewport);
+      if (!looksLikeAddressQuery && isCityResult && normalizedViewport && gm.fitBounds) {
+        gm.fitBounds(normalizedViewport as any);
+        const currentZoom = gm.getZoom?.();
+        if (typeof currentZoom === "number" && currentZoom > 12 && gm.setZoom) {
+          gm.setZoom(12);
+        }
+      } else {
+        gm.setCenter({ lat, lng: lon });
+        gm.setZoom(looksLikeAddressQuery ? 17 : 14);
+      }
+    } catch {
+      toast({ title: t.searchError, variant: "destructive" });
+    } finally {
+      setSearchBusy(false);
+    }
+  }, [
+    searchQuery,
+    t.searchEmpty,
+    t.mapInitFailed,
+    t.searchNoResult,
+    t.searchError,
+    t.addressOtherCity,
+    t.outsideSpainWarning,
+    toast,
+  ]);
 
   return (
-    <div className="relative h-[calc(100vh-3rem)] w-full overflow-hidden">
+    <div data-vesta-map-root className="relative h-[calc(100vh-3rem)] w-full overflow-hidden">
+      <style>{`
+        [data-vesta-map-root] .gm-style-mtc,
+        [data-vesta-map-root] .gm-svpc,
+        [data-vesta-map-root] .gm-style button[title="Map"],
+        [data-vesta-map-root] .gm-style button[title="Satellite"] {
+          display: none !important;
+        }
+      `}</style>
       {/* Google Maps only */}
       <div
         ref={googleMapContainerRef}
         className="absolute inset-0 z-[5] h-full w-full"
         data-testid="google-map-container"
       />
+      {mapInitError && (
+        <div className="absolute inset-0 z-[6] flex items-center justify-center bg-sidebar/80 px-4">
+          <div className="max-w-md rounded-xl border border-sidebar-border bg-sidebar p-5 text-center text-sidebar-foreground">
+            <p className="text-sm font-semibold">{t.mapUnavailable}</p>
+            <p className="mt-2 text-sm text-sidebar-foreground/70">{mapInitError}</p>
+            <Button
+              className="mt-4"
+              variant="secondary"
+              onClick={() => {
+                setMapInitError(null);
+                setMapReloadToken((v) => v + 1);
+              }}
+            >
+              {t.mapRetry}
+            </Button>
+          </div>
+        </div>
+      )}
 
-      {/* Top bar — Street View + language */}
+      {/* Top bar — search + map mode + language */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
-        {/* Google Street View button */}
-        <button
-          type="button"
-          title={t.streetView}
-          onClick={openStreetView}
-          disabled={!selectedProperty || !streetViewAvailable}
-          className="flex items-center gap-1.5 bg-black/75 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-xs text-white hover:bg-black/90 transition-colors shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+        <form
+          className="flex items-center gap-2 rounded-full bg-sidebar border border-sidebar-border px-2 py-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void runSearch();
+          }}
         >
-          <Eye className="h-3.5 w-3.5" /> {t.streetView}
-        </button>
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={t.searchPlaceholder}
+            className="w-[270px] bg-transparent px-2 text-xs text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/50"
+            aria-label={t.searchPlaceholder}
+          />
+          <Button
+            type="submit"
+            size="sm"
+            className="h-7 rounded-full px-3 text-xs"
+            disabled={searchBusy}
+          >
+            {searchBusy ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t.searchingLocation}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <Search className="h-3 w-3" />
+                {t.searchButton}
+              </span>
+            )}
+          </Button>
+        </form>
 
         <select
           value={uiLocale}
           onChange={(e: any) => setUiLocale(e.target.value as UiLocale)}
-          className="rounded-full border border-white/20 bg-black/70 px-3 py-2 text-xs text-white"
+          className="rounded-full bg-sidebar border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground"
           aria-label="Language selector"
         >
           <option value="en">EN</option>
           <option value="es">ES</option>
         </select>
 
-        {!panelOpen && (
-          <div className="hidden md:flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-xs text-white/80">
-            <MapPin className="h-3 w-3 text-primary" />
-            {t.clickBuilding}
-          </div>
-        )}
+        <div className="inline-flex items-center gap-1 rounded-full bg-sidebar border border-sidebar-border p-1">
+          <button
+            type="button"
+            onClick={() => setMapType("roadmap")}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors ${
+              mapType === "roadmap"
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent"
+            }`}
+          >
+            <MapIcon className="h-3.5 w-3.5" />
+            {t.mapLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapType("satellite")}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors ${
+              mapType === "satellite"
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent"
+            }`}
+          >
+            <Satellite className="h-3.5 w-3.5" />
+            {t.satelliteLabel}
+          </button>
+        </div>
       </div>
 
       {/* Side panel */}
@@ -1010,12 +1603,17 @@ export default function MapPage() {
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="absolute right-0 top-0 bottom-0 z-20 w-full max-w-[380px] flex flex-col"
           >
-            <Card className="h-full rounded-none border-l border-y-0 border-r-0 border-border bg-card/97 backdrop-blur-sm shadow-2xl overflow-hidden flex flex-col">
-              <CardHeader className="map-neon-text pb-3 pt-4 px-4 shrink-0">
+            <Card className="h-full rounded-none border-l border-y-0 border-r-0 border-sidebar-border/70 bg-sidebar text-sidebar-foreground overflow-hidden flex flex-col">
+              <CardHeader className="pb-3 pt-4 px-4 shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Building2 className="h-8 w-8 shrink-0 text-primary" />
-                    <CardTitle className="map-neon-text text-[2rem] font-extrabold leading-tight tracking-tight">
+                    <img
+                      src={PROPERTY_ANALYSIS_LOGO_SRC}
+                      alt="Vesta AI"
+                      className="h-8 w-auto max-w-[3.25rem] shrink-0 rounded-md object-contain"
+                      decoding="async"
+                    />
+                    <CardTitle className="text-sidebar-foreground text-[2rem] font-extrabold leading-tight tracking-tight">
                       {t.propertyAnalysis}
                     </CardTitle>
                   </div>
@@ -1024,32 +1622,32 @@ export default function MapPage() {
                   </Button>
                 </div>
                 {selectedCoords && (
-                  <p className="map-neon-muted text-xs font-mono mt-1.5">
+                  <p className="text-sidebar-foreground/60 text-xs font-mono mt-1.5">
                     {selectedCoords.lat.toFixed(5)}, {selectedCoords.lon.toFixed(5)}
                   </p>
                 )}
               </CardHeader>
               <Separator />
 
-              <CardContent className="map-neon-text flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <CardContent className="text-sidebar-foreground flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {/* Identifying */}
                 {isIdentifying && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                      <span className="text-sm text-foreground/80">{t.queryingCatastro}</span>
+                      <Loader2 className="h-4 w-4 text-sidebar-primary animate-spin" />
+                      <span className="text-sm text-sidebar-foreground/80">{t.queryingCatastro}</span>
                     </div>
-                    {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-4 w-full bg-sidebar-accent" />)}
                   </div>
                 )}
 
                 {/* Error */}
                 {identifyError && !isIdentifying && (
                   <div className="flex flex-col items-center gap-3 py-10 text-center">
-                    <AlertCircle className="h-9 w-9 text-muted-foreground/50" />
+                    <AlertCircle className="h-9 w-9 text-sidebar-foreground/50" />
                     <div>
-                      <p className="text-sm font-medium text-foreground">{t.noBuildingTitle}</p>
-                      <p className="text-sm text-foreground/75 mt-1 max-w-[240px] leading-relaxed">
+                      <p className="text-sm font-medium text-sidebar-foreground">{t.noBuildingTitle}</p>
+                      <p className="text-sm text-sidebar-foreground/75 mt-1 max-w-[240px] leading-relaxed">
                         {t.noBuildingDesc}
                       </p>
                     </div>
@@ -1061,9 +1659,9 @@ export default function MapPage() {
                   <div className="space-y-4">
                     {/* Catastro ref */}
                     {propertyInfo.referenciaCatastral && (
-                      <div className="rounded-lg bg-primary/10 border border-primary/20 px-3 py-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-foreground/80 mb-1">{t.catastroRef}</p>
-                        <p className="text-base font-bold text-primary font-mono tracking-wide break-all">
+                      <div className="rounded-lg bg-sidebar-primary/10 border border-sidebar-primary/20 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/80 mb-1">{t.catastroRef}</p>
+                        <p className="text-base font-bold text-sidebar-primary font-mono tracking-wide break-all">
                           {propertyInfo.referenciaCatastral}
                         </p>
                       </div>
@@ -1071,7 +1669,7 @@ export default function MapPage() {
 
                     {/* Details */}
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-foreground/85 mb-2">{t.propertyData}</p>
+                      <p className="text-xs font-bold uppercase tracking-wider text-sidebar-foreground/85 mb-2">{t.propertyData}</p>
                       {propertyInfo.address && <MetricRow label={t.address} value={propertyInfo.address} />}
                       {propertyInfo.municipio && <MetricRow label={t.municipality} value={propertyInfo.municipio} />}
                       {propertyInfo.provincia && <MetricRow label={t.province} value={propertyInfo.provincia} />}
@@ -1080,16 +1678,16 @@ export default function MapPage() {
                       {propertyInfo.anoConstruccion && <MetricRow label={t.yearBuilt} value={propertyInfo.anoConstruccion} />}
                     </div>
 
-                    <Separator />
+                    <Separator className="bg-sidebar-border" />
 
                     {/* Financial */}
                     {financialMutation.isPending && !financialData && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                          <span className="text-sm text-foreground/80">{t.calculatingYield}</span>
+                          <Loader2 className="h-4 w-4 text-sidebar-primary animate-spin" />
+                          <span className="text-sm text-sidebar-foreground/80">{t.calculatingYield}</span>
                         </div>
-                        {[1,2,3,4].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+                        {[1,2,3,4].map(i => <Skeleton key={i} className="h-4 w-full bg-sidebar-accent" />)}
                       </div>
                     )}
 
@@ -1100,10 +1698,7 @@ export default function MapPage() {
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          onClick={() => {
-                            setPaymentModalTier("analysis_pack");
-                            setPaymentModalOpen(true);
-                          }}
+                          onClick={() => financialMutation.mutate(propertyInfo)}
                         >
                           <TrendingUp className="mr-2 h-4 w-4" /> {t.retryAnalysis}
                         </Button>
@@ -1112,20 +1707,19 @@ export default function MapPage() {
 
                     {!financialData && !financialMutation.isPending && !financialMutation.isError && (
                       <div className="text-center py-2 space-y-3">
-                        <TrendingUp className="h-7 w-7 text-primary/50 mx-auto" />
-                        <p className="text-sm text-foreground/80">{t.aiFinancial}</p>
+                        <p className="text-sm text-sidebar-foreground/80">{t.aiFinancial}</p>
                         <Button className="w-full" onClick={() => {
                             setPaymentModalTier("analysis_pack");
                             setPaymentModalOpen(true);
                           }}>
-                          <TrendingUp className="mr-2 h-4 w-4" /> {t.financialAnalysis}
+                          {t.financialAnalysis} — {PRET_ANALYSIS_PACK_EUR} €
                         </Button>
                       </div>
                     )}
 
                     {financialData && (
                       <div className="space-y-2">
-                        <p className="text-xs font-bold uppercase tracking-wider text-foreground/85">{t.financialSection}</p>
+                        <p className="text-xs font-bold uppercase tracking-wider text-sidebar-foreground/85">{t.financialSection}</p>
                         {financialData.grossYield != null && Number.isFinite(parseFloat(String(financialData.grossYield))) && (
                           <MetricRow label={t.grossYield} value={`${parseFloat(String(financialData.grossYield)).toFixed(2)}%`} highlight />
                         )}
@@ -1178,9 +1772,9 @@ export default function MapPage() {
                           <MetricRow label={t.dataSource} value={financialData.dataSource} />
                         )}
                         {financialData.negotiationNote ? (
-                          <div className="rounded-md border border-border/60 bg-muted/40 px-3 py-3 mt-2">
-                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/85 mb-2">{t.negotiationNote}</p>
-                            <p className="text-sm text-foreground leading-relaxed">{financialData.negotiationNote}</p>
+                          <div className="rounded-md border bg-sidebar-accent border-sidebar-border px-3 py-3 mt-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-sidebar-foreground/85 mb-2">{t.negotiationNote}</p>
+                            <p className="text-sm text-sidebar-foreground leading-relaxed">{financialData.negotiationNote}</p>
                           </div>
                         ) : null}
                         {financialData.opportunityScore != null && (
@@ -1208,19 +1802,8 @@ export default function MapPage() {
                     )}
 
                     {/* Actions */}
-                    <Separator />
+                    <Separator className="bg-sidebar-border" />
                     <div className="space-y-2 pb-2">
-                      {/* Street View — embed intern */}
-                      <Button
-                        variant="outline"
-                        className="w-full gap-2"
-                        onClick={openStreetView}
-                        disabled={!streetViewAvailable}
-                        data-testid="open-street-view"
-                      >
-                        <Eye className="h-4 w-4" />
-                        {t.streetView} 360°
-                      </Button>
                       <Button variant="secondary" className="w-full" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
                         {saveMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bookmark className="mr-2 h-4 w-4" />}
                         {t.saveProperty}
@@ -1233,8 +1816,7 @@ export default function MapPage() {
                         }}
                         data-testid="order-full-report"
                       >
-                        <FileText className="mr-2 h-4 w-4" />
-                        {t.orderReport}
+                        {t.expertAnalysisOrder} — {PRET_EXPERT_EUR} €
                       </Button>
                     </div>
                   </div>
@@ -1256,19 +1838,11 @@ export default function MapPage() {
         propertyInfo={propertyInfo}
         financialData={financialData}
         selectedCoords={selectedCoords}
+        fallbackCoords={fallbackCoordsFromMapCenter}
         uiLocale={uiLocale}
         initialTier={paymentModalTier}
       />
 
-      <StreetViewModal
-        open={streetViewOpen}
-        lat={selectedProperty?.lat ?? null}
-        lng={selectedProperty?.lng ?? null}
-        title={selectedProperty?.title}
-        metadata={streetViewMeta}
-        locale={uiLocale}
-        onClose={() => setStreetViewOpen(false)}
-      />
     </div>
   );
 }

@@ -52,6 +52,9 @@ Edit `.env` and fill in your values:
 |---|---|
 | `VITE_MAPBOX_TOKEN` | Your Mapbox public token — get it at [account.mapbox.com](https://account.mapbox.com) |
 | `VITE_API_URL` | (Opțional) Nu e folosit de proxy-ul Express; URL-ul API Python e în `server/routes.ts`. Poți folosi variabila doar dacă adaugi tu logică client-side către alt host. |
+| `VEST_PYTHON_API_URL` | **Required in production** — FastAPI base URL (no trailing slash). Powers `/api/property/identify`, `/api/property/financial-analysis`, payments proxy, async report generation, and admin Nota Simple OCR. Without it, those routes return **503**. |
+| `VESTA_OVERPASS_URL` | (Optional) Overpass API endpoint for zone POI counts; default `https://overpass-api.de/api/interpreter`. |
+| `VESTA_ZONE_OSM_DISABLE` | Set to `1` to skip Overpass calls (tests / offline); zone counts fall back to estimates. |
 | `PORT` | Server port (default: 5000) |
 
 ### 4. Run in development
@@ -76,9 +79,19 @@ Never commit `.env` to git. Use `.env.example` as a template.
 ```env
 VITE_MAPBOX_TOKEN=pk.your_mapbox_token_here
 VITE_API_URL=https://your-backend.up.railway.app
+VEST_PYTHON_API_URL=https://your-fastapi.up.railway.app
 PORT=5000
 NODE_ENV=development
 ```
+
+### Health check
+
+`GET /api/health` returns `{ ok, service, python }` where `python` includes `configured`, `reachable` (probe to `{VEST_PYTHON_API_URL}/version`), and `error` / `version` when available. Use this after deploy to confirm the Python service is wired.
+
+### Report & Nota Simple docs
+
+- [reportJson UI contract](docs/report-json-ui-contract.md) — keys expected by the report page and zone analysis shape.
+- [Nota Simple pipeline](docs/nota-simple-pipeline.md) — PDF upload, OCR, and `notaSimpleJson`.
 
 ---
 

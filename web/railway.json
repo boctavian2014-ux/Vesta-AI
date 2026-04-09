@@ -5,7 +5,7 @@
     "buildCommand": "npm run build"
   },
   "deploy": {
-    "startCommand": "NODE_ENV=production node dist/index.cjs",
+    "startCommand": "npm start",
     "restartPolicyType": "ON_FAILURE"
   }
 }

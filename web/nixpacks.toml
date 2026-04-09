@@ -1,5 +1,6 @@
+# Used when Railway Root Directory = `web` (Nixpacks). Forces Node + npm pipeline.
 [phases.setup]
-nixPkgs = ["nodejs_20", "npm-9_x"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["npm ci"]
@@ -8,4 +9,4 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "NODE_ENV=production node dist/index.cjs"
+cmd = "npm start"

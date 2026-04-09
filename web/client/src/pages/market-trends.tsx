@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,43 +17,21 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Mock data fallback
-const MOCK_DATA = [
-  { date: "2020-01", value: 140.2 },
-  { date: "2020-04", value: 141.5 },
-  { date: "2020-07", value: 138.9 },
-  { date: "2020-10", value: 140.1 },
-  { date: "2021-01", value: 143.0 },
-  { date: "2021-04", value: 146.2 },
-  { date: "2021-07", value: 149.7 },
-  { date: "2021-10", value: 152.3 },
-  { date: "2022-01", value: 155.8 },
-  { date: "2022-04", value: 159.4 },
-  { date: "2022-07", value: 163.1 },
-  { date: "2022-10", value: 165.9 },
-  { date: "2023-01", value: 167.2 },
-  { date: "2023-04", value: 169.8 },
-  { date: "2023-07", value: 172.4 },
-  { date: "2023-10", value: 174.9 },
-  { date: "2024-01", value: 177.3 },
-  { date: "2024-04", value: 180.1 },
-  { date: "2024-07", value: 183.6 },
-  { date: "2024-10", value: 186.2 },
-  { date: "2025-01", value: 188.9 },
-  { date: "2025-04", value: 191.5 },
-  { date: "2025-07", value: 194.0 },
-  { date: "2025-10", value: 196.8 },
-  { date: "2026-01", value: 199.2 },
-];
-
-const YEAR_OPTIONS = ["All", "2020", "2021", "2022", "2023", "2024", "2025", "2026"];
-
 interface TrendDataPoint {
   date?: string;
   value?: number;
   fecha?: string;
   ipv?: number;
   [key: string]: any;
+}
+
+interface MarketTrendResponse {
+  source?: string;
+  data?: TrendDataPoint[];
+  points?: number;
+  start_period?: string | null;
+  end_period?: string | null;
+  capital_appreciation_pct?: number | null;
 }
 
 function normalizeTrendData(raw: TrendDataPoint[]): { date: string; value: number }[] {
@@ -80,7 +58,7 @@ function formatDate(dateStr: string): string {
 function CustomTooltip({ active, payload, label }: any) {
   if (active && payload && payload.length) {
     return (
-      <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-md">
+      <div className="rounded-lg glass-panel px-3 py-2">
         <p className="text-xs text-muted-foreground mb-1">{formatDate(label)}</p>
         <p className="text-sm font-bold text-foreground">
           IPV: <span className="text-primary">{payload[0].value?.toFixed(1)}</span>
@@ -124,21 +102,37 @@ function StatCard({
 export default function MarketTrends() {
   const [yearFilter, setYearFilter] = useState("All");
 
-  const { data: rawData, isLoading, isError } = useQuery<TrendDataPoint[]>({
+  const { data: rawResponse, isLoading, isError } = useQuery<MarketTrendResponse>({
     queryKey: ["/api/market-trend"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
-  const allData = useMemo(() => {
-    if (isError || !rawData) return MOCK_DATA;
-    const normalized = normalizeTrendData(rawData);
-    return normalized.length > 0 ? normalized : MOCK_DATA;
-  }, [rawData, isError]);
+  const allData = useMemo(
+    () => normalizeTrendData(Array.isArray(rawResponse?.data) ? rawResponse.data : []),
+    [rawResponse]
+  );
 
   const filteredData = useMemo(() => {
     if (yearFilter === "All") return allData;
     return allData.filter((d) => d.date.startsWith(yearFilter));
   }, [allData, yearFilter]);
+
+  const yearOptions = useMemo(() => {
+    const years = Array.from(
+      new Set(
+        allData
+          .map((d) => d.date.split("-")[0])
+          .filter((y) => /^\d{4}$/.test(y))
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return ["All", ...years];
+  }, [allData]);
+
+  useEffect(() => {
+    if (!yearOptions.includes(yearFilter)) {
+      setYearFilter("All");
+    }
+  }, [yearFilter, yearOptions]);
 
   // Stats
   const latestValue = filteredData[filteredData.length - 1]?.value;
@@ -172,7 +166,7 @@ export default function MarketTrends() {
             <SelectValue placeholder="Filter by year" />
           </SelectTrigger>
           <SelectContent>
-            {YEAR_OPTIONS.map((y) => (
+            {yearOptions.map((y) => (
               <SelectItem key={y} value={y} data-testid={`year-option-${y}`}>
                 {y === "All" ? "All years" : y}
               </SelectItem>
@@ -182,17 +176,17 @@ export default function MarketTrends() {
       </div>
 
       {/* Fallback notice */}
-      {(isError || (rawData && normalizeTrendData(rawData).length === 0)) && (
+      {(isError || allData.length === 0) && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Live market data is currently unavailable. Showing illustrative mock data.
+            Live market data is currently unavailable from INE source.
           </AlertDescription>
         </Alert>
       )}
 
       {/* Stats row */}
-      {!isLoading && (
+      {!isLoading && allData.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
             label="Latest IPV"
@@ -232,6 +226,10 @@ export default function MarketTrends() {
         <CardContent className="px-6 pb-6">
           {isLoading ? (
             <ChartSkeleton />
+          ) : filteredData.length === 0 ? (
+            <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
+              No live IPV points available for this filter.
+            </div>
           ) : (
             <div className="h-80" data-testid="ipv-chart">
               <ResponsiveContainer width="100%" height="100%">

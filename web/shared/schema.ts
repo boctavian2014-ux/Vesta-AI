@@ -34,12 +34,19 @@ export const reports = sqliteTable("reports", {
   status: text("status").notNull().default("pending"), // pending | processing | completed | failed
   stripeSessionId: text("stripe_session_id"),
   stripeJobId: text("stripe_job_id"),           // async job_id from /report/generate-async
+  pdfUrl: text("pdf_url"),
   referenciaCatastral: text("referencia_catastral"),
   address: text("address"),
   cadastralJson: text("cadastral_json"),         // full JSON from identify
   financialJson: text("financial_json"),         // full JSON from financial-analysis
   notaSimpleJson: text("nota_simple_json"),      // extracted Nota Simple data
   reportJson: text("report_json"),               // full completed async report JSON
+  providerName: text("provider_name"),
+  providerOrderId: text("provider_order_id"),
+  providerStatus: text("provider_status"),
+  providerRawJson: text("provider_raw_json"),
+  requestedAt: text("requested_at"),
+  completedAt: text("completed_at"),
   createdAt: text("created_at").notNull().default("now"),
 });
 

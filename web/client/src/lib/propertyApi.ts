@@ -20,7 +20,8 @@ export async function checkStreetViewAvailability(
 ): Promise<StreetViewMetadataResult> {
   const apiKey =
     (import.meta.env.VITE_GOOGLE_MAPS_JS_API_KEY as string | undefined) ||
-    (import.meta.env.VITE_GOOGLE_MAPS_EMBED_KEY as string | undefined);
+    (import.meta.env.VITE_GOOGLE_MAPS_EMBED_KEY as string | undefined) ||
+    (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined);
   const source = options?.source ?? "outdoor";
   const radius = options?.radius ?? 25;
   if (!apiKey) {
