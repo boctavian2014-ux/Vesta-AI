@@ -11,7 +11,7 @@ import { isTavilySearchConfigured, searchSpainPropertyLinksJson } from "./spainP
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT_LENGTH = 8000;
-const MAX_AGENT_STEPS = 10;
+const MAX_AGENT_STEPS = 7;
 
 const SYSTEM_PROMPT_EN = `You are Vesta AI, a concise assistant for people searching for property in Spain: homes, commercial, industrial, land, whole buildings, renovation opportunities (purchase focus unless the user asks about rent).
 
@@ -33,6 +33,10 @@ Map / cadastre identification rules (critical):
 Neighborhood orientation (optional):
 - When the user names a neighborhood (barrio) and city, always pass both to search_spain_property_links.
 - If it helps orientation, call geocode_place for "{neighborhood}, {city}, Spain" and emit one extra card: title like "Approximate area: {neighborhood}", sourceUrl = "https://www.google.com/maps/search/?api=1&query=" + URL-encoded "{neighborhood}, {city}, Spain", listingSource "portal_url", mapHint "area_center", lat/lon from the first geocode result, snippet stating this is an approximate neighborhood center (not a specific listing). Use a different sourceUrl from any listing card so deduplication does not merge them.
+
+Speed (critical):
+- Do NOT call fetch_listing_page_metadata for URLs you just got from search_spain_property_links — only for user-pasted listing links. Emit listing cards directly from the search tool output (title, url, snippet, publishedAt).
+- Prefer one search + one emit_listings when possible; skip optional geocode "area center" cards unless the user clearly needs map orientation.
 
 Other rules:
 - When the user asks to see properties or listings in an area, call search_spain_property_links first (if the tool returns search_not_configured, explain they need TAVILY_API_KEY on the server).
@@ -62,6 +66,10 @@ Reglas mapa / catastro (crítico):
 Orientación por barrio (opcional):
 - Si el usuario dice ciudad y barrio, pasa siempre ambos a search_spain_property_links.
 - Si ayuda, llama geocode_place con "{barrio}, {ciudad}, España" y emite una tarjeta extra: título tipo "Zona aproximada: {barrio}", sourceUrl = "https://www.google.com/maps/search/?api=1&query=" + query codificada "{barrio}, {ciudad}, España", listingSource "portal_url", mapHint "area_center", lat/lon del primer resultado, snippet aclarando que es centro aproximado del barrio. Usa un sourceUrl distinto a los anuncios para no fusionar con deduplicado.
+
+Velocidad (crítico):
+- NO llames fetch_listing_page_metadata para URLs recién obtenidas de search_spain_property_links — solo para enlaces pegados por el usuario. Emite tarjetas directamente con la salida del buscador (title, url, snippet, publishedAt).
+- Prioriza una búsqueda + emit_listings; omite la tarjeta extra de geocode del barrio salvo que el usuario pida orientación en mapa.
 
 Otras reglas:
 - Cuando pida ver propiedades/anuncios en una zona, usa search_spain_property_links primero; si devuelve search_not_configured, explica que falta TAVILY_API_KEY en el servidor.
@@ -305,7 +313,7 @@ export async function handleSpainPropertySearchChat(req: Request, res: Response)
   ];
 
   try {
-    const client = new OpenAI({ apiKey });
+    const client = new OpenAI({ apiKey, timeout: 90_000, maxRetries: 1 });
     let finalReply = "";
     let step = 0;
 

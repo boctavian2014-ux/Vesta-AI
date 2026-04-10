@@ -40,6 +40,8 @@ export type SpainSearchLinkResult = {
   publishedAt?: string;
 };
 
+type TavilyRawRow = { title?: string; url?: string; content?: string; published_date?: string };
+
 function normalizeProfile(raw: string | undefined): SpainSearchProfile {
   const p = (raw || "").trim().toLowerCase().replace(/-/g, "_");
   const allowed: SpainSearchProfile[] = [
@@ -131,39 +133,48 @@ export async function searchSpainPropertyLinksJson(params: {
   const query = parts.join(" ");
   const maxResults = Math.min(Math.max(params.maxResults ?? 6, 1), 8);
 
-  const body: Record<string, unknown> = {
-    api_key: apiKey,
-    query,
-    search_depth: recency === "any" ? "basic" : "advanced",
-    max_results: maxResults,
-    include_domains: TAVILY_LISTING_DOMAINS,
-  };
-  if (recency !== "any") {
-    body.time_range = recency;
+  async function runTavily(bodyIn: Record<string, unknown>): Promise<{
+    okHttp: boolean;
+    status: number;
+    detail: string;
+    rawResults: TavilyRawRow[];
+  }> {
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyIn),
+        signal: controller.signal,
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        return { okHttp: false, status: res.status, detail: text.slice(0, 240), rawResults: [] };
+      }
+      let data: { results?: unknown };
+      try {
+        data = JSON.parse(text) as { results?: unknown };
+      } catch {
+        return { okHttp: false, status: res.status, detail: "invalid_json", rawResults: [] };
+      }
+      const raw = Array.isArray(data.results) ? (data.results as TavilyRawRow[]) : [];
+      return { okHttp: true, status: res.status, detail: "", rawResults: raw };
+    } catch (e) {
+      const name = e instanceof Error ? e.name : "";
+      const isAbort = name === "AbortError";
+      return {
+        okHttp: false,
+        status: 0,
+        detail: isAbort ? "timeout_or_abort" : (e instanceof Error ? e.message : "fetch_error").slice(0, 200),
+        rawResults: [],
+      };
+    } finally {
+      clearTimeout(to);
+    }
   }
 
-  const controller = new AbortController();
-  const to = setTimeout(() => controller.abort(), 25_000);
-  try {
-    const res = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return JSON.stringify({
-        error: "tavily_http",
-        status: res.status,
-        detail: text.slice(0, 240),
-        results: [],
-      });
-    }
-    const data = (await res.json()) as {
-      results?: { title?: string; url?: string; content?: string; published_date?: string }[];
-    };
-    const raw = Array.isArray(data.results) ? data.results : [];
+  function filterAndMap(raw: TavilyRawRow[]) {
     const results: SpainSearchLinkResult[] = [];
     for (const r of raw) {
       const url = typeof r.url === "string" ? r.url.trim() : "";
@@ -187,16 +198,58 @@ export async function searchSpainPropertyLinksJson(params: {
       if (pub) item.publishedAt = pub;
       results.push(item);
     }
+    return results;
+  }
+
+  // "basic" is much faster than "advanced"; time_range + query text already bias recency.
+  const baseBody: Record<string, unknown> = {
+    api_key: apiKey,
+    query,
+    search_depth: "basic",
+    max_results: maxResults,
+    include_domains: TAVILY_LISTING_DOMAINS,
+  };
+  if (recency !== "any") {
+    baseBody.time_range = recency;
+  }
+
+  try {
+    let tavily = await runTavily(baseBody);
+    if (!tavily.okHttp) {
+      return JSON.stringify({
+        error: "tavily_http",
+        status: tavily.status,
+        detail: tavily.detail,
+        results: [] as SpainSearchLinkResult[],
+      });
+    }
+    let results = filterAndMap(tavily.rawResults);
+    let recencyRelaxed = false;
+    // time_range + strict domains often returns zero hits; one fast retry without time_range
+    if (results.length === 0 && recency !== "any") {
+      const fallback = { ...baseBody };
+      delete fallback.time_range;
+      tavily = await runTavily(fallback);
+      if (tavily.okHttp) {
+        results = filterAndMap(tavily.rawResults);
+        if (results.length > 0) recencyRelaxed = true;
+      }
+    }
+
     return JSON.stringify({
       ok: true,
       queryUsed: query.slice(0, 400),
       assetFocus: profile,
       recency: recency === "any" ? undefined : recency,
+      ...(recencyRelaxed
+        ? {
+            note: "time_range filter returned no portal hits; relaxed to any date for this query — dates/snippets are still approximate.",
+          }
+        : {}),
       results,
     });
-  } catch {
+  } catch (e) {
+    console.error("[spainPropertySearchLinks]", e);
     return JSON.stringify({ error: "tavily_failed", results: [] });
-  } finally {
-    clearTimeout(to);
   }
 }

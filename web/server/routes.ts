@@ -993,6 +993,8 @@ export async function registerRoutes(
   });
 
   app.post("/api/spain-property-search/chat", (req, res) => {
+    req.setTimeout(120_000);
+    res.setTimeout(120_000);
     void handleSpainPropertySearchChat(req, res);
   });
 

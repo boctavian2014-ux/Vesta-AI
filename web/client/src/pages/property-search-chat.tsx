@@ -161,6 +161,8 @@ export default function PropertySearchChatPage() {
       setInput("");
       setPending(true);
 
+      const abortCtl = new AbortController();
+      const abortTimer = window.setTimeout(() => abortCtl.abort(), 120_000);
       try {
         const res = await fetch("/api/spain-property-search/chat", {
           method: "POST",
@@ -170,6 +172,7 @@ export default function PropertySearchChatPage() {
             messages: historyPayload,
             locale,
           }),
+          signal: abortCtl.signal,
         });
         const data = (await res.json().catch(() => ({}))) as {
           message?: string;
@@ -184,7 +187,14 @@ export default function PropertySearchChatPage() {
         const listings = Array.isArray(data.listings) ? data.listings : undefined;
         setMessages((prev) => [...prev, { role: "assistant", content: reply, listings }]);
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : t.networkError;
+        const msg =
+          e instanceof Error && e.name === "AbortError"
+            ? locale === "es"
+              ? "La solicitud tardó demasiado (2 min). Prueba de nuevo o una búsqueda más concreta (ciudad)."
+              : "The request took too long (2 min). Try again or a more specific search (city)."
+            : e instanceof Error
+              ? e.message
+              : t.networkError;
         toast({ title: t.errorTitle, description: msg, variant: "destructive" });
         setMessages((prev) => [
           ...prev,
@@ -197,6 +207,7 @@ export default function PropertySearchChatPage() {
           },
         ]);
       } finally {
+        window.clearTimeout(abortTimer);
         setPending(false);
       }
     },
