@@ -102,8 +102,8 @@ function AppRouter() {
             <Route path="/property-search" component={PropertySearchChatPage} />
             <Route path="/trends" component={MarketTrends} />
             <Route path="/properties" component={SavedProperties} />
-            <Route path="/reports" component={Reports} />
             <Route path="/reports/:id" component={ReportDetail} />
+            <Route path="/reports" component={Reports} />
             <Route path="/tutorial" component={TutorialPage} />
             {user?.isAdmin && <Route path="/admin/orders" component={AdminOrders} />}
             <Route path="/legal/terms" component={LegalTermsPage} />
