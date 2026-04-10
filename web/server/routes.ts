@@ -25,8 +25,10 @@ import {
   handleSpainPropertySearchChat,
   handleSpainPropertySearchStatus,
 } from "./spainPropertySearchChat";
+import { hashPasswordPlain, verifyPasswordWithUpgrade } from "./passwordAuth";
 
 const SessionStore = MemoryStore(session);
+const DEFAULT_SESSION_SECRET = "vesta-ai-secret-key-2026";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 const ADMIN_EMAILS = new Set(
   (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "")
@@ -281,17 +283,6 @@ async function addStatusEvent(
   });
 }
 
-function hashPassword(password: string): string {
-  // Simple hash for demo — use bcrypt in production
-  let hash = 0;
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return "hashed_" + Math.abs(hash).toString(36);
-}
-
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -393,8 +384,17 @@ export async function registerRoutes(
   });
 
   // Session (MemoryStore: single Railway instance OK; multiple replicas need a shared store)
-  const sessionSecret = (process.env.SESSION_SECRET || "vesta-ai-secret-key-2026").trim();
   const isProd = process.env.NODE_ENV === "production";
+  const rawSessionSecret = (process.env.SESSION_SECRET || "").trim();
+  if (isProd) {
+    if (!rawSessionSecret || rawSessionSecret === DEFAULT_SESSION_SECRET) {
+      console.error(
+        "[vesta-web] FATAL: SESSION_SECRET must be set in production to a strong random value (do not use the dev default)."
+      );
+      process.exit(1);
+    }
+  }
+  const sessionSecret = rawSessionSecret || DEFAULT_SESSION_SECRET;
   app.use(
     session({
       secret: sessionSecret,
@@ -418,10 +418,16 @@ export async function registerRoutes(
       { usernameField: "email" },
       async (email, password, done) => {
         try {
-          const user = await storage.getUserByEmail(email);
+          let user = await storage.getUserByEmail(email);
           if (!user) return done(null, false, { message: "User not found" });
-          if (user.password !== hashPassword(password)) {
+          const { ok, needsUpgrade } = await verifyPasswordWithUpgrade(password, user.password);
+          if (!ok) {
             return done(null, false, { message: "Invalid password" });
+          }
+          if (needsUpgrade) {
+            const newHash = await hashPasswordPlain(password);
+            await storage.updateUserPassword(user.id, newHash);
+            user = { ...user, password: newHash };
           }
           return done(null, user);
         } catch (err) {
@@ -449,10 +455,11 @@ export async function registerRoutes(
       if (existing) {
         return res.status(400).json({ message: "Email already registered" });
       }
+      const passwordHash = await hashPasswordPlain(data.password);
       const user = await storage.createUser({
         username: data.username,
         email: data.email,
-        password: hashPassword(data.password),
+        password: passwordHash,
       });
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Login failed" });

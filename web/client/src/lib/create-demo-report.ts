@@ -7,8 +7,51 @@ export const DEMO_MAP_COORDS_MADRID = { lat: 40.4168, lon: -3.7038 } as const;
 
 export function defaultDemoPropertyInfo(locale: AppLocale): Record<string, unknown> {
   return {
-    address: locale === "es" ? "Propiedad demo, Madrid, España" : "Demo property, Madrid, Spain",
+    address: locale === "es" ? "Calle Demo 12, 28013 Madrid, España" : "12 Demo Street, 28013 Madrid, Spain",
     referenciaCatastral: "DEMO-CATASTRO-ES",
+    municipio: "Madrid",
+    provincia: "Madrid",
+    superficie: 88,
+    uso: locale === "es" ? "Residencial" : "Residential",
+    anoConstruccion: 1998,
+  };
+}
+
+/**
+ * Rich financial snapshot for sidebar / preview demos so "Financial analysis" renders like a paid report.
+ * Keys match what report-detail expects on `financialJson` (camelCase from API normalizer).
+ */
+export function demoFinancialData(tier: DemoProductTier, locale: AppLocale): Record<string, unknown> {
+  const expert = tier === "expert_report";
+  return {
+    grossYield: expert ? 6.35 : 6.1,
+    netYield: expert ? 4.72 : 4.55,
+    roi: expert ? 31.2 : 29.4,
+    opportunityScore: expert ? 72 : 68,
+    pricePerSqm: expert ? 3120 : 2980,
+    estimatedValue: expert ? 248000 : 232000,
+    monthlyRent: expert ? 1180 : 1100,
+    annualRentEstimate: expert ? 14160 : 13200,
+    marketAvgSqm: expert ? 3150 : 3020,
+    avgRentPerSqm: expert ? 14.2 : 13.5,
+    annualCagrPct: 4.1,
+    capitalAppreciation5yPct: expert ? 19.2 : 17.8,
+    ineCapitalAppreciationPct: 12.3,
+    ineDataPoints: 40,
+    dataSource:
+      locale === "es"
+        ? "Motor Vesta + supuestos zona Madrid + serie INE IPV (demo)"
+        : "Vesta engine + Madrid zone priors + INE IPV series (demo)",
+    valuationStatus:
+      locale === "es"
+        ? "Ligeramente por encima de la media de zona (demo)"
+        : "Slightly above zone average (demo)",
+    valuationDiffPct: expert ? 4.5 : 3.8,
+    yieldVsBenchmark: 1.9,
+    negotiationNote:
+      locale === "es"
+        ? "Texto orientativo para negociación (demo). Los valores reales dependen del anuncio, tasación y estado de la vivienda."
+        : "Sample negotiation guidance (demo). Real figures depend on listing, survey, and property condition.",
   };
 }
 
@@ -194,7 +237,11 @@ export async function createCompletedDemoReport(
   tier: DemoProductTier,
   opts: CreateCompletedDemoReportOptions,
 ): Promise<{ id: number }> {
-  const { locale, coords, propertyInfo = {}, financialData = {} } = opts;
+  const { locale, coords, propertyInfo = {}, financialData: financialDataIn } = opts;
+  const financialData =
+    financialDataIn && Object.keys(financialDataIn).length > 0
+      ? financialDataIn
+      : demoFinancialData(tier, locale);
   const address = (propertyInfo.address as string) ?? "";
 
   const zoneRes = await apiRequest("POST", "/api/zone/analysis", {

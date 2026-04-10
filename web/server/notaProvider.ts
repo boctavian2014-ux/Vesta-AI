@@ -272,6 +272,7 @@ export type PartnerWebhookPayload = {
   providerOrderId?: string;
   status?: string;
   extractedJson?: unknown;
+  pdfUrl?: string;
   event?: string;
   metadata?: Record<string, unknown> | null;
 };
@@ -307,6 +308,16 @@ function resolveExtractedJson(payload: Record<string, unknown>): unknown {
   return undefined;
 }
 
+function resolvePdfUrl(payload: Record<string, unknown>): string | undefined {
+  const direct = safeString(payload.pdf_url || payload.pdfUrl);
+  if (direct) return direct;
+  const entry = asObject(payload.entry);
+  const fromEntry = safeString(entry.pdf_url || entry.pdfUrl);
+  if (fromEntry) return fromEntry;
+  const data = asObject(payload.data);
+  return safeString(data.pdf_url || data.pdfUrl) || undefined;
+}
+
 export function normalizeWebhookPayload(
   payload: Record<string, unknown> | null | undefined
 ): PartnerWebhookPayload {
@@ -315,6 +326,7 @@ export function normalizeWebhookPayload(
     providerOrderId: resolveEntryId(payload),
     status: resolveStatus(payload),
     extractedJson: resolveExtractedJson(payload),
+    pdfUrl: resolvePdfUrl(payload),
     event: safeString(payload.event) || undefined,
     metadata: asObject(payload.metadata),
   };

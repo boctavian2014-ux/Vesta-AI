@@ -63,7 +63,7 @@ Edit `.env` and fill in your values:
 | `OPENAI_MODEL` | Optional — defaults to `gpt-4o-mini` (e.g. `gpt-4o` if you prefer). |
 | `TAVILY_API_KEY` | **Recommended** — [Tavily](https://tavily.com) API key for `search_spain_property_links` (portal URLs by city/barrio, optional `asset_focus` + `recency` / `time_range`). Without it, pasted URLs and geocoding still work; the UI shows a configuration notice. |
 | `GET /api/spain-property-search/status` | (Auth) Returns `{ openaiConfigured, searchConfigured }` — booleans only; never exposes secrets. |
-| `SESSION_SECRET` | Optional — secret for Express session signing; change in production if you like. Sessions use **in-memory** store: each deploy or extra replica clears logins — users must sign in again. |
+| `SESSION_SECRET` | **Required in production** — strong random secret for Express session signing. The server **exits on startup** if `NODE_ENV=production` and this is missing or still set to the dev default. In development you may omit it (a built-in default is used). Sessions use **in-memory** store: each deploy or extra replica clears logins — users must sign in again. |
 | `PORT` | Server port (default: 5000) |
 
 ### 4. Run in development

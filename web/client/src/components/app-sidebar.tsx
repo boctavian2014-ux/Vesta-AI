@@ -106,6 +106,9 @@ export function AppSidebar() {
           demoAnalysis: "Demo · Análisis 15 €",
           demoExpert: "Demo · Experto 50 €",
           demoError: "No se pudo crear el demo",
+          demoReady: "Informe demo listo",
+          demoReadyDesc: "Ejemplo ilustrativo: revisa Informes para ver el paquete.",
+          demoReportsLabel: "Probar sin pagar",
           logOut: "Cerrar sesión",
         }
       : {
@@ -122,6 +125,9 @@ export function AppSidebar() {
           demoAnalysis: "Demo · Financial 15 €",
           demoExpert: "Demo · Expert 50 €",
           demoError: "Could not create demo report",
+          demoReady: "Demo report ready",
+          demoReadyDesc: "Sample report — see Reports for the full package preview.",
+          demoReportsLabel: "Try without payment",
           logOut: "Log out",
         };
   const navItems = user?.isAdmin
@@ -143,9 +149,10 @@ export function AppSidebar() {
         locale,
         coords: DEMO_MAP_COORDS_MADRID,
         propertyInfo,
-        financialData: {},
       });
       await qc.invalidateQueries({ queryKey: ["/api/reports"] });
+      await qc.invalidateQueries({ queryKey: ["/api/reports", report.id] });
+      toast({ title: t.demoReady, description: t.demoReadyDesc });
       navigate(`/reports/${report.id}`);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
@@ -192,7 +199,7 @@ export function AppSidebar() {
         <SidebarSeparator className="my-1" />
 
         <SidebarGroup>
-          <SidebarGroupContent className="flex flex-col gap-1">
+          <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
@@ -206,27 +213,30 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
-            <div className="flex flex-col gap-1">
-              <DemoSidebarAction
-                testId="nav-demo-analysis"
-                label={t.demoAnalysis}
-                busySelf={demoBusy === "analysis"}
-                busyOther={demoBusy === "expert"}
-                onRun={() => void runDemo("analysis_pack")}
-              />
-              <DemoSidebarAction
-                testId="nav-demo-expert"
-                label={t.demoExpert}
-                busySelf={demoBusy === "expert"}
-                busyOther={demoBusy === "analysis"}
-                onRun={() => void runDemo("expert_report")}
-              />
-            </div>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="pb-6 pt-1">
+        <div className="mx-2 mb-2 flex flex-col gap-1.5 group-data-[collapsible=icon]:hidden">
+          <p className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t.demoReportsLabel}
+          </p>
+          <DemoSidebarAction
+            testId="nav-demo-analysis"
+            label={t.demoAnalysis}
+            busySelf={demoBusy === "analysis"}
+            busyOther={demoBusy === "expert"}
+            onRun={() => void runDemo("analysis_pack")}
+          />
+          <DemoSidebarAction
+            testId="nav-demo-expert"
+            label={t.demoExpert}
+            busySelf={demoBusy === "expert"}
+            busyOther={demoBusy === "analysis"}
+            onRun={() => void runDemo("expert_report")}
+          />
+        </div>
         <div className="mx-2 mb-1 rounded-lg border border-white/15 bg-white/10 px-3 py-2 backdrop-blur-md flex items-center justify-between text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
           <Link href="/legal/terms" className="rounded px-2 py-0.5 hover:text-foreground hover:bg-white/10 hover:underline">
             {t.terms}

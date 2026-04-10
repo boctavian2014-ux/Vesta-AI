@@ -49,6 +49,7 @@
     "@types/mapbox-gl": "^3.4.1",
     "@types/multer": "^2.1.0",
     "@types/nodemailer": "^8.0.0",
+    "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -89,6 +90,7 @@
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
+    "@types/bcrypt": "^5.0.2",
     "@types/better-sqlite3": "^7.6.12",
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.0",
