@@ -1,0 +1,61 @@
+---
+description: Monorepo path, Git push to main, Railway vesta-web deploy checklist
+alwaysApply: true
+---
+
+# Git și Railway — flux de lucru (Vesta-AI)
+
+## Monorepo — folder corect
+
+Lucrează din monorepo-ul corect, de exemplu:
+
+`C:\Users\octav\Desktop\vesta ultima\Vesta-AI`
+
+**Nu** din copii duplicate gen `Vesta-AI\Vesta-AI\...`.
+
+## PowerShell — `cd` cu spațiu în cale
+
+Folosește ghilimele:
+
+```powershell
+cd "C:\Users\octav\Desktop\vesta ultima\Vesta-AI"
+```
+
+## Git — înainte de commit
+
+1. Rulează `git status`.
+2. **Stage doar ce ține de task** (ex. `web/` pentru aplicația Node), nu fișiere locale care nu fac parte din repo sau nu sunt cerute de task (ex. `.kilo`, `.firecrawl` dacă nu sunt versionate).
+
+## Commit
+
+Mesaj clar, în **propoziții complete**: ce s-a schimbat și de ce.
+
+## Push — branch principal
+
+Pentru deploy tipic pe Railway (tracking `main`):
+
+```bash
+git push origin main
+```
+
+Remote: `https://github.com/boctavian2014-ux/Vesta-AI`.
+
+După push: în Railway, deployment-ul declanșat din GitHub trebuie să arate **același commit SHA** ca pe GitHub.
+
+---
+
+## Railway — deploy (rezumat)
+
+Regula detaliată (repo corect, Root Directory `web`, Option A/B, verificare view-source): [`.cursor/rules/railway-web-deploy-root.mdc`](railway-web-deploy-root.mdc).
+
+- Repo conectat la serviciul **vesta-web**: **`boctavian2014-ux/Vesta-AI`**, nu repo-ul standalone `vesta-web`.
+- **Root Directory:** `web`.
+- **CLI (alternativă):** din folderul `web/`:  
+  `railway up . --path-as-root --service vesta-web --environment production`
+- **Monorepo:** nu lăsa build-ul pe rădăcina repo-ului fără `web/` sau fără `Dockerfile.vesta-web` — risc Python + `npm: not found` (127).
+- **Variabile Railway:** fără chei goale / linii stricate.
+- **Verificare live:** [vesta-asset.com](https://vesta-asset.com/) → view source → `./assets/index-*.js` trebuie să reflecte un hash nou după deploy real; verifică și tab-ul Deploy + commit.
+
+## Flux tipic
+
+Modifici în `web/` → `git add` (doar ce ține de task) → commit → `git push origin main` → Railway face deploy (sau `railway up` din `web/`).
