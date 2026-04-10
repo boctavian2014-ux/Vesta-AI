@@ -20,6 +20,10 @@ export type SpainListingCardPayload = {
   neighborhood?: string;
   listingSource?: "web_search" | "portal_url";
   mapHint?: "property" | "area_center";
+  /** Public advertiser on the listing page — not necessarily the legal owner */
+  listedBy?: string;
+  /** Search index or page metadata — approximate */
+  publishedAt?: string;
 };
 
 type ChatMessage = {
@@ -61,17 +65,17 @@ export default function PropertySearchChatPage() {
       locale === "es"
         ? {
             welcome:
-              "Hola. Soy tu asistente para buscar vivienda en España. Dime presupuesto, zona (ciudad o costa) y tipo: piso, chalet, estudio, terreno… Si pegas un enlace de Idealista o Fotocasa, lo resumimos; el botón «Abrir en mapa» solo aparece cuando hay una ubicación suficientemente concreta (p. ej. dirección geocodificada). Si no, usa «Ver anuncio» en el portal. También puedes usar las sugerencias abajo.",
+              "Hola. Busco inmuebles en España: vivienda, locales, naves, terrenos, edificios enteros u oportunidades de reforma. Dime zona y tipo; para anuncios recientes pide «últimos anuncios». Si pegas un enlace de portal, intentamos mostrar anunciante y fechas públicas (no son el titular registral). «Abrir en mapa» solo con ubicación suficientemente concreta; si no, «Ver anuncio». Puedes usar las sugerencias abajo.",
             placeholder: "Describe lo que buscas en España…",
             send: "Enviar",
             sending: "Enviando…",
             chips: [
-              "Piso hasta 250.000 € en Valencia",
-              "Chalet cerca del mar en Málaga",
-              "Estudio céntrico en Madrid",
+              "Últimos anuncios de venta en Valencia (esta semana)",
+              "Local comercial en Madrid, zona céntrica",
+              "Nave industrial en polígono cerca de Barcelona",
+              "Edificio entero para reformar en Sevilla",
+              "Piso hasta 250.000 € en Málaga",
               "Terreno urbanizable en la Costa Blanca",
-              "Villa con piscina en Marbella, presupuesto flexible",
-              "Casa 3 dormitorios, familia, zona tranquila Barcelona",
             ],
             errorTitle: "No se pudo obtener respuesta",
             networkError: "Error de red o del servidor. Inténtalo de nuevo.",
@@ -89,22 +93,26 @@ export default function PropertySearchChatPage() {
             searchMissingDesc:
               "Para listar propiedades desde portales (Idealista, Fotocasa, etc.) hace falta TAVILY_API_KEY en el servidor (Railway → vesta-web → Variables). Sin ella el asistente solo puede usar enlaces que pegues tú.",
             webListingsDisclaimer:
-              "Estos enlaces vienen de una búsqueda en internet (no de una base de datos Vesta). Comprueba precio y disponibilidad en el portal.",
+              "Muestra de enlaces de búsqueda web (no todos los anuncios de España ni base de datos Vesta). Las fechas pueden ser orientativas (indexación). Comprueba precio, anunciante y disponibilidad en el portal.",
+            listedByLabel: "Anunciante",
+            publishedAtLabel: "Fecha (aprox.)",
+            listedByFootnote:
+              "Quien publica el anuncio en el portal no tiene por qué ser el titular registral.",
             openAreaOnMap: "Barrio en mapa (aprox.)",
           }
         : {
             welcome:
-              "Hi. I'm your assistant for finding property in Spain. Tell me your budget, area (city or coast), and type: apartment, villa, studio, land… If you paste an Idealista or Fotocasa link, we summarize it; Open on map only appears when there is enough location detail (e.g. a geocoded address). Otherwise use View listing on the portal. You can also tap a suggestion below.",
+              "Hi. I help you find property in Spain: homes, commercial, industrial, land, whole buildings, or renovation plays. Say the area and asset type; ask for “latest listings” for recent ads. If you paste a portal link, we try to show public advertiser and dates (not the land-registry owner). Open on map only with enough location detail; otherwise use View listing. Try a suggestion below.",
             placeholder: "Describe what you are looking for in Spain…",
             send: "Send",
             sending: "Sending…",
             chips: [
-              "Apartment under €250k in Valencia",
-              "Villa near the beach in Málaga",
-              "Studio in central Madrid",
+              "Latest sale listings in Valencia (this week)",
+              "Commercial unit in central Madrid",
+              "Industrial warehouse near Barcelona",
+              "Whole building to renovate in Seville",
+              "Apartment under €250k in Málaga",
               "Building plot on the Costa Blanca",
-              "Villa with pool in Marbella, flexible budget",
-              "3-bed house for a family, quiet area Barcelona",
             ],
             errorTitle: "Could not get a reply",
             networkError: "Network or server error. Please try again.",
@@ -122,7 +130,11 @@ export default function PropertySearchChatPage() {
             searchMissingDesc:
               "To list properties from portals (Idealista, Fotocasa, etc.), set TAVILY_API_KEY on the server (Railway → vesta-web → Variables). Without it, the assistant only works with links you paste.",
             webListingsDisclaimer:
-              "These links come from an internet search (not a Vesta database). Confirm price and availability on the portal.",
+              "Sample links from web search (not every listing in Spain or a Vesta database). Dates may be approximate (indexing). Confirm price, advertiser, and availability on the portal.",
+            listedByLabel: "Listed by",
+            publishedAtLabel: "Date (approx.)",
+            listedByFootnote:
+              "The portal advertiser is not necessarily the legal property owner.",
             openAreaOnMap: "Area on map (approx.)",
           },
     [locale],
@@ -268,6 +280,21 @@ export default function PropertySearchChatPage() {
                             ) : null}
                             {c.sourceName ? (
                               <p className="text-xs text-muted-foreground">{c.sourceName}</p>
+                            ) : null}
+                            {c.listedBy ? (
+                              <p className="text-xs text-muted-foreground">
+                                <span className="font-medium text-foreground/80">{t.listedByLabel}:</span>{" "}
+                                {c.listedBy}
+                              </p>
+                            ) : null}
+                            {c.publishedAt ? (
+                              <p className="text-xs text-muted-foreground">
+                                <span className="font-medium text-foreground/80">{t.publishedAtLabel}:</span>{" "}
+                                {c.publishedAt}
+                              </p>
+                            ) : null}
+                            {c.listedBy ? (
+                              <p className="text-[11px] text-muted-foreground/90 leading-snug">{t.listedByFootnote}</p>
                             ) : null}
                             {c.snippet ? (
                               <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">

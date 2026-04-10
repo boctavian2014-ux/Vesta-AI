@@ -12,7 +12,7 @@ AI-powered property analysis platform for Spanish real estate. Click any buildin
 - **Full Property Reports** — Legal data, Nota Simplă, urbanism, neighborhood analysis
 - **Stripe Payments** — 19€ Basic / 49.99€ Full Report with Nota Simplă
 - **Street View** — Embedded 360° street-level photos (no redirect)
-- **Property search (AI agent)** — Chat at `#/property-search` uses OpenAI with **tools**: **Tavily** web search for real listing URLs on allowed Spanish portals (city + optional barrio), Nominatim geocoding, listing-page metadata fetch, and structured **listing cards** (`snippet`, `listingSource`). Listings from search are labeled as **internet results**, not a Vesta database. **Open on map** / **Area on map (approx.)** use `#/map?lat=&lon=` with optional `area=1` for neighborhood centers. Requires `OPENAI_API_KEY`; **recommended** `TAVILY_API_KEY` for discovery-by-area.
+- **Property search (AI agent)** — Chat at `#/property-search` uses OpenAI with **tools**: **Tavily** finds listing URLs on allowed Spanish portals (Idealista, Fotocasa, Habitaclia, Pisos, YaEncontre, Milanuncios). The search tool accepts **`asset_focus`** (residential, commercial, industrial, land, whole_building, renovation_opportunity, mixed) and **`recency`** (`any` / `day` / `week` / `month` / `year`) mapped to Tavily `time_range` for *últimos anuncios*-style queries; results may include approximate **`publishedAt`** from the search API. **Nominatim** geocoding and **listing-page metadata** fetch add optional **`listedBy`** (public advertiser from JSON-LD / meta — not the land-registry owner). Cards show disclaimers: web results are a **sample**, not the full market. **Open on map** / **Area on map (approx.)** use `#/map?lat=&lon=` with optional `area=1`. Requires `OPENAI_API_KEY`; **recommended** `TAVILY_API_KEY`. **Official auction portals** are not in the allowlist until `fetch_listing_page_metadata` is validated on those HTML layouts.
 
 ---
 
@@ -61,7 +61,7 @@ Edit `.env` and fill in your values:
 | `VESTA_ZONE_OSM_DISABLE` | Set to `1` to skip Overpass calls (tests / offline); zone counts fall back to estimates. |
 | `OPENAI_API_KEY` | **Required for property search chat** (`#/property-search`) — OpenAI API key; without it, `POST /api/spain-property-search/chat` returns **503**. The handler runs a short **agent loop** (tool calls) and returns JSON `{ reply, listings? }`. |
 | `OPENAI_MODEL` | Optional — defaults to `gpt-4o-mini` (e.g. `gpt-4o` if you prefer). |
-| `TAVILY_API_KEY` | **Recommended** — [Tavily](https://tavily.com) API key for tool `search_spain_property_links` (find listing URLs on Idealista, Fotocasa, etc. by city/neighborhood). Without it, the agent can still use pasted URLs and geocoding; the UI shows a configuration notice. |
+| `TAVILY_API_KEY` | **Recommended** — [Tavily](https://tavily.com) API key for `search_spain_property_links` (portal URLs by city/barrio, optional `asset_focus` + `recency` / `time_range`). Without it, pasted URLs and geocoding still work; the UI shows a configuration notice. |
 | `GET /api/spain-property-search/status` | (Auth) Returns `{ openaiConfigured, searchConfigured }` — booleans only; never exposes secrets. |
 | `SESSION_SECRET` | Optional — secret for Express session signing; change in production if you like. Sessions use **in-memory** store: each deploy or extra replica clears logins — users must sign in again. |
 | `PORT` | Server port (default: 5000) |

@@ -16,6 +16,10 @@ export type SpainListingCard = {
    * area_center = approximate neighborhood center from geocode_place (not a specific listing).
    */
   mapHint?: "property" | "area_center";
+  /** Advertiser / agency or "particular" when extractable from public page — not legal owner */
+  listedBy?: string;
+  /** Publication or update hint from search index or page metadata — confirm on portal */
+  publishedAt?: string;
 };
 
 const ALLOWED_LISTING_SUFFIXES = [
@@ -61,6 +65,128 @@ function decodeHtmlEntities(s: string): string {
 function extractTitleTag(html: string): string | null {
   const m = html.match(/<title[^>]*>([^<]{1,500})<\/title>/i);
   return m?.[1] ? decodeHtmlEntities(m[1].trim()) : null;
+}
+
+type JsonLdPick = { names: string[]; dates: string[] };
+
+function pushAgentName(target: JsonLdPick, x: unknown): void {
+  if (typeof x === "string") {
+    const s = x.trim();
+    if (s.length > 1 && s.length < 200) target.names.push(s);
+    return;
+  }
+  if (!x || typeof x !== "object") return;
+  const o = x as { name?: unknown; "@type"?: unknown };
+  if (typeof o.name === "string") {
+    const s = o.name.trim();
+    if (s.length > 1 && s.length < 200) target.names.push(s);
+  }
+}
+
+function walkJsonLdForListingMeta(node: unknown, acc: JsonLdPick, depth: number): void {
+  if (depth > 24 || node == null) return;
+  if (typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const x of node) walkJsonLdForListingMeta(x, acc, depth + 1);
+    return;
+  }
+  const o = node as Record<string, unknown>;
+  if (o["@graph"]) {
+    walkJsonLdForListingMeta(o["@graph"], acc, depth + 1);
+    return;
+  }
+
+  const typeRaw = o["@type"];
+  const types = Array.isArray(typeRaw)
+    ? typeRaw.map((t) => String(t).toLowerCase())
+    : typeRaw
+      ? [String(typeRaw).toLowerCase()]
+      : [];
+
+  const listingLike = types.some(
+    (t) =>
+      t.includes("realestatelisting") ||
+      t.includes("product") ||
+      t.includes("apartment") ||
+      t.includes("house") ||
+      t.includes("residence") ||
+      t.includes("singlefamilyresidence"),
+  );
+  const orgLike = types.some(
+    (t) =>
+      t.includes("organization") ||
+      t.includes("realestateagent") ||
+      t.includes("localbusiness") ||
+      t.includes("brand"),
+  );
+
+  if (listingLike) {
+    pushAgentName(acc, o.seller);
+    pushAgentName(acc, o.broker);
+    pushAgentName(acc, o.provider);
+    pushAgentName(acc, o.brand);
+    if (o.offers && typeof o.offers === "object") {
+      const off = o.offers as Record<string, unknown>;
+      pushAgentName(acc, off.seller);
+    }
+  } else if (orgLike) {
+    pushAgentName(acc, o.name);
+  }
+
+  for (const key of ["datePublished", "dateModified", "uploadDate"] as const) {
+    const v = o[key];
+    if (typeof v === "string" && v.trim()) acc.dates.push(v.trim().slice(0, 48));
+  }
+
+  for (const [k, v] of Object.entries(o)) {
+    if (k === "@context" || k === "@graph") continue;
+    walkJsonLdForListingMeta(v, acc, depth + 1);
+  }
+}
+
+function extractJsonLdScripts(html: string): unknown[] {
+  const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const out: unknown[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const raw = m[1]?.trim();
+    if (!raw) continue;
+    try {
+      out.push(JSON.parse(raw));
+    } catch {
+      /* ignore invalid blocks */
+    }
+  }
+  return out;
+}
+
+function extractListingAdvertiserAndDates(html: string): { listedBy: string | null; pagePublishedAt: string | null } {
+  const acc: JsonLdPick = { names: [], dates: [] };
+  for (const root of extractJsonLdScripts(html)) {
+    walkJsonLdForListingMeta(root, acc, 0);
+  }
+
+  const metaPub =
+    extractMetaContent(html, "property", "article:published_time") ||
+    extractMetaContent(html, "name", "article:published_time") ||
+    extractMetaContent(html, "property", "article:modified_time");
+  const ogUpd = extractMetaContent(html, "property", "og:updated_time");
+  if (metaPub?.trim()) acc.dates.push(metaPub.trim().slice(0, 48));
+  if (ogUpd?.trim()) acc.dates.push(ogUpd.trim().slice(0, 48));
+
+  const seen = new Set<string>();
+  let listedBy: string | null = null;
+  for (const n of acc.names) {
+    const key = n.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    listedBy = n.slice(0, 160);
+    break;
+  }
+
+  let pagePublishedAt: string | null = acc.dates[0] ? acc.dates[0].slice(0, 40) : null;
+
+  return { listedBy, pagePublishedAt };
 }
 
 export async function geocodePlaceSpain(query: string): Promise<string> {
@@ -139,12 +265,17 @@ export async function fetchListingPageMetadata(urlStr: string): Promise<string> 
     const description =
       extractMetaContent(slice, "property", "og:description") ||
       extractMetaContent(slice, "name", "description");
+    const { listedBy, pagePublishedAt } = extractListingAdvertiserAndDates(slice);
     return JSON.stringify({
       ok: res.ok,
       httpStatus: res.status,
       title: title ? title.slice(0, 500) : null,
       description: description ? description.slice(0, 2000) : null,
       url: u.toString(),
+      listedBy: listedBy || null,
+      pagePublishedAt: pagePublishedAt || null,
+      note:
+        "listedBy is the public advertiser on the listing page (e.g. agency), not necessarily the legal property owner (titular registral).",
     });
   } catch {
     return JSON.stringify({ error: "fetch_failed" });
@@ -189,6 +320,10 @@ export function recordEmittedListings(raw: unknown, acc: SpainListingCard[]): st
         : undefined;
     const mapHint =
       o.mapHint === "area_center" || o.mapHint === "property" ? o.mapHint : undefined;
+    const listedBy =
+      typeof o.listedBy === "string" ? o.listedBy.trim().slice(0, 200) : undefined;
+    const publishedAt =
+      typeof o.publishedAt === "string" ? o.publishedAt.trim().slice(0, 48) : undefined;
 
     const card: SpainListingCard = {
       title,
@@ -197,6 +332,8 @@ export function recordEmittedListings(raw: unknown, acc: SpainListingCard[]): st
       ...(snippet ? { snippet } : {}),
       ...(neighborhood ? { neighborhood } : {}),
       ...(listingSource ? { listingSource } : {}),
+      ...(listedBy ? { listedBy } : {}),
+      ...(publishedAt ? { publishedAt } : {}),
       ...(lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
         ? { lat, lon }
         : {}),

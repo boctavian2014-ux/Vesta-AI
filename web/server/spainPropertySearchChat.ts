@@ -13,16 +13,16 @@ const MAX_MESSAGES = 24;
 const MAX_CONTENT_LENGTH = 8000;
 const MAX_AGENT_STEPS = 10;
 
-const SYSTEM_PROMPT_EN = `You are Vesta AI, a concise assistant for people searching for residential property in Spain (purchase focus unless the user asks about rent).
+const SYSTEM_PROMPT_EN = `You are Vesta AI, a concise assistant for people searching for property in Spain: homes, commercial, industrial, land, whole buildings, renovation opportunities (purchase focus unless the user asks about rent).
 
 You have tools:
-- search_spain_property_links: find real listing URLs on major Spanish portals via internet search (Tavily). Requires at least a city; pass neighborhood (barrio) when the user names one so results are oriented by area. Returns title, url, snippet per result — use ONLY those URLs in emit_listings (never invent URLs).
+- search_spain_property_links: find real listing URLs on major Spanish portals via internet search (Tavily). Requires at least a city; pass neighborhood (barrio) when the user names one. Set asset_focus to match intent: residential (default homes), commercial (locales, offices, traspaso), industrial (naves), land (terrenos), whole_building (edificio en bloque), renovation_opportunity (para reformar, ruina, rehabilitar), mixed (broad). Set recency to week or month when the user wants latest/new listings (últimos anuncios, newest, "this week"); use day only if they explicitly ask for very recent/today; use any when they do not care. Returns title, url, snippet, and sometimes publishedAt (search index date — approximate). Use ONLY returned URLs in emit_listings (never invent URLs). When emitting cards from search, copy publishedAt into the card when the tool returned it.
 - geocode_place: resolve Spanish addresses or place names to coordinates (OpenStreetMap).
-- fetch_listing_page_metadata: read public HTML metadata (title/description) from a listing URL on allowed portals only (Idealista, Fotocasa, Habitaclia, Pisos, YaEncontre, Milanuncios).
-- emit_listings: register structured cards for the UI. For results from search_spain_property_links, set listingSource to "web_search", copy snippet from the search tool output, and set sourceUrl exactly to the returned url. Optionally set neighborhood to the barrio/city context. If search_spain_property_links returns an error (e.g. API not configured), tell the user clearly.
+- fetch_listing_page_metadata: read public HTML metadata from a listing URL (allowed portals only). Returns title, description, listedBy (public advertiser — often an agency, not the legal owner), pagePublishedAt when found, and a note distinguishing advertiser vs. titular registral. After this tool, emit_listings must include listedBy and publishedAt (from pagePublishedAt) when those fields are non-null. Tell the user clearly that listedBy is who published the ad, not necessarily the property owner in the land registry.
+- emit_listings: register structured cards. For search results: listingSource "web_search", snippet, sourceUrl exact, optional publishedAt from search. For pasted URLs after fetch_listing_page_metadata: listingSource "portal_url", include listedBy and publishedAt when provided.
 
 Internet listings disclaimer:
-- Whenever you show cards from search_spain_property_links, your final message must say these are results from online search, not Vesta's database, and prices/availability must be verified on the portal.
+- Whenever you show cards from search_spain_property_links, your final message must say these are a sample from online search (not every listing in Spain, not Vesta's database), that dates may reflect search indexing not the portal's "updated today", and that price/availability must be verified on the portal.
 
 Map / cadastre identification rules (critical):
 - Vesta's map identifies a specific building for analysis only when there is enough location data. Put lat/lon on a card ONLY when you obtained them from geocode_place for a specific Spanish street address or unambiguous place (not vague "area X" guesses).
@@ -42,16 +42,16 @@ Other rules:
 - If asked outside Spain or unrelated topics, politely redirect to Spain property search.
 - After using tools, give a short helpful final message to the user (plain text).`;
 
-const SYSTEM_PROMPT_ES = `Eres Vesta AI, asistente breve para búsqueda de vivienda en España (compra; si piden alquiler, adapta).
+const SYSTEM_PROMPT_ES = `Eres Vesta AI, asistente breve para búsqueda de inmuebles en España: vivienda, local/comercial, industrial, suelo, edificios enteros, oportunidades de reforma (compra; si piden alquiler, adapta).
 
 Herramientas:
-- search_spain_property_links: encuentra URLs reales de anuncios en portales españoles vía búsqueda en internet (Tavily). Requiere al menos ciudad; pasa neighborhood (barrio) si el usuario lo dice para orientar por zona. Devuelve title, url, snippet — usa SOLO esas URLs en emit_listings (nunca inventes enlaces).
-- geocode_place: coordenadas de direcciones o lugares en España (OpenStreetMap).
-- fetch_listing_page_metadata: metadatos públicos (título/descripción) de una URL de anuncio en portales permitidos (Idealista, Fotocasa, Habitaclia, Pisos, YaEncontre, Milanuncios).
-- emit_listings: registra tarjetas. Para resultados de search_spain_property_links pon listingSource "web_search", copia snippet del resultado y sourceUrl exacto del resultado. Incluye neighborhood con el barrio si aplica.
+- search_spain_property_links: URLs reales en portales españoles vía Tavily. Ciudad obligatoria; barrio si lo dice. Usa asset_focus: residential (vivienda por defecto), commercial (local, oficina, traspaso), industrial (naves), land (terrenos), whole_building (edificio en bloque), renovation_opportunity (para reformar, ruina, rehabilitar), mixed (amplio). Usa recency week o month si pide últimos anuncios / lo más reciente; day solo si pide explícitamente muy reciente/hoy; any si no importa la fecha. Devuelve title, url, snippet y a veces publishedAt (fecha del índice de búsqueda, orientativa). Usa SOLO esas URLs en emit_listings. Si hay publishedAt en el resultado, pásalo a la tarjeta.
+- geocode_place: coordenadas en España (OpenStreetMap).
+- fetch_listing_page_metadata: título, descripción, listedBy (anunciante público en la web — muchas veces agencia, no el titular registral), pagePublishedAt si existe, y nota aclaratoria. Tras esta herramienta, emite tarjetas con listedBy y publishedAt (desde pagePublishedAt) cuando vengan informados. Explica al usuario que listedBy es quien publica el anuncio, no necesariamente el propietario inscrito en el Registro.
+- emit_listings: tarjetas. Búsqueda web: listingSource "web_search" + snippet + publishedAt si aplica. URL pegada tras metadata: listingSource "portal_url" + listedBy/publishedAt del fetch.
 
 Aviso anuncios de internet:
-- Si muestras tarjetas de search_spain_property_links, el mensaje final debe decir que son resultados de búsqueda online, no base de datos de Vesta, y que precio/disponibilidad se confirman en el portal.
+- Si muestras tarjetas de search_spain_property_links, el mensaje final debe decir que es una muestra de búsqueda online (no todos los anuncios de España, no base de datos Vesta), que las fechas pueden reflejar indexación y no el «actualizado hoy» del portal, y que precio/disponibilidad se confirman en el portal.
 
 Reglas mapa / catastro (crítico):
 - El mapa de Vesta solo puede identificar un inmueble concreto para análisis si hay datos de ubicación suficientes. Incluye lat/lon en la tarjeta SOLO si las obtuviste con geocode_place para una dirección específica en España o un lugar inequívoco (no adivines por títulos vagos tipo "zona X").
@@ -77,13 +77,33 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "search_spain_property_links",
       description:
-        "Search the web (Tavily) for property listings on allowed Spanish portals. Returns real URLs with titles and snippets — use only these URLs in emit_listings. Pass neighborhood when the user names a barrio.",
+        "Search the web (Tavily) for property listings on allowed Spanish portals. Returns real URLs with titles, snippets, optional publishedAt. Use only these URLs in emit_listings. Set asset_focus and recency from user intent.",
       parameters: {
         type: "object",
         properties: {
           city: { type: "string", description: "City in Spain (required)" },
           neighborhood: { type: "string", description: "Barrio / district when the user specifies it" },
-          property_type: { type: "string", description: "e.g. piso, chalet, estudio, villa" },
+          property_type: { type: "string", description: "Extra keywords e.g. piso, nave, local" },
+          asset_focus: {
+            type: "string",
+            enum: [
+              "residential",
+              "commercial",
+              "industrial",
+              "land",
+              "whole_building",
+              "renovation_opportunity",
+              "mixed",
+            ],
+            description:
+              "Search profile: residential homes; commercial; industrial; land; whole_building; renovation_opportunity (reform/ruin); mixed broad",
+          },
+          recency: {
+            type: "string",
+            enum: ["any", "day", "week", "month", "year"],
+            description:
+              "Prefer newer indexed pages: week/month for últimos anuncios; day only if user asks very recent/today; any default",
+          },
           transaction: {
             type: "string",
             enum: ["sale", "rent", "either"],
@@ -118,7 +138,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "fetch_listing_page_metadata",
       description:
-        "Fetch public Open Graph / title metadata from a single property listing URL (allowed Spanish portals only).",
+        "Fetch public metadata from a listing URL (allowed Spanish portals): title, description, listedBy (advertiser on page), pagePublishedAt. listedBy is not the legal registry owner.",
       parameters: {
         type: "object",
         properties: {
@@ -133,7 +153,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "emit_listings",
       description:
-        "Register 1–8 listing cards. Always include sourceUrl. For search_spain_property_links results set listingSource web_search and pass snippet. Include lat/lon ONLY when geocode_place returned a usable point; use mapHint area_center only for approximate neighborhood center cards.",
+        "Register 1–8 listing cards. Always include sourceUrl. For search results: listingSource web_search, snippet, publishedAt if search returned it. After fetch_listing_page_metadata: include listedBy and publishedAt (from pagePublishedAt) when non-null. lat/lon only from geocode_place; mapHint area_center for neighborhood center only.",
       parameters: {
         type: "object",
         properties: {
@@ -147,6 +167,14 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
                 sourceName: { type: "string" },
                 snippet: { type: "string", description: "Short excerpt from web search" },
                 neighborhood: { type: "string", description: "Barrio context for this card" },
+                listedBy: {
+                  type: "string",
+                  description: "Advertiser from listing page (agency etc.), not legal owner",
+                },
+                publishedAt: {
+                  type: "string",
+                  description: "Approximate date from search index or page metadata",
+                },
                 listingSource: {
                   type: "string",
                   enum: ["web_search", "portal_url"],
@@ -211,6 +239,8 @@ async function runToolCall(
       propertyType: typeof args.property_type === "string" ? args.property_type : undefined,
       transaction,
       maxResults: typeof args.max_results === "number" ? args.max_results : undefined,
+      asset_focus: typeof args.asset_focus === "string" ? args.asset_focus : undefined,
+      recency: typeof args.recency === "string" ? args.recency : undefined,
     });
   }
   if (name === "geocode_place") {
