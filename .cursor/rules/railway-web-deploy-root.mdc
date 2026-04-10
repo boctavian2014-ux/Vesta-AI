@@ -1,32 +1,38 @@
 ---
-description: Deploy vesta-web from web root path
+description: Railway vesta-web — monorepo web/, correct Git source, verify deploy
 alwaysApply: true
 ---
 
 # Railway deploy for `vesta-web`
 
-- For the `vesta-web` service, deploy from the `web` folder as archive root.
-- Use:
-  - `railway up . --path-as-root --service vesta-web --environment production`
-- Do not point this service at the **monorepo root** without Option A or B below: Nixpacks may detect **Python** first and still run `npm run build`, causing `npm: not found` (exit **127**).
-- After deploy, verify build logs and confirm no `npm: not found` / `exit code: 127` errors.
+## Source repository (prevents “regression” / old UI)
 
-## GitHub / automatic deploys (stops yellow warning / FAILED)
+- Service **`vesta-web`** → Settings → **connected GitHub repo** must be **`boctavian2014-ux/Vesta-AI`**, not **`boctavian2014-ux/vesta-web`**. The standalone `vesta-web` repo is legacy; active product code lives under this monorepo in **`web/`**.
+- After any repo switch, trigger a deploy and confirm the deployment shows a **recent commit SHA** from `Vesta-AI`.
 
-When the Git repo root is the **full monorepo**, Nixpacks often picks **Python** (`pip install` …) and still runs **`npm run build`**, which fails with **`npm: not found`** (**exit 127**). Fix one of these (pick one):
+## Build context (monorepo)
 
-### Option A — Root Directory (Nixpacks, simple)
+- Deploy the Node app from **`web/`** only.
+- CLI from machine: `railway up . --path-as-root --service vesta-web --environment production` run **inside** [`web/`](web/).
+- Do not use **monorepo root** as build root without Option A or B: detectors may pick **Python** and still run `npm run build` → **`npm: not found`** (exit **127**).
 
-- Service `vesta-web` → Settings → **Root Directory:** `web`
-- Builder: **Nixpacks** (must match [`web/railway.json`](web/railway.json) `build.builder`). Uses [`web/nixpacks.toml`](web/nixpacks.toml).
-- **Do not** set Root Directory = `web` while forcing **Dockerfile** `Dockerfile.vesta-web` in the UI: that file lives at the **repo root** (Option B), not inside `web/`.
+### Option A — Root Directory + Nixpacks / Railpack (typical GitHub deploy)
 
-### Option B — Dockerfile (works even if Root Directory was never set)
+- **Root Directory:** `web`
+- Uses [`web/railway.json`](web/railway.json) and [`web/nixpacks.toml`](web/nixpacks.toml) when builder is Nixpacks.
+- **Do not** set Root Directory = `web` while using repo-root [`Dockerfile.vesta-web`](Dockerfile.vesta-web) — that Dockerfile expects `COPY web/...` from **repo root** (Option B).
 
-- Repo file: [`Dockerfile.vesta-web`](Dockerfile.vesta-web) (copies and builds only `web/`).
-- Service `vesta-web` → Settings:
-  - **Root Directory:** leave **empty** (repo root), so paths `web/...` exist in the build context.
-  - **Builder:** **Dockerfile**
-  - **Dockerfile path:** `Dockerfile.vesta-web`
+### Option B — Dockerfile from repo root
 
-Do **not** combine “Root Directory = `web`” with Option B as written — the Dockerfile expects `COPY web/...` from repo root.
+- **Root Directory:** empty (repo root).
+- **Dockerfile path:** `Dockerfile.vesta-web`
+
+## Verify production
+
+- Open `view-source:` on [https://vesta-asset.com/](https://vesta-asset.com/) and check `./assets/index-*.js`: the **hash** should change after real frontend deploys. Same hash as before + old UI → still serving a previous successful deployment or wrong repo.
+- Build log **SUCCESS** alone does not prove the domain updated; confirm **Deploy** tab and **commit** on that deployment.
+
+## Yellow warning / failed deploys
+
+- **Variables:** no empty variable names, no malformed `KEY=value` lines (Railway can reject or break deploy).
+- Read **Deploy / runtime logs**, not only **Build** (crash on start, wrong `PORT`, etc.). [`web/server/index.ts`](web/server/index.ts) listens on `process.env.PORT` (Railway sets this).
