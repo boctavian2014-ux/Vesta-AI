@@ -7,17 +7,22 @@ import {
   recordEmittedListings,
   type SpainListingCard,
 } from "./spainPropertyListingTools";
+import { isTavilySearchConfigured, searchSpainPropertyLinksJson } from "./spainPropertySearchLinks";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT_LENGTH = 8000;
-const MAX_AGENT_STEPS = 8;
+const MAX_AGENT_STEPS = 10;
 
 const SYSTEM_PROMPT_EN = `You are Vesta AI, a concise assistant for people searching for residential property in Spain (purchase focus unless the user asks about rent).
 
 You have tools:
+- search_spain_property_links: find real listing URLs on major Spanish portals via internet search (Tavily). Requires at least a city; pass neighborhood (barrio) when the user names one so results are oriented by area. Returns title, url, snippet per result — use ONLY those URLs in emit_listings (never invent URLs).
 - geocode_place: resolve Spanish addresses or place names to coordinates (OpenStreetMap).
 - fetch_listing_page_metadata: read public HTML metadata (title/description) from a listing URL on allowed portals only (Idealista, Fotocasa, Habitaclia, Pisos, YaEncontre, Milanuncios).
-- emit_listings: register structured cards for the UI (title, sourceUrl, optional lat/lon, optional sourceName). Call this when the user pastes a listing URL, or after you used fetch_listing_page_metadata / geocode_place and have a concrete card.
+- emit_listings: register structured cards for the UI. For results from search_spain_property_links, set listingSource to "web_search", copy snippet from the search tool output, and set sourceUrl exactly to the returned url. Optionally set neighborhood to the barrio/city context. If search_spain_property_links returns an error (e.g. API not configured), tell the user clearly.
+
+Internet listings disclaimer:
+- Whenever you show cards from search_spain_property_links, your final message must say these are results from online search, not Vesta's database, and prices/availability must be verified on the portal.
 
 Map / cadastre identification rules (critical):
 - Vesta's map identifies a specific building for analysis only when there is enough location data. Put lat/lon on a card ONLY when you obtained them from geocode_place for a specific Spanish street address or unambiguous place (not vague "area X" guesses).
@@ -25,19 +30,28 @@ Map / cadastre identification rules (critical):
 - Emphasize listings that qualify for "Open on map" in your wording; for others, steer the user to the portal link or ask for a fuller address next time.
 - In your final message, state clearly: without sufficient location data, Vesta cannot place an exact pin for cadastre-style identification; if there is no "Open on map" button, they should use the portal or provide a more complete address.
 
+Neighborhood orientation (optional):
+- When the user names a neighborhood (barrio) and city, always pass both to search_spain_property_links.
+- If it helps orientation, call geocode_place for "{neighborhood}, {city}, Spain" and emit one extra card: title like "Approximate area: {neighborhood}", sourceUrl = "https://www.google.com/maps/search/?api=1&query=" + URL-encoded "{neighborhood}, {city}, Spain", listingSource "portal_url", mapHint "area_center", lat/lon from the first geocode result, snippet stating this is an approximate neighborhood center (not a specific listing). Use a different sourceUrl from any listing card so deduplication does not merge them.
+
 Other rules:
+- When the user asks to see properties or listings in an area, call search_spain_property_links first (if the tool returns search_not_configured, explain they need TAVILY_API_KEY on the server).
 - For general strategy (budgets, neighborhoods, types), answer normally without claiming verified live availability.
-- When the user provides a listing URL, call fetch_listing_page_metadata, then emit_listings with title from metadata (or a short title you derive) and the same URL. Use geocode_place only when the title/description contains a clear enough address or place in Spain to geocode; otherwise omit lat/lon.
-- Never invent listing URLs. Prices from metadata may be stale — say the user should confirm on the portal.
+- When the user provides a listing URL, call fetch_listing_page_metadata, then emit_listings with listingSource "portal_url". Use geocode_place only when the title/description contains a clear enough address or place in Spain to geocode; otherwise omit lat/lon.
+- Never invent portal listing URLs (only use search tool output or user-pasted URLs). Prices from metadata may be stale — say the user should confirm on the portal.
 - If asked outside Spain or unrelated topics, politely redirect to Spain property search.
 - After using tools, give a short helpful final message to the user (plain text).`;
 
 const SYSTEM_PROMPT_ES = `Eres Vesta AI, asistente breve para búsqueda de vivienda en España (compra; si piden alquiler, adapta).
 
 Herramientas:
+- search_spain_property_links: encuentra URLs reales de anuncios en portales españoles vía búsqueda en internet (Tavily). Requiere al menos ciudad; pasa neighborhood (barrio) si el usuario lo dice para orientar por zona. Devuelve title, url, snippet — usa SOLO esas URLs en emit_listings (nunca inventes enlaces).
 - geocode_place: coordenadas de direcciones o lugares en España (OpenStreetMap).
 - fetch_listing_page_metadata: metadatos públicos (título/descripción) de una URL de anuncio en portales permitidos (Idealista, Fotocasa, Habitaclia, Pisos, YaEncontre, Milanuncios).
-- emit_listings: registra tarjetas para la UI (title, sourceUrl, lat/lon opcionales, sourceName opcional). Úsalo si el usuario pega un enlace o tras usar las otras herramientas.
+- emit_listings: registra tarjetas. Para resultados de search_spain_property_links pon listingSource "web_search", copia snippet del resultado y sourceUrl exacto del resultado. Incluye neighborhood con el barrio si aplica.
+
+Aviso anuncios de internet:
+- Si muestras tarjetas de search_spain_property_links, el mensaje final debe decir que son resultados de búsqueda online, no base de datos de Vesta, y que precio/disponibilidad se confirman en el portal.
 
 Reglas mapa / catastro (crítico):
 - El mapa de Vesta solo puede identificar un inmueble concreto para análisis si hay datos de ubicación suficientes. Incluye lat/lon en la tarjeta SOLO si las obtuviste con geocode_place para una dirección específica en España o un lugar inequívoco (no adivines por títulos vagos tipo "zona X").
@@ -45,14 +59,42 @@ Reglas mapa / catastro (crítico):
 - Enfatiza los anuncios que sí califican para "Abrir en mapa"; en los demás, dirige al usuario al enlace del portal o pide una dirección más completa.
 - En el mensaje final, deja claro: sin localización suficiente, Vesta no puede colocar un pin exacto para identificación tipo catastro; si no hay botón "Abrir en mapa", debe usar el portal o dar una dirección más completa.
 
+Orientación por barrio (opcional):
+- Si el usuario dice ciudad y barrio, pasa siempre ambos a search_spain_property_links.
+- Si ayuda, llama geocode_place con "{barrio}, {ciudad}, España" y emite una tarjeta extra: título tipo "Zona aproximada: {barrio}", sourceUrl = "https://www.google.com/maps/search/?api=1&query=" + query codificada "{barrio}, {ciudad}, España", listingSource "portal_url", mapHint "area_center", lat/lon del primer resultado, snippet aclarando que es centro aproximado del barrio. Usa un sourceUrl distinto a los anuncios para no fusionar con deduplicado.
+
 Otras reglas:
+- Cuando pida ver propiedades/anuncios en una zona, usa search_spain_property_links primero; si devuelve search_not_configured, explica que falta TAVILY_API_KEY en el servidor.
 - En temas generales (presupuesto, barrios, tipos), responde sin afirmar disponibilidad verificada en tiempo real.
-- Si hay URL de anuncio, llama fetch_listing_page_metadata y luego emit_listings. Usa geocode_place solo si el título/descripción contiene una dirección o lugar en España lo bastante claro; si no, omite lat/lon.
-- No inventes URLs. Los precios del HTML pueden estar desactualizados — indica que confirme en el portal.
+- Si hay URL de anuncio pegada, llama fetch_listing_page_metadata y luego emit_listings con listingSource "portal_url". Usa geocode_place solo si el título/descripción contiene una dirección o lugar en España lo bastante claro; si no, omite lat/lon.
+- No inventes URLs de anuncios en portales (solo salida del buscador o URL pegada por el usuario). Los precios pueden estar desactualizados — indica que confirme en el portal.
 - Fuera de España u otros temas: redirige con cortesía.
 - Tras herramientas, mensaje final breve al usuario.`;
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "search_spain_property_links",
+      description:
+        "Search the web (Tavily) for property listings on allowed Spanish portals. Returns real URLs with titles and snippets — use only these URLs in emit_listings. Pass neighborhood when the user names a barrio.",
+      parameters: {
+        type: "object",
+        properties: {
+          city: { type: "string", description: "City in Spain (required)" },
+          neighborhood: { type: "string", description: "Barrio / district when the user specifies it" },
+          property_type: { type: "string", description: "e.g. piso, chalet, estudio, villa" },
+          transaction: {
+            type: "string",
+            enum: ["sale", "rent", "either"],
+            description: "sale=venta, rent=alquiler, either=both",
+          },
+          max_results: { type: "number", description: "Number of results 1-8, default 6" },
+        },
+        required: ["city"],
+      },
+    },
+  },
   {
     type: "function",
     function: {
@@ -91,7 +133,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "emit_listings",
       description:
-        "Register 1–5 listing cards. Always include sourceUrl. Include lat/lon ONLY when geocode_place returned a usable point for a specific Spanish address or clear place; omit lat/lon if you did not geocode or the match was uncertain.",
+        "Register 1–8 listing cards. Always include sourceUrl. For search_spain_property_links results set listingSource web_search and pass snippet. Include lat/lon ONLY when geocode_place returned a usable point; use mapHint area_center only for approximate neighborhood center cards.",
       parameters: {
         type: "object",
         properties: {
@@ -103,6 +145,17 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
                 title: { type: "string" },
                 sourceUrl: { type: "string" },
                 sourceName: { type: "string" },
+                snippet: { type: "string", description: "Short excerpt from web search" },
+                neighborhood: { type: "string", description: "Barrio context for this card" },
+                listingSource: {
+                  type: "string",
+                  enum: ["web_search", "portal_url"],
+                },
+                mapHint: {
+                  type: "string",
+                  enum: ["property", "area_center"],
+                  description: "area_center = approximate neighborhood center, not exact building",
+                },
                 lat: { type: "number" },
                 lon: { type: "number" },
               },
@@ -147,6 +200,19 @@ async function runToolCall(
     return JSON.stringify({ error: "invalid_json_arguments" });
   }
 
+  if (name === "search_spain_property_links") {
+    const city = typeof args.city === "string" ? args.city : "";
+    const tr = args.transaction;
+    const transaction =
+      tr === "rent" ? "rent" : tr === "sale" ? "sale" : ("either" as const);
+    return searchSpainPropertyLinksJson({
+      city,
+      neighborhood: typeof args.neighborhood === "string" ? args.neighborhood : undefined,
+      propertyType: typeof args.property_type === "string" ? args.property_type : undefined,
+      transaction,
+      maxResults: typeof args.max_results === "number" ? args.max_results : undefined,
+    });
+  }
   if (name === "geocode_place") {
     const query = typeof args.query === "string" ? args.query : "";
     return geocodePlaceSpain(query);
@@ -168,7 +234,8 @@ export function handleSpainPropertySearchStatus(req: Request, res: Response): vo
     return;
   }
   const openaiConfigured = Boolean((process.env.OPENAI_API_KEY || "").trim());
-  res.json({ openaiConfigured });
+  const searchConfigured = isTavilySearchConfigured();
+  res.json({ openaiConfigured, searchConfigured });
 }
 
 export async function handleSpainPropertySearchChat(req: Request, res: Response): Promise<void> {

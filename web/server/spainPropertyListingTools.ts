@@ -6,6 +6,16 @@ export type SpainListingCard = {
   sourceName?: string;
   lat?: number;
   lon?: number;
+  /** Short excerpt from web search or portal metadata */
+  snippet?: string;
+  neighborhood?: string;
+  /** Where the card came from (for UI disclaimer) */
+  listingSource?: "web_search" | "portal_url";
+  /**
+   * With lat/lon: property = exact-building style pin when coords are reliable;
+   * area_center = approximate neighborhood center from geocode_place (not a specific listing).
+   */
+  mapHint?: "property" | "area_center";
 };
 
 const ALLOWED_LISTING_SUFFIXES = [
@@ -169,14 +179,30 @@ export function recordEmittedListings(raw: unknown, acc: SpainListingCard[]): st
     }
     const sourceName =
       typeof o.sourceName === "string" ? o.sourceName.trim().slice(0, 120) : undefined;
-    acc.push({
+    const snippet =
+      typeof o.snippet === "string" ? o.snippet.trim().slice(0, 500) : undefined;
+    const neighborhood =
+      typeof o.neighborhood === "string" ? o.neighborhood.trim().slice(0, 120) : undefined;
+    const listingSource =
+      o.listingSource === "web_search" || o.listingSource === "portal_url"
+        ? o.listingSource
+        : undefined;
+    const mapHint =
+      o.mapHint === "area_center" || o.mapHint === "property" ? o.mapHint : undefined;
+
+    const card: SpainListingCard = {
       title,
       sourceUrl,
       ...(sourceName ? { sourceName } : {}),
+      ...(snippet ? { snippet } : {}),
+      ...(neighborhood ? { neighborhood } : {}),
+      ...(listingSource ? { listingSource } : {}),
       ...(lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
         ? { lat, lon }
         : {}),
-    });
+      ...(mapHint && lat != null && lon != null ? { mapHint } : {}),
+    };
+    acc.push(card);
     recorded += 1;
   }
   return JSON.stringify({ recorded });

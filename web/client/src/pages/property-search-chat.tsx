@@ -16,6 +16,10 @@ export type SpainListingCardPayload = {
   sourceName?: string;
   lat?: number;
   lon?: number;
+  snippet?: string;
+  neighborhood?: string;
+  listingSource?: "web_search" | "portal_url";
+  mapHint?: "property" | "area_center";
 };
 
 type ChatMessage = {
@@ -47,8 +51,8 @@ export default function PropertySearchChatPage() {
     queryKey: ["spain-property-search-status"],
     queryFn: async () => {
       const r = await fetch("/api/spain-property-search/status", { credentials: "include" });
-      if (!r.ok) return { openaiConfigured: false };
-      return (await r.json()) as { openaiConfigured: boolean };
+      if (!r.ok) return { openaiConfigured: false, searchConfigured: false };
+      return (await r.json()) as { openaiConfigured: boolean; searchConfigured?: boolean };
     },
   });
 
@@ -81,6 +85,12 @@ export default function PropertySearchChatPage() {
             mapInfoTitle: "Mapa e identificación",
             mapInfoDesc:
               "Solo los anuncios con localización fiable (p. ej. dirección geocodificada en España) muestran «Abrir en mapa». Los demás siguen disponibles con «Ver anuncio» en el portal.",
+            searchMissingTitle: "Búsqueda de anuncios en internet no configurada",
+            searchMissingDesc:
+              "Para listar propiedades desde portales (Idealista, Fotocasa, etc.) hace falta TAVILY_API_KEY en el servidor (Railway → vesta-web → Variables). Sin ella el asistente solo puede usar enlaces que pegues tú.",
+            webListingsDisclaimer:
+              "Estos enlaces vienen de una búsqueda en internet (no de una base de datos Vesta). Comprueba precio y disponibilidad en el portal.",
+            openAreaOnMap: "Barrio en mapa (aprox.)",
           }
         : {
             welcome:
@@ -108,6 +118,12 @@ export default function PropertySearchChatPage() {
             mapInfoTitle: "Map and identification",
             mapInfoDesc:
               "Only listings with reliable location (e.g. a geocoded address in Spain) show Open on map. Others remain available via View listing on the portal.",
+            searchMissingTitle: "Web listing search not configured",
+            searchMissingDesc:
+              "To list properties from portals (Idealista, Fotocasa, etc.), set TAVILY_API_KEY on the server (Railway → vesta-web → Variables). Without it, the assistant only works with links you paste.",
+            webListingsDisclaimer:
+              "These links come from an internet search (not a Vesta database). Confirm price and availability on the portal.",
+            openAreaOnMap: "Area on map (approx.)",
           },
     [locale],
   );
@@ -201,6 +217,13 @@ export default function PropertySearchChatPage() {
               <AlertDescription className="text-muted-foreground">{t.mapInfoDesc}</AlertDescription>
             </Alert>
           )}
+          {aiStatus?.openaiConfigured && aiStatus.searchConfigured !== true && (
+            <Alert variant="default" className="border-amber-500/40 bg-amber-500/10">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTitle>{t.searchMissingTitle}</AlertTitle>
+              <AlertDescription>{t.searchMissingDesc}</AlertDescription>
+            </Alert>
+          )}
           {messages.map((m, i) => (
             <div
               key={`${i}-${m.role}-${m.content.slice(0, 24)}`}
@@ -220,20 +243,36 @@ export default function PropertySearchChatPage() {
                 <p className="whitespace-pre-wrap">{m.content}</p>
                 {m.role === "assistant" && m.listings && m.listings.length > 0 ? (
                   <div className="mt-3 space-y-2 border-t border-border pt-3">
+                    {m.listings.some((x) => x.listingSource === "web_search") ? (
+                      <p className="text-xs text-muted-foreground leading-snug border border-border/80 rounded-lg px-3 py-2 bg-muted/30">
+                        {t.webListingsDisclaimer}
+                      </p>
+                    ) : null}
                     {m.listings.map((c, idx) => {
                       const hasCoords =
                         typeof c.lat === "number" &&
                         typeof c.lon === "number" &&
                         Number.isFinite(c.lat) &&
                         Number.isFinite(c.lon);
+                      const areaCenter = c.mapHint === "area_center";
                       return (
                         <Card key={`${c.sourceUrl}-${idx}`} className="bg-background/60">
                           <CardContent className="p-3 space-y-2">
                             <p className="text-sm font-medium leading-snug text-foreground">
                               {c.title}
                             </p>
+                            {c.neighborhood ? (
+                              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                {c.neighborhood}
+                              </p>
+                            ) : null}
                             {c.sourceName ? (
                               <p className="text-xs text-muted-foreground">{c.sourceName}</p>
+                            ) : null}
+                            {c.snippet ? (
+                              <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
+                                {c.snippet}
+                              </p>
                             ) : null}
                             <div className="flex flex-wrap gap-2">
                               <Button
@@ -254,13 +293,15 @@ export default function PropertySearchChatPage() {
                                   size="sm"
                                   className="gap-1.5"
                                   onClick={() => {
-                                    navigate(
-                                      `/map?lat=${encodeURIComponent(String(c.lat))}&lon=${encodeURIComponent(String(c.lon))}`,
-                                    );
+                                    const q =
+                                      areaCenter
+                                        ? `lat=${encodeURIComponent(String(c.lat))}&lon=${encodeURIComponent(String(c.lon))}&area=1`
+                                        : `lat=${encodeURIComponent(String(c.lat))}&lon=${encodeURIComponent(String(c.lon))}`;
+                                    navigate(`/map?${q}`);
                                   }}
                                 >
                                   <MapPin className="h-3.5 w-3.5" />
-                                  {t.openOnMap}
+                                  {areaCenter ? t.openAreaOnMap : t.openOnMap}
                                 </Button>
                               ) : (
                                 <span className="text-xs text-muted-foreground self-center">

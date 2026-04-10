@@ -39,8 +39,8 @@ const PROPERTY_ANALYSIS_LOGO_SRC = `${import.meta.env.BASE_URL}vesta-logo.png${V
 const MAP_STREET_ZOOM = 20;
 const MAP_MAX_ZOOM = 22;
 
-/** Parse `#/map?lat=&lon=` from the hash (e.g. deep link from property search). */
-function parseMapCoordsFromHash(): { lat: number; lon: number } | null {
+/** Parse `#/map?lat=&lon=` from the hash (e.g. deep link from property search). `area=1` = approximate neighborhood center. */
+function parseMapCoordsFromHash(): { lat: number; lon: number; approxArea: boolean } | null {
   if (typeof window === "undefined") return null;
   const hash = window.location.hash || "";
   const q = hash.indexOf("?");
@@ -52,7 +52,8 @@ function parseMapCoordsFromHash(): { lat: number; lon: number } | null {
   const lon = Number(params.get("lon"));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-  return { lat, lon };
+  const approxArea = params.get("area") === "1";
+  return { lat, lon, approxArea };
 }
 
 type UiLocale = "en" | "es";
@@ -1092,6 +1093,9 @@ export default function MapPage() {
         mapRetry: "Reintentar mapa",
         missingMapKey: "Falta VITE_GOOGLE_MAPS_JS_API_KEY.",
         mapAuthFailed: "Google Maps rechazo la clave API (verifica restricciones de dominio y facturacion).",
+        areaMapToastTitle: "Zona aproximada",
+        areaMapToastDesc:
+          "Este punto es un centro orientativo del barrio (geocodificado), no un inmueble concreto. Comprueba en el portal o en el mapa antes de analizar.",
       }
     : {
         searchPlaceholder: "Search city, address or lat,lon (Spain)",
@@ -1151,6 +1155,9 @@ export default function MapPage() {
         mapRetry: "Retry map",
         missingMapKey: "Missing VITE_GOOGLE_MAPS_JS_API_KEY.",
         mapAuthFailed: "Google Maps rejected the API key (check referrer restrictions and billing).",
+        areaMapToastTitle: "Approximate area",
+        areaMapToastDesc:
+          "This pin is a neighborhood center for orientation (geocoded), not a specific building. Confirm on the portal or map before running analysis.",
       };
 
   useEffect(() => {
@@ -1322,7 +1329,16 @@ export default function MapPage() {
           mapDeepLinkConsumedRef.current = true;
           googleMapRef.current.setCenter({ lat: deep.lat, lng: deep.lon });
           googleMapRef.current.setZoom(MAP_STREET_ZOOM);
-          queueMicrotask(() => beginPropertySelectionRef.current(deep.lat, deep.lon));
+          queueMicrotask(() => {
+            beginPropertySelectionRef.current(deep.lat, deep.lon);
+            if (deep.approxArea) {
+              toast({
+                title: t.areaMapToastTitle,
+                description: t.areaMapToastDesc,
+                duration: 9000,
+              });
+            }
+          });
         }
       }
 

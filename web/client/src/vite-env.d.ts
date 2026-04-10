@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+declare module "*.png" {
+  const src: string;
+  export default src;
+}
+
 interface ImportMetaEnv {
   readonly VITE_MAPBOX_TOKEN?: string;
   readonly VITE_PRET_NOTA_SIMPLE_EUR?: string;

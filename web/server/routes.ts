@@ -199,6 +199,17 @@ function parseNumericId(raw: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function hasMeaningfulExtractedJson(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 && trimmed !== "{}" && trimmed !== "[]";
+  }
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+  return true;
+}
+
 type ActorInfo = {
   actorUserId?: number | null;
   actorEmail?: string | null;
@@ -761,12 +772,18 @@ export async function registerRoutes(
     if (mapped.lifecycleStatus === "completed") {
       updates.completedAt = new Date().toISOString();
     }
-    if (normalized.extractedJson != null) {
+    const hasExtractedData = hasMeaningfulExtractedJson(normalized.extractedJson);
+    if (normalized.extractedJson != null && (hasExtractedData || mapped.lifecycleStatus === "completed")) {
       updates.notaSimpleJson =
         typeof normalized.extractedJson === "string"
           ? normalized.extractedJson
           : JSON.stringify(normalized.extractedJson);
+    }
+    if (mapped.lifecycleStatus === "completed" || hasExtractedData) {
       updates.status = "completed";
+      if (!updates.completedAt) {
+        updates.completedAt = new Date().toISOString();
+      }
     }
 
     const previousStatus = report.status;
@@ -780,7 +797,7 @@ export async function registerRoutes(
       {
         actorUserId: null,
         actorEmail: null,
-        actorName: normalized.orderId ? `webhook:${normalized.orderId}` : "webhook",
+        actorName: normalized.event ? `webhook:${normalized.event}` : "webhook",
       },
       `Partner webhook status=${mapped.providerStatus}`
     );
@@ -821,12 +838,18 @@ export async function registerRoutes(
       };
       if (partner.pdfUrl) updates.pdfUrl = partner.pdfUrl;
       if (partner.lifecycleStatus === "completed") updates.completedAt = new Date().toISOString();
-      if (partner.extractedJson != null) {
+      const hasExtractedData = hasMeaningfulExtractedJson(partner.extractedJson);
+      if (partner.extractedJson != null && (hasExtractedData || partner.lifecycleStatus === "completed")) {
         updates.notaSimpleJson =
           typeof partner.extractedJson === "string"
             ? partner.extractedJson
             : JSON.stringify(partner.extractedJson);
+      }
+      if (partner.lifecycleStatus === "completed" || hasExtractedData) {
         updates.status = "completed";
+        if (!updates.completedAt) {
+          updates.completedAt = new Date().toISOString();
+        }
       }
 
       const previousStatus = report.status;

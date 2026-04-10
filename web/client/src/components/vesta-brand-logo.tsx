@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import vestaSidebarLogoSrc from "@/assets/vesta-logo-sidebar.png";
 
 /** Bump when replacing files in `public/` so clients bypass stale caches. Keep `client/index.html` favicon `href` in sync. */
-export const VESTA_BRAND_ASSET_QUERY = "?v=5";
+export const VESTA_BRAND_ASSET_QUERY = "?v=6";
 
 /** Official Vesta AI brand assets from `public/`. */
 function sanitizeBaseUrl(rawBaseUrl: string | undefined): string {
@@ -30,11 +31,8 @@ function buildAssetCandidates(fileName: string): string[] {
 const LOGO_CANDIDATES = buildAssetCandidates("vesta-logo.png");
 const FALLBACK_CANDIDATES = buildAssetCandidates("favicon.png");
 const ALL_CANDIDATES = [...LOGO_CANDIDATES, ...FALLBACK_CANDIDATES];
-/** Wider / marketing lockup for sidebar only; falls back to default logo. */
-const SIDEBAR_LOGO_CANDIDATES = [
-  ...buildAssetCandidates("vesta-logo-sidebar.png"),
-  ...ALL_CANDIDATES,
-];
+/** Wider / marketing lockup for sidebar — bundled so `base: "./"` cannot break the URL. */
+const SIDEBAR_BUNDLED_SRC = vestaSidebarLogoSrc;
 
 function VestaBrandLogoImage({
   width,
@@ -98,14 +96,16 @@ function VestaBrandLogoImage({
 export function VestaBrandLogoSidebar() {
   return (
     <div className="w-full min-w-0 px-0 py-1 group-data-[collapsible=icon]:py-0">
-      {/* Same width + glass treatment as SidebarMenuButton nav cards */}
-      <div className="w-full rounded-md border border-white/15 bg-white/10 p-2 backdrop-blur-md group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:py-1">
+      {/* Marketing lockup — `@/assets/vesta-logo-sidebar.png` (replace file + rebuild to update) */}
+      <div className="w-full rounded-lg border border-white/10 bg-black/15 p-1.5 backdrop-blur-sm group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-1">
         <div className="flex w-full min-w-0 items-center justify-center group-data-[collapsible=icon]:justify-center">
-          <VestaBrandLogoImage
+          <img
+            src={SIDEBAR_BUNDLED_SRC}
+            alt="Vesta AI — Smart real estate"
             width={640}
             height={360}
-            candidates={SIDEBAR_LOGO_CANDIDATES}
-            className="block h-auto w-full max-h-[min(14rem,42vh)] object-contain object-center group-data-[collapsible=icon]:max-h-9 group-data-[collapsible=icon]:max-w-[2.75rem] group-data-[collapsible=icon]:object-center"
+            decoding="async"
+            className="block h-auto w-full max-h-[min(10rem,32vh)] object-contain object-center group-data-[collapsible=icon]:max-h-9 group-data-[collapsible=icon]:max-w-[2.75rem] group-data-[collapsible=icon]:object-center"
           />
         </div>
       </div>
