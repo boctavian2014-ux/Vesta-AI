@@ -42,6 +42,35 @@ export type SpainSearchLinkResult = {
 
 type TavilyRawRow = { title?: string; url?: string; content?: string; published_date?: string };
 
+/** Prefer direct listing URLs; Tavily often returns search hub pages. */
+function portalUrlKind(urlStr: string): "listing" | "hub" {
+  let u: URL;
+  try {
+    u = new URL(urlStr);
+  } catch {
+    return "hub";
+  }
+  const h = u.hostname.toLowerCase().replace(/^www\./, "");
+  const p = u.pathname.toLowerCase();
+
+  if (h.endsWith("idealista.com")) {
+    return p.includes("/inmueble/") ? "listing" : "hub";
+  }
+  if (h.endsWith("fotocasa.es")) {
+    if (p.includes("/comprar/viviendas/") || p.includes("/alquiler/viviendas/")) return "hub";
+    if (p.includes("/comprar/vivienda/") || p.includes("/alquiler/vivienda/")) return "listing";
+    if (p.includes("/comprar/piso/") || p.includes("/alquiler/piso/")) return "listing";
+    return "hub";
+  }
+  if (h.endsWith("milanuncios.com")) {
+    if (p.includes("/anuncios/") && /\d{7,}/.test(p)) return "listing";
+    if (/\/(venta|alquiler)-de-[^/]+.*\.htm$/i.test(p)) return "hub";
+    return "listing";
+  }
+  // Habitaclia, Pisos, YaEncontre: URL shapes vary; only Idealista/Fotocasa/Milanuncios hubs are filtered strictly above.
+  return "listing";
+}
+
 function normalizeProfile(raw: string | undefined): SpainSearchProfile {
   const p = (raw || "").trim().toLowerCase().replace(/-/g, "_");
   const allowed: SpainSearchProfile[] = [
@@ -132,6 +161,8 @@ export async function searchSpainPropertyLinksJson(params: {
 
   const query = parts.join(" ");
   const maxResults = Math.min(Math.max(params.maxResults ?? 6, 1), 8);
+  // Ask Tavily for extra rows so we can drop hub pages and still return `maxResults` links.
+  const tavilyFetchCount = Math.min(15, Math.max(maxResults + 8, 12));
 
   async function runTavily(bodyIn: Record<string, unknown>): Promise<{
     okHttp: boolean;
@@ -174,8 +205,8 @@ export async function searchSpainPropertyLinksJson(params: {
     }
   }
 
-  function filterAndMap(raw: TavilyRawRow[]) {
-    const results: SpainSearchLinkResult[] = [];
+  function filterMapAndRank(raw: TavilyRawRow[], cap: number): SpainSearchLinkResult[] {
+    const candidates: SpainSearchLinkResult[] = [];
     for (const r of raw) {
       const url = typeof r.url === "string" ? r.url.trim() : "";
       if (!url.startsWith("https://")) continue;
@@ -196,9 +227,12 @@ export async function searchSpainPropertyLinksJson(params: {
         snippet: (typeof r.content === "string" ? r.content : "").slice(0, 450),
       };
       if (pub) item.publishedAt = pub;
-      results.push(item);
+      candidates.push(item);
     }
-    return results;
+    const listings = candidates.filter((c) => portalUrlKind(c.url) === "listing");
+    const hubs = candidates.filter((c) => portalUrlKind(c.url) === "hub");
+    const merged = [...listings, ...hubs];
+    return merged.slice(0, cap);
   }
 
   // "basic" is much faster than "advanced"; time_range + query text already bias recency.
@@ -206,7 +240,7 @@ export async function searchSpainPropertyLinksJson(params: {
     api_key: apiKey,
     query,
     search_depth: "basic",
-    max_results: maxResults,
+    max_results: tavilyFetchCount,
     include_domains: TAVILY_LISTING_DOMAINS,
   };
   if (recency !== "any") {
@@ -223,7 +257,7 @@ export async function searchSpainPropertyLinksJson(params: {
         results: [] as SpainSearchLinkResult[],
       });
     }
-    let results = filterAndMap(tavily.rawResults);
+    let results = filterMapAndRank(tavily.rawResults, maxResults);
     let recencyRelaxed = false;
     // time_range + strict domains often returns zero hits; one fast retry without time_range
     if (results.length === 0 && recency !== "any") {
@@ -231,7 +265,7 @@ export async function searchSpainPropertyLinksJson(params: {
       delete fallback.time_range;
       tavily = await runTavily(fallback);
       if (tavily.okHttp) {
-        results = filterAndMap(tavily.rawResults);
+        results = filterMapAndRank(tavily.rawResults, maxResults);
         if (results.length > 0) recencyRelaxed = true;
       }
     }
