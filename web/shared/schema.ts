@@ -47,6 +47,9 @@ export const reports = sqliteTable("reports", {
   providerRawJson: text("provider_raw_json"),
   requestedAt: text("requested_at"),
   completedAt: text("completed_at"),
+  /** Map pin WGS84 — used for zone / POI analysis on analysis_pack reports */
+  mapLat: text("map_lat"),
+  mapLon: text("map_lon"),
   createdAt: text("created_at").notNull().default("now"),
 });
 

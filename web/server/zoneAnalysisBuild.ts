@@ -1,4 +1,16 @@
-import type { OsmNearbyEssentials } from "./zoneAnalysisOsm";
+import type { OsmNamedAttractionKind, OsmNearbyEssentials } from "./zoneAnalysisOsm";
+
+function kindLabel(kind: OsmNamedAttractionKind, locale: "en" | "es"): string {
+  const m: Record<OsmNamedAttractionKind, [string, string]> = {
+    museum: ["Museum", "Museo"],
+    attraction: ["Attraction", "Atracción"],
+    monument: ["Monument", "Monumento"],
+    viewpoint: ["Viewpoint", "Mirador"],
+    castle: ["Castle", "Castillo"],
+    ruins: ["Historic ruins", "Ruinas históricas"],
+  };
+  return locale === "es" ? m[kind][1] : m[kind][0];
+}
 
 export function resolveZoneLocale(raw: unknown): "en" | "es" {
   const v = String(raw ?? "").trim().toLowerCase();
@@ -48,6 +60,7 @@ export function buildZoneAnalysisPayload(input: {
   const policeNearby = osm ? osm.police_nearby : 1 + (coordSignal % 2);
   const attractionsNearby = osm ? osm.attractions_nearby : 2;
   const transitStops = osm ? osm.transit_stops_nearby : 4 + (coordSignal % 6);
+  const namedFromOsm = osm?.named_attractions?.length ? osm.named_attractions : [];
 
   const pricingScore = priceBand === "high" ? 72 : priceBand === "mid" ? 66 : 61;
   const servicesScore = clampScore(
@@ -84,7 +97,12 @@ export function buildZoneAnalysisPayload(input: {
     }
   }
 
-  const cautions =
+  for (const n of namedFromOsm) {
+    const kl = kindLabel(n.kind, locale);
+    highlights.push(`${n.name} — ${kl} (~${n.distance_m} m)`);
+  }
+
+  const cautions: string[] =
     locale === "es"
       ? [
           osm
@@ -96,6 +114,14 @@ export function buildZoneAnalysisPayload(input: {
             ? "Counts reflect OpenStreetMap (may be incomplete). Manual validation recommended for exact micro-location."
             : "Manual validation recommended for exact micro-location",
         ];
+
+  if (namedFromOsm.length > 0) {
+    cautions.push(
+      locale === "es"
+        ? "Los nombres de lugares salen de las etiquetas de OpenStreetMap; pueden variar o no estar actualizados."
+        : "Named places use OpenStreetMap tags; spelling and freshness may vary.",
+    );
+  }
 
   return {
     snapshot: {
@@ -114,6 +140,7 @@ export function buildZoneAnalysisPayload(input: {
       transit_stops_nearby: transitStops,
       attractions_nearby: attractionsNearby,
     },
+    named_attractions: namedFromOsm,
     safety_liquidity: {
       safety_score: safetyScore,
       liquidity_score: pricingScore,

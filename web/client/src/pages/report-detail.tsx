@@ -532,6 +532,82 @@ export default function ReportDetail() {
         </Section>
       )}
 
+      {/* Zone / POI (analysis_pack merge sau raport demo/expert cu zona) — nu depinde de sectiunile AI */}
+      {zoneAnalysis && (
+        <Section icon={<MapPin className="h-4 w-4" />} title={tr("Zone analysis (MVP)", "Analisis de zona (MVP)")}>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Row label={tr("City", "Ciudad")} value={zoneAnalysis.snapshot?.city} />
+              <Row label={tr("District", "Distrito")} value={zoneAnalysis.snapshot?.district} />
+              <Row label={tr("Area price band", "Rango de precios zona")} value={zoneAnalysis.snapshot?.price_band} />
+              <Row
+                label={tr("Average area price / m²", "Precio medio zona / m²")}
+                value={
+                  zoneAnalysis.snapshot?.market_price_per_m2 != null
+                    ? `€${Number(zoneAnalysis.snapshot.market_price_per_m2).toLocaleString()}`
+                    : null
+                }
+              />
+            </div>
+            <Separator />
+            <div className="space-y-1">
+              <Row label={tr("Nearby schools", "Escuelas cercanas")} value={zoneAnalysis.nearby_essentials?.schools_nearby} />
+              <Row label={tr("Nearby hospitals/clinics", "Hospitales/clinicas cercanas")} value={zoneAnalysis.nearby_essentials?.hospitals_nearby} />
+              <Row label={tr("Nearby police", "Policia cercana")} value={zoneAnalysis.nearby_essentials?.police_nearby} />
+              <Row label={tr("Nearby transit stops", "Paradas de transporte cercanas")} value={zoneAnalysis.nearby_essentials?.transit_stops_nearby} />
+              <Row label={tr("Points of interest", "Puntos de interes")} value={zoneAnalysis.nearby_essentials?.attractions_nearby} />
+            </div>
+            {Array.isArray(zoneAnalysis.named_attractions) && zoneAnalysis.named_attractions.length > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    {tr("Named attractions nearby", "Atracciones con nombre cercanas")}
+                  </p>
+                  {zoneAnalysis.named_attractions.map((a: { name?: string; kind?: string; distance_m?: number }, idx: number) => (
+                    <Row
+                      key={`${a.name ?? idx}-${idx}`}
+                      label={a.name ?? "—"}
+                      value={a.distance_m != null ? `~${a.distance_m} m${a.kind ? ` · ${a.kind}` : ""}` : a.kind ?? null}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            <Separator />
+            <div className="space-y-1">
+              <Row label={tr("Safety score", "Puntuacion de seguridad")} value={zoneAnalysis.safety_liquidity?.safety_score != null ? `${zoneAnalysis.safety_liquidity.safety_score}/100` : null} />
+              <Row label={tr("Liquidity score", "Puntuacion de liquidez")} value={zoneAnalysis.safety_liquidity?.liquidity_score != null ? `${zoneAnalysis.safety_liquidity.liquidity_score}/100` : null} />
+              <Row label={tr("Risk level", "Nivel de riesgo")} value={zoneAnalysis.safety_liquidity?.risk_level} />
+              <Row label={tr("Final opportunity score", "Puntuacion final de oportunidad")} value={zoneAnalysis.final_opportunity?.score != null ? `${zoneAnalysis.final_opportunity.score}/100` : null} highlight />
+              {zoneAnalysis.safety_liquidity?.summary && (
+                <p className="report-secondary text-xs pt-1">{zoneAnalysis.safety_liquidity.summary}</p>
+              )}
+            </div>
+            {Array.isArray(zoneAnalysis.poi_attractiveness?.highlights) && zoneAnalysis.poi_attractiveness.highlights.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">{tr("Area highlights", "Fortalezas de la zona")}</p>
+                <BulletList
+                  items={zoneAnalysis.poi_attractiveness.highlights}
+                  variant="check"
+                  openStreetMapUrl={zoneOpenStreetMapUrl}
+                />
+              </div>
+            )}
+            {Array.isArray(zoneAnalysis.poi_attractiveness?.cautions) && zoneAnalysis.poi_attractiveness.cautions.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Notes", "Observaciones")}</p>
+                <BulletList
+                  items={zoneAnalysis.poi_attractiveness.cautions}
+                  variant="warning"
+                  openStreetMapUrl={zoneOpenStreetMapUrl}
+                />
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
       {/* ── Nota Simple structured data ─────────────────────────────────────── */}
       {!isLoading && notaSimple && (
         <Section icon={<Scale className="h-4 w-4" />} title={tr("Data extracted from Nota Simple", "Datos extraidos de Nota Simple")}>
@@ -738,65 +814,6 @@ export default function ReportDetail() {
                   <div>
                     <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Cons", "Desventajas")}</p>
                     <BulletList items={fullReport.neighborhood.cons} variant="warning" />
-                  </div>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* Zone Analysis MVP */}
-          {zoneAnalysis && (
-            <Section icon={<MapPin className="h-4 w-4" />} title={tr("Zone analysis (MVP)", "Analisis de zona (MVP)")}>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Row label={tr("City", "Ciudad")} value={zoneAnalysis.snapshot?.city} />
-                  <Row label={tr("District", "Distrito")} value={zoneAnalysis.snapshot?.district} />
-                  <Row label={tr("Area price band", "Rango de precios zona")} value={zoneAnalysis.snapshot?.price_band} />
-                  <Row
-                    label={tr("Average area price / m²", "Precio medio zona / m²")}
-                    value={
-                      zoneAnalysis.snapshot?.market_price_per_m2 != null
-                        ? `€${Number(zoneAnalysis.snapshot.market_price_per_m2).toLocaleString()}`
-                        : null
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="space-y-1">
-                  <Row label={tr("Nearby schools", "Escuelas cercanas")} value={zoneAnalysis.nearby_essentials?.schools_nearby} />
-                  <Row label={tr("Nearby hospitals/clinics", "Hospitales/clinicas cercanas")} value={zoneAnalysis.nearby_essentials?.hospitals_nearby} />
-                  <Row label={tr("Nearby police", "Policia cercana")} value={zoneAnalysis.nearby_essentials?.police_nearby} />
-                  <Row label={tr("Nearby transit stops", "Paradas de transporte cercanas")} value={zoneAnalysis.nearby_essentials?.transit_stops_nearby} />
-                  <Row label={tr("Points of interest", "Puntos de interes")} value={zoneAnalysis.nearby_essentials?.attractions_nearby} />
-                </div>
-                <Separator />
-                <div className="space-y-1">
-                  <Row label={tr("Safety score", "Puntuacion de seguridad")} value={zoneAnalysis.safety_liquidity?.safety_score != null ? `${zoneAnalysis.safety_liquidity.safety_score}/100` : null} />
-                  <Row label={tr("Liquidity score", "Puntuacion de liquidez")} value={zoneAnalysis.safety_liquidity?.liquidity_score != null ? `${zoneAnalysis.safety_liquidity.liquidity_score}/100` : null} />
-                  <Row label={tr("Risk level", "Nivel de riesgo")} value={zoneAnalysis.safety_liquidity?.risk_level} />
-                  <Row label={tr("Final opportunity score", "Puntuacion final de oportunidad")} value={zoneAnalysis.final_opportunity?.score != null ? `${zoneAnalysis.final_opportunity.score}/100` : null} highlight />
-                  {zoneAnalysis.safety_liquidity?.summary && (
-                    <p className="report-secondary text-xs pt-1">{zoneAnalysis.safety_liquidity.summary}</p>
-                  )}
-                </div>
-                {Array.isArray(zoneAnalysis.poi_attractiveness?.highlights) && zoneAnalysis.poi_attractiveness.highlights.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">{tr("Area highlights", "Fortalezas de la zona")}</p>
-                    <BulletList
-                      items={zoneAnalysis.poi_attractiveness.highlights}
-                      variant="check"
-                      openStreetMapUrl={zoneOpenStreetMapUrl}
-                    />
-                  </div>
-                )}
-                {Array.isArray(zoneAnalysis.poi_attractiveness?.cautions) && zoneAnalysis.poi_attractiveness.cautions.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Notes", "Observaciones")}</p>
-                    <BulletList
-                      items={zoneAnalysis.poi_attractiveness.cautions}
-                      variant="warning"
-                      openStreetMapUrl={zoneOpenStreetMapUrl}
-                    />
                   </div>
                 )}
               </div>

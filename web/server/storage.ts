@@ -104,6 +104,12 @@ function ensureSchema() {
   try {
     sqlite.exec(`ALTER TABLE reports ADD COLUMN completed_at TEXT;`);
   } catch {}
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN map_lat TEXT;`);
+  } catch {}
+  try {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN map_lon TEXT;`);
+  } catch {}
 }
 
 ensureSchema();

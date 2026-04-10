@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, typ
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { createCompletedDemoReport } from "@/lib/create-demo-report";
 import { detectBrowserLocale } from "@/lib/locale";
+import { useAuth } from "@/hooks/use-auth";
 import { useHashLocation } from "wouter/use-hash-location";
 import { identifyProperty } from "@/lib/propertyApi";
 import { getGoogleMapsBrowserKey, loadGoogleMapsJs } from "@/lib/googleMapsLoader";
@@ -699,13 +700,22 @@ function PaymentModal({
         address: propertyInfo?.address ?? "",
         cadastralJson: JSON.stringify(propertyInfo ?? {}),
         financialJson: JSON.stringify(financialData ?? {}),
+        ...(resolvedCoords
+          ? { mapLat: String(resolvedCoords.lat), mapLon: String(resolvedCoords.lon) }
+          : {}),
       });
       const report = await reportRes.json();
 
       await apiRequest("PATCH", `/api/reports/${report.id}`, {
         stripeSessionId: pi,
       });
-      pollPaymentFlowStatus(pi, report.id);
+      pollPaymentFlowStatus(pi, report.id, {
+        productTier,
+        coords: resolvedCoords,
+        locale: uiLocale,
+        financialData,
+        address: propertyInfo?.address ?? "",
+      });
     } catch (err: any) {
       toast({ title: tr.generationError, description: err.message, variant: "destructive" });
       setStep("confirm");
@@ -736,76 +746,123 @@ function PaymentModal({
   };
 
   /** Waits for Stripe webhook -> Nota Simple -> AI job (Python backend), not empty /report/generate-async. */
-  const pollPaymentFlowStatus = async (pi: string, rid: number) => {
+  const pollPaymentFlowStatus = async (
+    pi: string,
+    rid: number,
+    zoneCtx: {
+      productTier: ProductTier;
+      coords: { lat: number; lon: number } | null;
+      locale: UiLocale;
+      financialData: FinancialAnalysis | null;
+      address: string;
+    },
+  ) => {
     let attempts = 0;
+    let pollInFlight = false;
     const maxAttempts = 120;
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
     }
-    const interval = setInterval(async () => {
-      attempts++;
-      setPollCount(attempts);
-      try {
-        const res = await fetch(`/api/payment-flow/status/${encodeURIComponent(pi)}`, {
-          credentials: "include",
-        });
-        if (res.status === 404) {
-          clearInterval(interval);
-          pollTimerRef.current = null;
-          await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
-          toast({
-            title: tr.timeout,
-            description: tr.timeoutDescription,
-            variant: "destructive",
+    const interval = setInterval(() => {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      void (async () => {
+        try {
+          attempts++;
+          setPollCount(attempts);
+          const res = await fetch(`/api/payment-flow/status/${encodeURIComponent(pi)}`, {
+            credentials: "include",
           });
-          onClose();
-          return;
-        }
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.status === "failed" || data.ai_job_status === "failed") {
-          clearInterval(interval);
-          pollTimerRef.current = null;
-          await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
-          toast({ title: tr.reportFailed, description: tr.retry, variant: "destructive" });
-          onClose();
-          return;
-        }
-        if (data.report || data.client_ready) {
-          clearInterval(interval);
-          pollTimerRef.current = null;
-          const patch: Record<string, string> = { status: "completed" };
-          if (data.report) {
-            patch.reportJson = JSON.stringify(data.report);
+          if (res.status === 404) {
+            clearInterval(interval);
+            pollTimerRef.current = null;
+            await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
+            toast({
+              title: tr.timeout,
+              description: tr.timeoutDescription,
+              variant: "destructive",
+            });
+            onClose();
+            return;
           }
-          if (data.nota_simple_extracted && typeof data.nota_simple_extracted === "object") {
-            patch.notaSimpleJson = JSON.stringify(data.nota_simple_extracted);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.status === "failed" || data.ai_job_status === "failed") {
+            clearInterval(interval);
+            pollTimerRef.current = null;
+            await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
+            toast({ title: tr.reportFailed, description: tr.retry, variant: "destructive" });
+            onClose();
+            return;
           }
-          if (typeof data.ai_job_id === "string" && data.ai_job_id) {
-            patch.stripeJobId = data.ai_job_id;
+          if (data.report || data.client_ready) {
+            clearInterval(interval);
+            pollTimerRef.current = null;
+
+            let reportPayload: Record<string, unknown> =
+              data.report && typeof data.report === "object" && !Array.isArray(data.report)
+                ? { ...(data.report as Record<string, unknown>) }
+                : {};
+
+            if (
+              zoneCtx.productTier === "analysis_pack" &&
+              zoneCtx.coords &&
+              Number.isFinite(zoneCtx.coords.lat) &&
+              Number.isFinite(zoneCtx.coords.lon)
+            ) {
+              try {
+                const zoneRes = await apiRequest("POST", "/api/zone/analysis", {
+                  lat: zoneCtx.coords.lat,
+                  lon: zoneCtx.coords.lon,
+                  address: zoneCtx.address,
+                  financialData: zoneCtx.financialData ?? {},
+                  tier: "analysis_pack",
+                  locale: zoneCtx.locale,
+                });
+                const zj = (await zoneRes.json()) as { zoneAnalysis?: unknown };
+                if (zj.zoneAnalysis) {
+                  reportPayload = { ...reportPayload, zone_analysis: zj.zoneAnalysis };
+                }
+              } catch {
+                // Keep financial-only payload if zone request fails
+              }
+            }
+
+            const patch: Record<string, string> = { status: "completed" };
+            if (Object.keys(reportPayload).length > 0) {
+              patch.reportJson = JSON.stringify(reportPayload);
+            }
+            if (data.nota_simple_extracted && typeof data.nota_simple_extracted === "object") {
+              patch.notaSimpleJson = JSON.stringify(data.nota_simple_extracted);
+            }
+            if (typeof data.ai_job_id === "string" && data.ai_job_id) {
+              patch.stripeJobId = data.ai_job_id;
+            }
+            await apiRequest("PATCH", `/api/reports/${rid}`, patch);
+            qc.invalidateQueries({ queryKey: ["/api/reports"] });
+            qc.invalidateQueries({ queryKey: ["/api/reports", rid] });
+            setStep("done");
+            onSuccess(rid);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            pollTimerRef.current = null;
+            await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
+            toast({ title: tr.reportTimeout, description: tr.retry, variant: "destructive" });
+            onClose();
           }
-          await apiRequest("PATCH", `/api/reports/${rid}`, patch);
-          qc.invalidateQueries({ queryKey: ["/api/reports"] });
-          qc.invalidateQueries({ queryKey: ["/api/reports", rid] });
-          setStep("done");
-          onSuccess(rid);
-        } else if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          pollTimerRef.current = null;
-          await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
-          toast({ title: tr.reportTimeout, description: tr.retry, variant: "destructive" });
-          onClose();
+        } catch {
+          if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            pollTimerRef.current = null;
+            await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
+            toast({ title: tr.networkError, variant: "destructive" });
+            onClose();
+          }
+        } finally {
+          pollInFlight = false;
         }
-      } catch {
-        if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          pollTimerRef.current = null;
-          await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
-          toast({ title: tr.networkError, variant: "destructive" });
-          onClose();
-        }
-      }
+      })();
     }, 4000);
     pollTimerRef.current = interval;
   };
@@ -1052,6 +1109,7 @@ export default function MapPage() {
   const googleMarkerRef = useRef<any>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { user: authUser } = useAuth();
   const [, navigate] = useHashLocation();
   const mapDeepLinkConsumedRef = useRef(false);
 
@@ -1158,6 +1216,12 @@ export default function MapPage() {
         areaMapToastTitle: "Zona aproximada",
         areaMapToastDesc:
           "Este punto es un centro orientativo del barrio (geocodificado), no un inmueble concreto. Comprueba en el portal o en el mapa antes de analizar.",
+        nearbyContextTitle: "Entorno cercano (OpenStreetMap)",
+        loadingNearbyContext: "Cargando entorno cercano...",
+        nearbySchoolsShort: "Escuelas (radio)",
+        nearbyHospitalsShort: "Hospitales/clínicas",
+        nearbyPoiShort: "Puntos de interés",
+        nearbyNamedTitle: "Atracciones con nombre",
       }
     : {
         searchPlaceholder: "Search city, address or lat,lon (Spain)",
@@ -1220,6 +1284,12 @@ export default function MapPage() {
         areaMapToastTitle: "Approximate area",
         areaMapToastDesc:
           "This pin is a neighborhood center for orientation (geocoded), not a specific building. Confirm on the portal or map before running analysis.",
+        nearbyContextTitle: "Nearby area (OpenStreetMap)",
+        loadingNearbyContext: "Loading nearby context...",
+        nearbySchoolsShort: "Schools (radius)",
+        nearbyHospitalsShort: "Hospitals/clinics",
+        nearbyPoiShort: "Points of interest",
+        nearbyNamedTitle: "Named attractions",
       };
 
   useEffect(() => {
@@ -1255,6 +1325,39 @@ export default function MapPage() {
     },
     onSuccess: (data) => setFinancialData(data),
     onError: (err: any) => toast({ title: t.analysisFailed, description: err.message, variant: "destructive" }),
+  });
+
+  const mapZoneSidebarQuery = useQuery({
+    queryKey: [
+      "map-zone-sidebar",
+      authUser?.id,
+      selectedCoords?.lat,
+      selectedCoords?.lon,
+      uiLocale,
+      financialData?.opportunityScore,
+    ],
+    enabled: Boolean(authUser && financialData && selectedCoords),
+    retry: false,
+    queryFn: async () => {
+      const res = await apiRequest("POST", "/api/zone/analysis", {
+        lat: selectedCoords!.lat,
+        lon: selectedCoords!.lon,
+        address: propertyInfo?.address ?? "",
+        financialData: financialData as unknown as Record<string, unknown>,
+        tier: "analysis_pack",
+        locale: uiLocale,
+      });
+      return res.json() as {
+        zoneAnalysis?: {
+          nearby_essentials?: {
+            schools_nearby?: number;
+            hospitals_nearby?: number;
+            attractions_nearby?: number;
+          };
+          named_attractions?: Array<{ name: string; kind: string; distance_m: number }>;
+        };
+      };
+    },
   });
 
   const identifyMutation = useMutation({
@@ -1898,6 +2001,49 @@ export default function MapPage() {
                         {financialData.opportunityScore != null && (
                           <div className="flex justify-center pt-1">
                             <ScoreBadge score={financialData.opportunityScore} />
+                          </div>
+                        )}
+                        {authUser && selectedCoords && (
+                          <div className="pt-2 space-y-2">
+                            {mapZoneSidebarQuery.isPending && (
+                              <div className="flex items-center gap-2 text-xs text-sidebar-foreground/70">
+                                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                                {t.loadingNearbyContext}
+                              </div>
+                            )}
+                            {mapZoneSidebarQuery.data?.zoneAnalysis?.nearby_essentials && (
+                              <div className="rounded-md border border-sidebar-border bg-sidebar-accent/40 px-3 py-2 space-y-1">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/80">
+                                  {t.nearbyContextTitle}
+                                </p>
+                                <MetricRow
+                                  label={t.nearbySchoolsShort}
+                                  value={String(mapZoneSidebarQuery.data.zoneAnalysis.nearby_essentials.schools_nearby ?? "—")}
+                                />
+                                <MetricRow
+                                  label={t.nearbyHospitalsShort}
+                                  value={String(mapZoneSidebarQuery.data.zoneAnalysis.nearby_essentials.hospitals_nearby ?? "—")}
+                                />
+                                <MetricRow
+                                  label={t.nearbyPoiShort}
+                                  value={String(mapZoneSidebarQuery.data.zoneAnalysis.nearby_essentials.attractions_nearby ?? "—")}
+                                />
+                                {Array.isArray(mapZoneSidebarQuery.data.zoneAnalysis.named_attractions) &&
+                                  mapZoneSidebarQuery.data.zoneAnalysis.named_attractions.length > 0 && (
+                                    <div className="pt-1 border-t border-sidebar-border/60 mt-1 space-y-0.5">
+                                      <p className="text-[10px] font-semibold text-sidebar-foreground/75">{t.nearbyNamedTitle}</p>
+                                      <ul className="text-xs text-sidebar-foreground/90 space-y-0.5 list-disc pl-4">
+                                        {mapZoneSidebarQuery.data.zoneAnalysis.named_attractions.slice(0, 5).map((a) => (
+                                          <li key={`${a.name}-${a.distance_m}`}>
+                                            {a.name}
+                                            {a.distance_m != null ? ` (~${a.distance_m} m)` : ""}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                              </div>
+                            )}
                           </div>
                         )}
                         <Button

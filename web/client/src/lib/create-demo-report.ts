@@ -267,6 +267,8 @@ export async function createCompletedDemoReport(
     reportJson: JSON.stringify(demoReport),
     notaSimpleJson: demoNotaSimple ? JSON.stringify(demoNotaSimple) : null,
     stripeSessionId: `demo_preview_${Date.now()}`,
+    mapLat: String(coords.lat),
+    mapLon: String(coords.lon),
   });
   return reportRes.json() as Promise<{ id: number }>;
 }
