@@ -24,7 +24,8 @@ cd "C:\Users\octav\Desktop\vesta ultima\Vesta-AI"
 ## Git — înainte de commit
 
 1. Rulează `git status`.
-2. **Stage doar ce ține de task** (ex. `web/` pentru aplicația Node), nu fișiere locale care nu fac parte din repo sau nu sunt cerute de task (ex. `.kilo`, `.firecrawl` dacă nu sunt versionate).
+2. **Implicit, ține tot proiectul la zi:** la commit/push, include **toate modificările intenționate** din repo (orice fișiere tracked modificate care nu sunt gunoi), nu doar un subfolder, **dacă utilizatorul nu limitează explicit** ce intră în commit (ex. „doar `web/server/…`”).
+3. **Nu stage-ui** fișiere locale care nu sunt în repo sau sunt doar artefacte personale (ex. `.kilo`, `.firecrawl` dacă nu sunt versionate / sunt în `.gitignore`). Verifică că nu introduci secrete în commit.
 
 ## Commit
 
@@ -58,4 +59,4 @@ Regula detaliată (repo corect, Root Directory `web`, Option A/B, verificare vie
 
 ## Flux tipic
 
-Modifici în `web/` → `git add` (doar ce ține de task) → commit → `git push origin main` → Railway face deploy (sau `railway up` din `web/`).
+Modifici în repo → `git status` → `git add` (modificări intenționate; respectă excluderile de mai sus) → commit → `git push origin main` → Railway face deploy (sau `railway up` din `web/`).
