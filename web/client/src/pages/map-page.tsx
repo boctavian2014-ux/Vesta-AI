@@ -1369,7 +1369,14 @@ export default function MapPage() {
       cancelled = true;
       window.clearTimeout(initTimeout);
     };
-  }, [mapReloadToken, t.mapInitFailed, t.missingMapKey]);
+  }, [
+    mapReloadToken,
+    t.areaMapToastDesc,
+    t.areaMapToastTitle,
+    t.mapInitFailed,
+    t.missingMapKey,
+    toast,
+  ]);
 
   const closePanel = useCallback(() => {
     setPanelOpen(false);
