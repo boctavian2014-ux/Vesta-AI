@@ -243,6 +243,8 @@ export default function ReportDetail() {
     : isAnalysisPackage
       ? tr("Analysis pack (15€)", "Paquete de analisis (15€)")
       : tr("Property report", "Informe de propiedad");
+  /** Hide order-flow + deliverables rubrics for paid map packages (15€ / 50€). */
+  const hidePostPaymentAndDeliverables = isAnalysisPackage || isExpertPackage;
   const reportStatus = String(report?.status || "").toLowerCase();
   const expertNotaOnlyComplete =
     isExpertPackage &&
@@ -251,25 +253,27 @@ export default function ReportDetail() {
     !fullReport;
   const isProcessing = (report?.status === "processing" || report?.status === "pending") && !fullReport;
   const isFailed = report?.status === "failed" && !fullReport;
-  const timelineBase = isExpertPackage
-    ? [
-        { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
-        { label: tr("Nota Simple request sent to collaborators", "Solicitud de Nota Simple enviada a colaboradores"), done: !!report },
-        { label: tr("PDF received + legal OCR extracted", "PDF recibido + OCR legal extraido"), done: !!notaSimple },
-        {
-          label: tr("Expert AI analysis in progress (risk, due diligence)", "Analisis IA experto en curso (riesgo, due diligence)"),
-          done: !!fullReport || expertNotaOnlyComplete,
-        },
-        {
-          label: tr("Final report available in Reports", "Informe final disponible en Informes"),
-          done: reportStatus === "completed" && (!!fullReport || !!notaSimple),
-        },
-      ]
-    : [
-        { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
-        { label: tr("Analysis package registered", "Paquete de analisis registrado"), done: !!report && ["pending", "processing", "completed", "failed"].includes(reportStatus) },
-        { label: tr("Report available in Reports", "Informe disponible en Informes"), done: reportStatus === "completed" || !!fullReport },
-      ];
+  const timelineBase = hidePostPaymentAndDeliverables
+    ? []
+    : isExpertPackage
+      ? [
+          { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
+          { label: tr("Nota Simple request sent to collaborators", "Solicitud de Nota Simple enviada a colaboradores"), done: !!report },
+          { label: tr("PDF received + legal OCR extracted", "PDF recibido + OCR legal extraido"), done: !!notaSimple },
+          {
+            label: tr("Expert AI analysis in progress (risk, due diligence)", "Analisis IA experto en curso (riesgo, due diligence)"),
+            done: !!fullReport || expertNotaOnlyComplete,
+          },
+          {
+            label: tr("Final report available in Reports", "Informe final disponible en Informes"),
+            done: reportStatus === "completed" && (!!fullReport || !!notaSimple),
+          },
+        ]
+      : [
+          { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
+          { label: tr("Analysis package registered", "Paquete de analisis registrado"), done: !!report && ["pending", "processing", "completed", "failed"].includes(reportStatus) },
+          { label: tr("Report available in Reports", "Informe disponible en Informes"), done: reportStatus === "completed" || !!fullReport },
+        ];
   const firstPendingTimelineStep = timelineBase.findIndex((step) => !step.done);
   const timelineSteps = timelineBase.map((step, idx) => ({
     ...step,
@@ -278,25 +282,27 @@ export default function ReportDetail() {
         ? idx === timelineBase.length - 1
         : idx === firstPendingTimelineStep,
   }));
-  const deliverables: { label: string; ready: boolean; waived?: boolean }[] = isExpertPackage
-    ? [
-        { label: tr("Official Nota Simple (owner data, charges, legal risk)", "Nota Simple oficial (titular, cargas, riesgo legal)"), ready: !!notaSimple },
-        {
-          label: tr("Expert AI report: executive summary, investment risk, due diligence", "Informe IA experto: resumen ejecutivo, riesgo de inversion, due diligence"),
-          ready: !!fullReport,
-          waived: expertNotaOnlyComplete,
-        },
-        {
-          label: tr("Complete sections: legal, urban planning, financials, neighborhood", "Secciones completas: legal, urbanismo, finanzas, barrio"),
-          ready: !!fullReport,
-          waived: expertNotaOnlyComplete,
-        },
-      ]
-    : [
-        { label: tr("Property financial analysis", "Analisis financiero de la propiedad"), ready: !!report },
-        { label: tr("Opportunity score, yield, ROI and valuation estimate", "Score de oportunidad, rentabilidad, ROI y valoracion estimada"), ready: !!fullReport || !!financial },
-        { label: tr("Available in Reports right after payment confirmation", "Disponible en Informes justo tras la confirmacion de pago"), ready: reportStatus === "completed" || !!fullReport },
-      ];
+  const deliverables: { label: string; ready: boolean; waived?: boolean }[] = hidePostPaymentAndDeliverables
+    ? []
+    : isExpertPackage
+      ? [
+          { label: tr("Official Nota Simple (owner data, charges, legal risk)", "Nota Simple oficial (titular, cargas, riesgo legal)"), ready: !!notaSimple },
+          {
+            label: tr("Expert AI report: executive summary, investment risk, due diligence", "Informe IA experto: resumen ejecutivo, riesgo de inversion, due diligence"),
+            ready: !!fullReport,
+            waived: expertNotaOnlyComplete,
+          },
+          {
+            label: tr("Complete sections: legal, urban planning, financials, neighborhood", "Secciones completas: legal, urbanismo, finanzas, barrio"),
+            ready: !!fullReport,
+            waived: expertNotaOnlyComplete,
+          },
+        ]
+      : [
+          { label: tr("Property financial analysis", "Analisis financiero de la propiedad"), ready: !!report },
+          { label: tr("Opportunity score, yield, ROI and valuation estimate", "Score de oportunidad, rentabilidad, ROI y valoracion estimada"), ready: !!fullReport || !!financial },
+          { label: tr("Available in Reports right after payment confirmation", "Disponible en Informes justo tras la confirmacion de pago"), ready: reportStatus === "completed" || !!fullReport },
+        ];
   const reportShareUrl =
     reportId && typeof window !== "undefined"
       ? `${window.location.origin}/#/reports/${reportId}`
@@ -438,8 +444,8 @@ export default function ReportDetail() {
         </Card>
       )}
 
-      {/* Post-payment timeline */}
-      {!isLoading && report && (
+      {/* Post-payment timeline (hidden for analysis_pack / expert_report) */}
+      {!isLoading && report && !hidePostPaymentAndDeliverables && (
         <Section icon={<Info className="h-4 w-4" />} title={tr("Post-payment process", "Proceso despues del pago")}>
           <div className="rounded-lg glass-panel p-4 space-y-2 md:space-y-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground report-aux-mobile">
@@ -463,8 +469,8 @@ export default function ReportDetail() {
         </Section>
       )}
 
-      {/* Deliverables */}
-      {!isLoading && report && (
+      {/* Deliverables (hidden for analysis_pack / expert_report) */}
+      {!isLoading && report && !hidePostPaymentAndDeliverables && (
         <Section icon={<FileText className="h-4 w-4" />} title={tr("What you receive", "Que recibes")}>
           <div className="rounded-lg glass-panel p-4 space-y-2 md:space-y-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground report-aux-mobile">
