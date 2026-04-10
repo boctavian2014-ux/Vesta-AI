@@ -12,6 +12,8 @@ const STRINGS: Record<
     analyzeProperty: string;
     statusPending: string;
     statusProcessing: string;
+    statusPaid: string;
+    statusSubmittedManual: string;
     statusWaitingPartner: string;
     statusPdfReceived: string;
     statusCompleted: string;
@@ -22,6 +24,8 @@ const STRINGS: Record<
     typeExpertReport: string;
     countProcessing: string;
     countPending: string;
+    countPaid: string;
+    countSubmittedManual: string;
     countWaitingPartner: string;
     countPdfReceived: string;
     countCompleted: string;
@@ -40,7 +44,9 @@ const STRINGS: Record<
     analyzeProperty: "Analyze a property",
     statusPending: "Pending",
     statusProcessing: "Processing",
-    statusWaitingPartner: "Waiting partner",
+    statusPaid: "Paid",
+    statusSubmittedManual: "Request sent",
+    statusWaitingPartner: "Awaiting Nota Simple",
     statusPdfReceived: "PDF received",
     statusCompleted: "Completed",
     statusFailed: "Failed",
@@ -50,7 +56,9 @@ const STRINGS: Record<
     typeExpertReport: "Expert report + Nota Simple (50€)",
     countProcessing: "processing",
     countPending: "pending",
-    countWaitingPartner: "waiting partner",
+    countPaid: "paid",
+    countSubmittedManual: "request sent",
+    countWaitingPartner: "awaiting Nota Simple",
     countPdfReceived: "pdf received",
     countCompleted: "completed",
     countFailed: "failed",
@@ -67,7 +75,9 @@ const STRINGS: Record<
     analyzeProperty: "Analizar una propiedad",
     statusPending: "Pendiente",
     statusProcessing: "En proceso",
-    statusWaitingPartner: "Esperando proveedor",
+    statusPaid: "Pagado",
+    statusSubmittedManual: "Solicitud enviada",
+    statusWaitingPartner: "Esperando Nota Simple",
     statusPdfReceived: "PDF recibido",
     statusCompleted: "Completado",
     statusFailed: "Fallido",
@@ -77,7 +87,9 @@ const STRINGS: Record<
     typeExpertReport: "Informe experto + Nota Simple (50€)",
     countProcessing: "en proceso",
     countPending: "pendientes",
-    countWaitingPartner: "esperando proveedor",
+    countPaid: "pagados",
+    countSubmittedManual: "solicitud enviada",
+    countWaitingPartner: "esperando Nota Simple",
     countPdfReceived: "pdf recibido",
     countCompleted: "completados",
     countFailed: "fallidos",

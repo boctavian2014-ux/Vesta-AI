@@ -672,6 +672,95 @@ export async function registerRoutes(
     }
   });
 
+  const NOTA_JSON_MAX_BYTES = 2 * 1024 * 1024;
+
+  app.patch("/api/admin/reports/:id/pdf-url", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const user = req.user as any;
+    if (!isAdminEmail(user?.email)) return res.status(403).json({ message: "Forbidden" });
+    const rawId = req.params.id;
+    const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid report id" });
+    const report = await storage.getReportAdmin(id);
+    if (!report) return res.status(404).json({ message: "Report not found" });
+    const pdfUrl = typeof req.body?.pdfUrl === "string" ? req.body.pdfUrl.trim() : "";
+    if (!pdfUrl) return res.status(400).json({ message: "Missing pdfUrl" });
+    const previousStatus = report.status;
+    const updated = await storage.updateReportAdmin(id, { pdfUrl });
+    if (!updated) return res.status(404).json({ message: "Report not found" });
+    await addStatusEvent(
+      id,
+      previousStatus,
+      updated.status,
+      {
+        actorUserId: user?.id ?? null,
+        actorEmail: user?.email ?? null,
+        actorName: user?.username ?? null,
+      },
+      "pdfUrl set by admin"
+    );
+    return res.json(updated);
+  });
+
+  app.patch("/api/admin/reports/:id/nota-simple-json", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    const user = req.user as any;
+    if (!isAdminEmail(user?.email)) return res.status(403).json({ message: "Forbidden" });
+    const rawId = req.params.id;
+    const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid report id" });
+    const report = await storage.getReportAdmin(id);
+    if (!report) return res.status(404).json({ message: "Report not found" });
+
+    const body = req.body as Record<string, unknown>;
+    let jsonStr: string;
+    if (body.notaSimpleJson != null && typeof body.notaSimpleJson === "object") {
+      jsonStr = JSON.stringify(body.notaSimpleJson);
+    } else if (typeof body.notaSimpleJson === "string") {
+      jsonStr = body.notaSimpleJson.trim();
+    } else {
+      return res.status(400).json({ message: "Missing notaSimpleJson" });
+    }
+    if (!jsonStr.length) return res.status(400).json({ message: "Empty notaSimpleJson" });
+    if (jsonStr.length > NOTA_JSON_MAX_BYTES) {
+      return res.status(400).json({ message: "notaSimpleJson too large" });
+    }
+    try {
+      JSON.parse(jsonStr);
+    } catch {
+      return res.status(400).json({ message: "Invalid JSON" });
+    }
+
+    const markComplete = body.complete !== false;
+    const previousStatus = report.status;
+    const updates: Partial<Report> = { notaSimpleJson: jsonStr };
+    if (markComplete) {
+      updates.status = "completed";
+      updates.completedAt = new Date().toISOString();
+    }
+    const updated = await storage.updateReportAdmin(id, updates);
+    if (!updated) return res.status(404).json({ message: "Report not found" });
+    await addStatusEvent(
+      id,
+      previousStatus,
+      updated.status,
+      {
+        actorUserId: user?.id ?? null,
+        actorEmail: user?.email ?? null,
+        actorName: user?.username ?? null,
+      },
+      markComplete ? "notaSimpleJson saved by admin (completed)" : "notaSimpleJson saved by admin (draft)"
+    );
+    if (markComplete && previousStatus !== "completed") {
+      try {
+        await sendCompletedEmailToClient(updated);
+      } catch (err: any) {
+        console.error(`[Vesta] Failed to send completed email for report ${id}:`, err?.message || err);
+      }
+    }
+    return res.json(updated);
+  });
+
   // Partner workflow: submit report metadata to Nota Simple provider.
   app.post("/api/nota-partner/request", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });

@@ -163,7 +163,7 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # pentru imagini sat
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # Prețuri în EUR (Stripe folosește cenți). Suprascrie din Railway Variables.
 PRET_ANALYSIS_PACK_EUR = int(
-    os.getenv("PRET_ANALYSIS_PACK_EUR", os.getenv("PRET_NOTA_SIMPLE_EUR", "20"))
+    os.getenv("PRET_ANALYSIS_PACK_EUR", os.getenv("PRET_NOTA_SIMPLE_EUR", "15"))
 )
 PRET_NOTA_SIMPLE_EUR = PRET_ANALYSIS_PACK_EUR  # alias backward-compatible
 PRET_RAPORT_EXPERT_EUR = int(os.getenv("PRET_RAPORT_EXPERT_EUR", "50"))

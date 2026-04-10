@@ -528,12 +528,13 @@ function PaymentModal({
         notaDelivered: "La Nota Simple oficial se entregara por el flujo de colaboradores. Revisa en Informes.",
         redirecting: "Redirigiendo al detalle del informe...",
         cancel: "Cancelar",
-        payNow: "Generar ahora",
+        payNow: "Pagar ahora",
         missingStripePk: "Falta VITE_STRIPE_PUBLISHABLE_KEY en el build. Anade la clave publica de Stripe.",
         securePay: "Pagar con tarjeta",
         backToPacks: "Volver a paquetes",
-        previewDemo: "Ver demo del resultado (sin pago)",
-        previewDemoHint: "Generacion temporal sin payment para validar entregable.",
+        previewDemo: "Vista previa sin pago",
+        previewDemoHint: "Paga con tarjeta para generar el informe real, o usa la vista previa solo para probar la UI.",
+        loginRequiredPayment: "Inicia sesion para pagar y guardar el informe en Informes.",
         creatingDemo: "Creando demo del informe...",
       }
     : {
@@ -586,12 +587,13 @@ function PaymentModal({
         notaDelivered: "The official Nota Simple will be delivered via collaborators flow. Track it in Reports.",
         redirecting: "Redirecting to report details...",
         cancel: "Cancel",
-        payNow: "Generate now",
+        payNow: "Pay now",
         missingStripePk: "Missing VITE_STRIPE_PUBLISHABLE_KEY in the build. Add your Stripe publishable key.",
         securePay: "Pay securely",
         backToPacks: "Back to packages",
-        previewDemo: "Preview deliverable (no payment)",
-        previewDemoHint: "Temporary no-payment generation to validate the deliverable.",
+        previewDemo: "Preview without payment",
+        previewDemoHint: "Pay by card for a real report, or use preview-only to test the UI.",
+        loginRequiredPayment: "Sign in to pay and save the report under Reports.",
         creatingDemo: "Creating report preview...",
       };
 
@@ -621,9 +623,61 @@ function PaymentModal({
     }
   }, [open, initialTier]);
 
-  // Step 1: create payment intent
+  /** Creates Stripe PaymentIntent via Python proxy; requires auth + publishable key. */
+  const startRealPayment = async () => {
+    if (!resolvedCoords) {
+      toast({ title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
+      return;
+    }
+    if (!stripePromise || !stripePublishableKey) {
+      toast({ title: tr.payError, description: tr.missingStripePk, variant: "destructive" });
+      return;
+    }
+    setStep("paying");
+    try {
+      const contextPayload = {
+        cadastral_json: propertyInfo ?? {},
+        financial_data: financialData ?? {},
+        output_language: uiLocale,
+      };
+      const res = await apiRequest("POST", "/api/payment/create", {
+        tip: tier,
+        property_id: 0,
+        referencia_catastral: propertyInfo?.referenciaCatastral ?? "",
+        address: propertyInfo?.address ?? "",
+        lat: resolvedCoords.lat,
+        lon: resolvedCoords.lon,
+        context_json: JSON.stringify(contextPayload),
+      });
+      const data = (await res.json()) as {
+        clientSecret?: string;
+        paymentIntentId?: string;
+        message?: string;
+        error?: string;
+        detail?: string;
+      };
+      const secret = data.clientSecret;
+      const pi = data.paymentIntentId;
+      if (!secret || !pi) {
+        throw new Error(data.message || data.error || data.detail || "Invalid payment response from server");
+      }
+      setClientSecret(secret);
+      setPaymentIntentId(pi);
+      setStep("payment");
+    } catch (e: unknown) {
+      const raw = e instanceof Error ? e.message : String(e);
+      const is401 = /^401\b/.test(raw);
+      toast({
+        title: tr.payError,
+        description: is401 ? tr.loginRequiredPayment : raw,
+        variant: "destructive",
+      });
+      setStep("confirm");
+    }
+  };
+
   const startPayment = async () => {
-    await startDemoPreview();
+    await startRealPayment();
   };
 
   const confirmAndProcess = async (productTier: ProductTier, pi: string | null) => {
@@ -973,6 +1027,14 @@ function PaymentModal({
                 {tr.payNow} {priceForTier} €
               </Button>
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-xs text-muted-foreground"
+              onClick={() => void startDemoPreview()}
+            >
+              {tr.previewDemo}
+            </Button>
             <p className="text-[11px] text-muted-foreground text-center">{tr.previewDemoHint}</p>
           </div>
         )}

@@ -14,7 +14,7 @@ import type { Report } from "@shared/schema";
 import {
   ArrowLeft, TrendingUp, Loader2, CheckCircle2,
   AlertCircle, RefreshCw, MapPin, Scale, ShieldAlert,
-  BarChart3, Home, FileText, Info, Users, Share2,
+  BarChart3, Home, FileText, Info, Users, Share2, MinusCircle,
 } from "lucide-react";
 import { VestaBrandLogoMark } from "@/components/vesta-brand-logo";
 
@@ -244,15 +244,26 @@ export default function ReportDetail() {
       ? tr("Analysis pack (15€)", "Paquete de analisis (15€)")
       : tr("Property report", "Informe de propiedad");
   const reportStatus = String(report?.status || "").toLowerCase();
+  const expertNotaOnlyComplete =
+    isExpertPackage &&
+    reportStatus === "completed" &&
+    Boolean(notaSimple) &&
+    !fullReport;
   const isProcessing = (report?.status === "processing" || report?.status === "pending") && !fullReport;
   const isFailed = report?.status === "failed" && !fullReport;
   const timelineBase = isExpertPackage
     ? [
         { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
-        { label: tr("Nota Simple request sent to collaborators", "Solicitud de Nota Simple enviada a colaboradores"), done: !!report && ["pending", "processing", "completed", "failed"].includes(reportStatus) },
+        { label: tr("Nota Simple request sent to collaborators", "Solicitud de Nota Simple enviada a colaboradores"), done: !!report },
         { label: tr("PDF received + legal OCR extracted", "PDF recibido + OCR legal extraido"), done: !!notaSimple },
-        { label: tr("Expert AI analysis in progress (risk, due diligence)", "Analisis IA experto en curso (riesgo, due diligence)"), done: !!fullReport },
-        { label: tr("Final report available in Reports", "Informe final disponible en Informes"), done: reportStatus === "completed" && !!fullReport },
+        {
+          label: tr("Expert AI analysis in progress (risk, due diligence)", "Analisis IA experto en curso (riesgo, due diligence)"),
+          done: !!fullReport || expertNotaOnlyComplete,
+        },
+        {
+          label: tr("Final report available in Reports", "Informe final disponible en Informes"),
+          done: reportStatus === "completed" && (!!fullReport || !!notaSimple),
+        },
       ]
     : [
         { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
@@ -267,11 +278,19 @@ export default function ReportDetail() {
         ? idx === timelineBase.length - 1
         : idx === firstPendingTimelineStep,
   }));
-  const deliverables = isExpertPackage
+  const deliverables: { label: string; ready: boolean; waived?: boolean }[] = isExpertPackage
     ? [
         { label: tr("Official Nota Simple (owner data, charges, legal risk)", "Nota Simple oficial (titular, cargas, riesgo legal)"), ready: !!notaSimple },
-        { label: tr("Expert AI report: executive summary, investment risk, due diligence", "Informe IA experto: resumen ejecutivo, riesgo de inversion, due diligence"), ready: !!fullReport },
-        { label: tr("Complete sections: legal, urban planning, financials, neighborhood", "Secciones completas: legal, urbanismo, finanzas, barrio"), ready: !!fullReport },
+        {
+          label: tr("Expert AI report: executive summary, investment risk, due diligence", "Informe IA experto: resumen ejecutivo, riesgo de inversion, due diligence"),
+          ready: !!fullReport,
+          waived: expertNotaOnlyComplete,
+        },
+        {
+          label: tr("Complete sections: legal, urban planning, financials, neighborhood", "Secciones completas: legal, urbanismo, finanzas, barrio"),
+          ready: !!fullReport,
+          waived: expertNotaOnlyComplete,
+        },
       ]
     : [
         { label: tr("Property financial analysis", "Analisis financiero de la propiedad"), ready: !!report },
@@ -452,14 +471,21 @@ export default function ReportDetail() {
               {tr("Package deliverables", "Entregables del paquete")}
             </p>
             {deliverables.map((item) => (
-              <div key={item.label} className="flex items-center gap-2 text-xs">
+              <div key={item.label} className="flex items-start gap-2 text-xs">
                 {item.ready ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                ) : item.waived ? (
+                  <MinusCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                 ) : (
-                  <Loader2 className="h-3.5 w-3.5 text-primary animate-spin shrink-0" />
+                  <Loader2 className="h-3.5 w-3.5 text-primary animate-spin shrink-0 mt-0.5" />
                 )}
                 <span className={item.ready ? "text-foreground" : "text-muted-foreground"}>
                   {item.label}
+                  {item.waived ? (
+                    <span className="block text-[10px] text-muted-foreground/90 mt-0.5 font-normal">
+                      {tr("Not included in this delivery.", "No incluido en esta entrega.")}
+                    </span>
+                  ) : null}
                 </span>
               </div>
             ))}

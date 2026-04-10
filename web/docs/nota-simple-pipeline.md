@@ -2,6 +2,11 @@
 
 Official **Nota Simple** fields in the UI are **not** demo text: they must come from a real PDF processed through OCR/extraction on the Python API.
 
+## Production paid flow (Python) vs Matil (Node)
+
+- **Stripe → expert package (50€ tier)** — After `payment_intent.succeeded`, the **Python** API creates a `DetailedReport` and requests the official document via **`REGISTRO_PARTNER_ORDER_URL`**; the partner calls back **`POST /webhook/registru-update`** with the PDF, then Python runs OCR and the expert AI job. This path does **not** call Matil unless your Registro partner is implemented that way.
+- **Matil** — Implemented on the **`web/`** Express app (`/api/nota-partner/*`, admin-triggered). It updates **`Report`** rows in the Node SQLite DB. It is **not** wired automatically to the same Stripe webhook as the Python `DetailedReport` flow unless you add an explicit integration.
+
 ## Admin upload → storage
 
 1. Admin opens **Orders** and selects a Nota Simple order (`web/client` admin UI).

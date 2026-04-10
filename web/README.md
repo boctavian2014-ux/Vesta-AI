@@ -10,7 +10,7 @@ AI-powered property analysis platform for Spanish real estate. Click any buildin
 - **Building Identification** — Click any building to get the Referencia Catastral
 - **Financial Analysis** — AI-generated market value, yield, ROI estimates
 - **Full Property Reports** — Legal data, Nota Simplă, urbanism, neighborhood analysis
-- **Stripe Payments** — 19€ Basic / 49.99€ Full Report with Nota Simplă
+- **Stripe Payments** — 15€ analysis pack / 50€ expert report + Nota Simple (amounts from Python `PRET_*_EUR` / `VITE_*` must stay aligned)
 - **Street View** — Embedded 360° street-level photos (no redirect)
 - **Property search (AI agent)** — Chat at `#/property-search` uses OpenAI with **tools**: **Tavily** finds listing URLs on allowed Spanish portals (Idealista, Fotocasa, Habitaclia, Pisos, YaEncontre, Milanuncios). The search tool accepts **`asset_focus`** (residential, commercial, industrial, land, whole_building, renovation_opportunity, mixed) and **`recency`** (`any` / `day` / `week` / `month` / `year`) mapped to Tavily `time_range` for *últimos anuncios*-style queries; results may include approximate **`publishedAt`** from the search API. **Nominatim** geocoding and **listing-page metadata** fetch add optional **`listedBy`** (public advertiser from JSON-LD / meta — not the land-registry owner). Cards show disclaimers: web results are a **sample**, not the full market. **Open on map** / **Area on map (approx.)** use `#/map?lat=&lon=` with optional `area=1`. Requires `OPENAI_API_KEY`; **recommended** `TAVILY_API_KEY`. **Official auction portals** are not in the allowlist until `fetch_listing_page_metadata` is validated on those HTML layouts.
 
@@ -21,7 +21,7 @@ AI-powered property analysis platform for Spanish real estate. Click any buildin
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
 - **Backend**: Express + TypeScript + Drizzle ORM + SQLite
 - **Map**: Mapbox GL JS v3 (loaded via CDN)
-- **Payments**: Stripe (Payment Element pe hartă — `VITE_STRIPE_PUBLISHABLE_KEY` la build; confirmarea plății declanșează `payment_intent.succeeded` pe API la `/stripe-webhook/`)
+- **Payments**: Stripe (Payment Element on the map — `VITE_STRIPE_PUBLISHABLE_KEY` at build; payment hits Python via `POST /api/payment/create` → `creeaza-plata/`; Stripe webhook on the **Python** service is `/stripe-webhook/`). Users must be **signed in** to create a PaymentIntent.
 - **AI Reports**: Custom Railway backend
 
 ---

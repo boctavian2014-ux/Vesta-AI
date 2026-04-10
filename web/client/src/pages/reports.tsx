@@ -48,6 +48,18 @@ function StatusBadge({
         "bg-blue-500/15 text-blue-400 border-blue-500/30 hover:bg-blue-500/20",
       icon: <Loader2 className="h-3 w-3 animate-spin" />,
     },
+    paid: {
+      label: s.statusPaid,
+      className:
+        "bg-violet-500/15 text-violet-400 border-violet-500/30 hover:bg-violet-500/20",
+      icon: <Clock className="h-3 w-3" />,
+    },
+    submitted_manual: {
+      label: s.statusSubmittedManual,
+      className:
+        "bg-sky-500/15 text-sky-400 border-sky-500/30 hover:bg-sky-500/20",
+      icon: <Clock className="h-3 w-3" />,
+    },
     waiting_partner: {
       label: s.statusWaitingPartner,
       className:
@@ -225,6 +237,8 @@ function EmptyState({ s }: { s: ReturnType<typeof getReportsStrings> }) {
 const STATUS_ORDER = [
   "processing",
   "pending",
+  "paid",
+  "submitted_manual",
   "waiting_partner",
   "pdf_received",
   "completed",
@@ -272,6 +286,16 @@ export default function Reports() {
             {counts.pending && (
               <span className="text-xs text-amber-400">
                 {counts.pending} {s.countPending}
+              </span>
+            )}
+            {counts.paid && (
+              <span className="text-xs text-violet-400">
+                {counts.paid} {s.countPaid}
+              </span>
+            )}
+            {counts.submitted_manual && (
+              <span className="text-xs text-sky-400">
+                {counts.submitted_manual} {s.countSubmittedManual}
               </span>
             )}
             {counts.waiting_partner && (
