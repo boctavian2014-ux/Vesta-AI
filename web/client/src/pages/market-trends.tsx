@@ -102,9 +102,14 @@ function StatCard({
 export default function MarketTrends() {
   const [yearFilter, setYearFilter] = useState("All");
 
-  const { data: rawResponse, isLoading, isError } = useQuery<MarketTrendResponse>({
+  const { data: rawResponse, isLoading, isError, error } = useQuery<MarketTrendResponse>({
     queryKey: ["/api/market-trend"],
     queryFn: getQueryFn({ on401: "throw" }),
+    refetchInterval: (query) => {
+      const pts = query.state.data?.data;
+      if (Array.isArray(pts) && pts.length > 0) return false;
+      return 120_000;
+    },
   });
 
   const allData = useMemo(
@@ -176,11 +181,26 @@ export default function MarketTrends() {
       </div>
 
       {/* Fallback notice */}
-      {(isError || allData.length === 0) && (
-        <Alert>
+      {(isError || (!isLoading && allData.length === 0)) && (
+        <Alert variant={isError ? "destructive" : "default"}>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Live market data is currently unavailable from INE source.
+            {isError ? (
+              <>
+                The chart could not load. The app could not reach the Python API (check{" "}
+                <code className="text-xs">VEST_PYTHON_API_URL</code> on the web service and redeploy{" "}
+                <code className="text-xs">vesta-api</code>
+                ).{" "}
+                {error instanceof Error ? `(${error.message})` : null}
+              </>
+            ) : (
+              <>
+                INE did not return any index points (temporary outage or network block). This page
+                retries every two minutes. If it persists, redeploy the latest{" "}
+                <code className="text-xs">vesta-api</code> (IPv769 + IPV1 fallback in{" "}
+                <code className="text-xs">market_data.py</code>).
+              </>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -290,7 +310,7 @@ export default function MarketTrends() {
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-0.5 bg-[hsl(38_65%_55%)]" />
-          <span>IPV (Base 100 = Q1 2015)</span>
+          <span>IPV — official INE series (Spain, national)</span>
         </div>
         <Badge variant="outline" className="text-xs">
           Ministerio de Vivienda — Spain

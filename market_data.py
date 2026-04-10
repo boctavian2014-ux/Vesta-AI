@@ -2,35 +2,105 @@
 Integrare INE (Instituto Nacional de Estadística) – Indicele Prețurilor Locuințelor (IPV).
 Date oficiale trimestriale pentru Spania. Cache TTL=24h (IPV se actualizează trimestrial).
 
-INE serie IPV25171 = Indicele General al Prețurilor Locuințelor (Total España).
+INE serie IPV769 = Total Nacional. General. Índice (IPV — precios de la vivienda).
+Notă: codul vechi IPV25171 nu mai returnează date pe API-ul Tempus (răspuns gol).
+
 API doc: https://www.ine.es/dyngs/DataLab/es/manual.html?cid=66
 """
 
 import logging
 import time
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, Union
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-INE_API_URL = "https://servicios.ine.es/wstempus/js/ro/DATOS_SERIE/IPV25171?nult=20"
+# Total Nacional · Índice (recomandat). IPV25171 pe Tempus returnează body gol.
+INE_API_URL_PRIMARY = "https://servicios.ine.es/wstempus/js/ES/DATOS_SERIE/IPV769?nult=40"
+# Rezervă: Nacional Base 2007 · General · Índice (aceeași operațiune IPV, alt cod).
+INE_API_URL_FALLBACK = "https://servicios.ine.es/wstempus/js/ES/DATOS_SERIE/IPV1?nult=40"
+
 CACHE_TTL_SECONDS = 24 * 3600  # 24 h – datele se actualizează trimestrial
+EMPTY_BACKOFF_SECONDS = 300  # nu bate INE la fiecare request dacă ambele URL-uri sunt goale
 
-_cache: dict = {"data": None, "ts": 0.0}
+_cache: dict = {"data": None, "ts": 0.0, "empty_until": 0.0}
+
+INE_REQUEST_HEADERS = {
+    "User-Agent": "Vesta-AI/1.0 (market trend; +https://github.com/boctavian2014-ux/Vesta-AI)",
+    "Accept": "application/json",
+}
 
 
-def _quarter_label(fecha: str, anyo) -> str:
+def _normalize_fecha(fecha: Union[str, int, float, None], anyo) -> tuple[str, Optional[int]]:
+    """
+    INE returnează Fecha fie ca string ISO, fie ca timestamp în milisecunde (int).
+    Returnează (date_str YYYY-MM-DD sau echivalent, luna 1–12 pentru trimestru).
+    """
+    if fecha is None:
+        return "", None
+    try:
+        if isinstance(fecha, (int, float)) and fecha > 1_000_000_000_000:
+            dt = datetime.fromtimestamp(fecha / 1000.0, tz=timezone.utc)
+            return dt.strftime("%Y-%m-%d"), dt.month
+        s = str(fecha)
+        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+            month = int(s[5:7])
+            return s[:10], month
+        return s, None
+    except Exception:
+        return str(fecha), None
+
+
+def _quarter_label(fecha_raw: Union[str, int, float, None], anyo) -> str:
     """
     Derivă eticheta trimestrului din câmpul Fecha returnat de INE.
-    Exemplu: '2021-04-01T00:00:00' → 'Q2 2021'
     """
+    _, month = _normalize_fecha(fecha_raw, anyo)
     try:
-        month = int(str(fecha)[5:7])
-        q = (month - 1) // 3 + 1
-        return f"Q{q} {anyo}"
+        if month is not None:
+            q = (month - 1) // 3 + 1
+            return f"Q{q} {anyo}"
     except Exception:
-        return str(anyo) if anyo else ""
+        pass
+    return str(anyo) if anyo else ""
+
+
+def _points_from_ine_payload(raw: dict) -> list[dict]:
+    """Construiește lista trend din obiectul JSON returnat de DATOS_SERIE."""
+    data_points = raw.get("Data", [])
+    if not isinstance(data_points, list):
+        return []
+    trend: list[dict] = []
+    for entry in data_points:
+        if not isinstance(entry, dict):
+            continue
+        val = entry.get("Valor")
+        fecha_raw = entry.get("Fecha", "")
+        anyo = entry.get("Anyo")
+        if val is not None:
+            date_str, _ = _normalize_fecha(fecha_raw, anyo)
+            trend.append({
+                "date": date_str or str(fecha_raw),
+                "value": round(float(val), 2),
+                "year": int(anyo) if anyo else None,
+                "quarter": _quarter_label(fecha_raw, anyo),
+            })
+    trend.reverse()
+    return trend
+
+
+def _fetch_ine_series(url: str) -> list[dict]:
+    resp = requests.get(url, timeout=20, headers=INE_REQUEST_HEADERS)
+    resp.raise_for_status()
+    if not (resp.content or b"").strip():
+        logger.warning("INE răspuns gol la %s", url.split("?")[0])
+        return []
+    raw = resp.json()
+    if not isinstance(raw, dict):
+        return []
+    return _points_from_ine_payload(raw)
 
 
 def get_market_trend() -> list[dict]:
@@ -47,36 +117,31 @@ def get_market_trend() -> list[dict]:
       }
     """
     now = time.time()
-    if _cache["data"] is not None and (now - _cache["ts"]) < CACHE_TTL_SECONDS:
+    # Cache doar rezultate cu date; nu păstrăm [] 24h (bloca redeploy-urile / serii noi).
+    if _cache["data"] and len(_cache["data"]) > 0 and (now - _cache["ts"]) < CACHE_TTL_SECONDS:
         return _cache["data"]
+    if now < float(_cache.get("empty_until") or 0):
+        return []
 
     try:
-        resp = requests.get(INE_API_URL, timeout=10)
-        resp.raise_for_status()
-        raw = resp.json()
-        data_points = raw.get("Data", [])
+        trend = _fetch_ine_series(INE_API_URL_PRIMARY)
+        if not trend:
+            logger.info("INE IPV769 fără puncte; încerc IPV1.")
+            trend = _fetch_ine_series(INE_API_URL_FALLBACK)
 
-        trend: list[dict] = []
-        for entry in data_points:
-            val = entry.get("Valor")
-            fecha = entry.get("Fecha", "")
-            anyo = entry.get("Anyo")
-            if val is not None:
-                trend.append({
-                    "date": fecha,
-                    "value": round(float(val), 2),
-                    "year": int(anyo) if anyo else None,
-                    "quarter": _quarter_label(fecha, anyo),
-                })
+        if trend:
+            _cache["data"] = trend
+            _cache["ts"] = now
+            _cache["empty_until"] = 0.0
+            logger.info("INE IPV: %d puncte colectate.", len(trend))
+        else:
+            _cache["empty_until"] = now + EMPTY_BACKOFF_SECONDS
+            logger.error("INE IPV: nici IPV769 nici IPV1 nu au întors puncte.")
 
-        # INE trimite de la cel mai nou → cel mai vechi; inversăm pentru grafic cronologic
-        trend.reverse()
-        _cache["data"] = trend
-        _cache["ts"] = now
-        logger.info("INE IPV: %d puncte de date colectate.", len(trend))
         return trend
 
     except Exception as exc:
+        _cache["empty_until"] = now + EMPTY_BACKOFF_SECONDS
         logger.error("Eroare INE IPV: %s", exc)
         return []
 
