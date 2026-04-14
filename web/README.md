@@ -88,9 +88,19 @@ If you still have an old `data.db` from the SQLite era (import uses **sql.js** /
 1. Apply Postgres schema first (run the app once against the empty DB, or `npm run db:push` with `DATABASE_URL` set).
 2. From **`web/`**:
 
+**Bash / Git Bash / WSL:**
+
 ```bash
-DATABASE_URL=postgresql://... npm run import:sqlite-to-pg -- --dry-run
-DATABASE_URL=postgresql://... npm run import:sqlite-to-pg -- --sqlite=./data.db
+DATABASE_URL="postgresql://USER:PASS@HOST:5432/DB" npm run import:sqlite-to-pg -- --dry-run
+DATABASE_URL="postgresql://USER:PASS@HOST:5432/DB" npm run import:sqlite-to-pg -- --sqlite=./data.db
+```
+
+**PowerShell** (does not support `VAR=value` before the command):
+
+```powershell
+$env:DATABASE_URL = "postgresql://USER:PASS@HOST:5432/DB"
+npm run import:sqlite-to-pg -- --dry-run
+npm run import:sqlite-to-pg -- --sqlite=.\data.db
 ```
 
 Use **`--force`** only if the target DB already has rows and you accept possible unique-key conflicts (`on conflict (id) do nothing` does not update existing rows). For a clean overwrite, truncate tables manually (respect FK order) before import.

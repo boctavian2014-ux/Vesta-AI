@@ -7,9 +7,8 @@
  * - Prefer an **empty** target DB; otherwise use `--force` (see README).
  *
  * Usage (from `web/`):
- *   DATABASE_URL=postgresql://... npm run import:sqlite-to-pg
- *   DATABASE_URL=... npm run import:sqlite-to-pg -- --sqlite=../data.db
- *   DATABASE_URL=... npm run import:sqlite-to-pg -- --dry-run
+ *   Bash: DATABASE_URL="postgresql://..." npm run import:sqlite-to-pg -- --dry-run
+ *   PowerShell: $env:DATABASE_URL="postgresql://..."; npm run import:sqlite-to-pg -- --sqlite=.\\data.db
  */
 
 import fs from "node:fs";
