@@ -147,6 +147,10 @@ Serviciul **vesta-web** (React + Express) e separat de API-ul Python de mai sus.
 | `VITE_PRET_NOTA_SIMPLE_EUR` | **Build** | Opțional — afișare preț Nota Simple în UI (implicit 19). Aliniază cu `PRET_NOTA_SIMPLE_EUR` pe API. |
 | `VITE_PRET_RAPORT_EXPERT_EUR` | **Build** | Opțional — afișare preț raport expert (implicit 49). Aliniază cu `PRET_RAPORT_EXPERT_EUR` pe API. |
 | `PORT` | Runtime | Railway injectează automat; nu forța alt port dacă platforma cere altul. |
+| `DATABASE_URL` | Runtime | **Obligatoriu** — PostgreSQL pentru utilizatori, rapoarte, proprietăți salvate și **sesiuni** (`connect-pg-simple`, tabel `session`). Adaugă serviciu **PostgreSQL** în proiect (recomandat **separat** de baza folosită de `vesta-api`) și leagă `DATABASE_URL` din **Variables → Reference**. La pornire, `vesta-web` rulează migrările din `web/migrations/`. |
+| `PG_POOL_MAX` | Runtime | Opțional — limită conexiuni în pool-ul `pg` (implicit **10**). |
+| `SHUTDOWN_TIMEOUT_MS` | Runtime | Opțional — cât așteaptă `httpServer.close()` la **SIGTERM** / **SIGINT** înainte de `pool.end()` (implicit **10000** ms; util la redeploy Railway). |
+| `SESSION_SECRET` | Runtime | **Obligatoriu** — secret puternic pentru semnarea cookie-ului de sesiune; serverul iese la start dacă lipsește sau e valoarea default de dev. |
 | `VEST_PYTHON_API_URL` | Runtime | **Obligatoriu în producție** — URL public al serviciului FastAPI (`uvicorn`), fără slash final (ex. `https://<serviciu-api>.up.railway.app`). Site-ul public poate fi [vesta-asset.com](https://vesta-asset.com/), dar proxy-ul Express trebuie să lovească **hostname-ul Python**, nu domeniul SPA. Fără variabilă, rutele `/api/*` care proxy-uiesc Python răspund **503**. În dev local, serverul web folosește implicit `http://127.0.0.1:8000` dacă variabila lipsește. |
 | `VESTA_INTERNAL_SYNC_SECRET` | Runtime | Același secret ca pe serviciul Python; protejează `POST /api/internal/sync-registro-report`. |
 

@@ -19,7 +19,7 @@ AI-powered property analysis platform for Spanish real estate. Click any buildin
 ## Tech Stack
 
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
-- **Backend**: Express + TypeScript + Drizzle ORM + SQLite
+- **Backend**: Express + TypeScript + Drizzle ORM + PostgreSQL (`DATABASE_URL`)
 - **Map**: Mapbox GL JS v3 (loaded via CDN)
 - **Payments**: Stripe (Payment Element on the map — `VITE_STRIPE_PUBLISHABLE_KEY` at build; payment hits Python via `POST /api/payment/create` → `creeaza-plata/`; Stripe webhook on the **Python** service is `/stripe-webhook/`). Users must be **signed in** to create a PaymentIntent.
 - **AI Reports**: Custom Railway backend
@@ -63,21 +63,52 @@ Edit `.env` and fill in your values:
 | `OPENAI_MODEL` | Optional — defaults to `gpt-4o-mini` (e.g. `gpt-4o` if you prefer). |
 | `TAVILY_API_KEY` | **Recommended** — [Tavily](https://tavily.com) API key for `search_spain_property_links` (portal URLs by city/barrio, optional `asset_focus` + `recency` / `time_range`). Without it, pasted URLs and geocoding still work; the UI shows a configuration notice. |
 | `GET /api/spain-property-search/status` | (Auth) Returns `{ openaiConfigured, searchConfigured }` — booleans only; never exposes secrets. |
-| `SESSION_SECRET` | **Required in production** — strong random secret for Express session signing. The server **exits on startup** if `NODE_ENV=production` and this is missing or still set to the dev default. In development you may omit it (a built-in default is used). Sessions use **in-memory** store: each deploy or extra replica clears logins — users must sign in again. |
+| `DATABASE_URL` | **Required** — PostgreSQL connection string (e.g. Railway **Reference** from the Postgres service, or local `postgresql://user:pass@127.0.0.1:5432/vesta_web`). On startup the app runs SQL migrations from `web/migrations/`. Use a **separate** database from the Python API unless you know what you are doing. |
+| `PG_POOL_MAX` | (Optional) Max connections in the web `pg` pool (default **10**). |
+| `SHUTDOWN_TIMEOUT_MS` | (Optional) Max wait for in-flight HTTP requests to finish on **SIGTERM** / **SIGINT** before closing the DB pool (default **10000**). Relevant on Railway redeploys. |
+| `SESSION_SECRET` | **Required in production** — strong random secret for Express session signing. The server **exits on startup** if `NODE_ENV=production` and this is missing or still set to the dev default. In development you may omit it (a built-in default is used). Sessions are stored in PostgreSQL via **connect-pg-simple** (table `session`), so logins survive deploys and work across multiple web replicas. |
 | `PORT` | Server port (default: 5000) |
 
-### 4. Run in development
+### 4. PostgreSQL (local)
+
+Create a database and set `DATABASE_URL` before starting the server (migrations run automatically on boot).
+
+Example with Docker:
+
+```bash
+docker run -d --name vesta-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=vesta_web -p 5432:5432 postgres:16
+```
+
+Then set `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/vesta_web` in your environment or `.env`.
+
+### 4b. Import legacy SQLite → PostgreSQL (optional)
+
+If you still have an old `data.db` from the SQLite era (import uses **sql.js** / WASM — no native `better-sqlite3` build):
+
+1. Apply Postgres schema first (run the app once against the empty DB, or `npm run db:push` with `DATABASE_URL` set).
+2. From **`web/`**:
+
+```bash
+DATABASE_URL=postgresql://... npm run import:sqlite-to-pg -- --dry-run
+DATABASE_URL=postgresql://... npm run import:sqlite-to-pg -- --sqlite=./data.db
+```
+
+Use **`--force`** only if the target DB already has rows and you accept possible unique-key conflicts (`on conflict (id) do nothing` does not update existing rows). For a clean overwrite, truncate tables manually (respect FK order) before import.
+
+### 5. Run in development
 
 ```bash
 npm run dev
 ```
 
-### 5. Build for production
+### 6. Build for production
 
 ```bash
 npm run build
 NODE_ENV=production node dist/index.cjs
 ```
+
+Run the process from the `web/` directory so `process.cwd()/migrations` resolves correctly.
 
 ---
 
@@ -89,6 +120,8 @@ Never commit `.env` to git. Use `.env.example` as a template.
 VITE_MAPBOX_TOKEN=pk.your_mapbox_token_here
 VITE_API_URL=https://your-backend.up.railway.app
 VEST_PYTHON_API_URL=https://your-fastapi.up.railway.app
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/vesta_web
+SESSION_SECRET=change_me_in_production_use_long_random_string
 MATIL_API_KEY=replace_with_matil_api_key
 MATIL_DEPLOYMENT_ID=replace_with_matil_deployment_id
 MATIL_WEBHOOK_SECRET=replace_with_matil_webhook_secret

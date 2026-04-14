@@ -1,120 +1,18 @@
 import {
-  type User, type InsertUser, users,
-  type SavedProperty, type InsertSavedProperty, savedProperties,
-  type Report, type InsertReport, reports,
-  type ReportStatusEvent, reportStatusEvents,
+  type User,
+  type InsertUser,
+  users,
+  type SavedProperty,
+  type InsertSavedProperty,
+  savedProperties,
+  type Report,
+  type InsertReport,
+  reports,
+  type ReportStatusEvent,
+  reportStatusEvents,
 } from "@shared/schema";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
 import { eq, and } from "drizzle-orm";
-
-const dbPath = (process.env.SQLITE_PATH || "data.db").trim() || "data.db";
-const sqlite = new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-
-function ensureSchema() {
-  sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT 'now'
-    );
-
-    CREATE TABLE IF NOT EXISTS saved_properties (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      referencia_catastral TEXT,
-      address TEXT,
-      lat TEXT,
-      lon TEXT,
-      price_per_sqm TEXT,
-      avg_rent_per_sqm TEXT,
-      gross_yield TEXT,
-      net_yield TEXT,
-      roi TEXT,
-      opportunity_score TEXT,
-      saved_at TEXT NOT NULL DEFAULT 'now',
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS reports (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      property_id INTEGER,
-      type TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      stripe_session_id TEXT,
-      stripe_job_id TEXT,
-      pdf_url TEXT,
-      referencia_catastral TEXT,
-      address TEXT,
-      cadastral_json TEXT,
-      financial_json TEXT,
-      nota_simple_json TEXT,
-      report_json TEXT,
-      provider_name TEXT,
-      provider_order_id TEXT,
-      provider_status TEXT,
-      provider_raw_json TEXT,
-      requested_at TEXT,
-      completed_at TEXT,
-      created_at TEXT NOT NULL DEFAULT 'now',
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS report_status_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      report_id INTEGER NOT NULL,
-      from_status TEXT,
-      to_status TEXT NOT NULL,
-      actor_user_id INTEGER,
-      actor_email TEXT,
-      actor_name TEXT,
-      note TEXT,
-      created_at TEXT NOT NULL DEFAULT 'now',
-      FOREIGN KEY (report_id) REFERENCES reports(id),
-      FOREIGN KEY (actor_user_id) REFERENCES users(id)
-    );
-  `);
-
-  // Backward compatibility for existing local databases created before `pdf_url`.
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN pdf_url TEXT;`);
-  } catch {
-    // Ignore if the column already exists.
-  }
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_name TEXT;`);
-  } catch {}
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_order_id TEXT;`);
-  } catch {}
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_status TEXT;`);
-  } catch {}
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN provider_raw_json TEXT;`);
-  } catch {}
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN requested_at TEXT;`);
-  } catch {}
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN completed_at TEXT;`);
-  } catch {}
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN map_lat TEXT;`);
-  } catch {}
-  try {
-    sqlite.exec(`ALTER TABLE reports ADD COLUMN map_lon TEXT;`);
-  } catch {}
-}
-
-ensureSchema();
-
-export const db = drizzle(sqlite);
+import { getDb } from "./db";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -135,136 +33,172 @@ export interface IStorage {
   updateReportAdmin(id: number, data: Partial<Report>): Promise<Report | undefined>;
   updateReportByProviderOrderId(providerOrderId: string, data: Partial<Report>): Promise<Report | undefined>;
   updateReportStatus(id: number, status: string): Promise<void>;
-  /** Legătură cu PaymentIntent Python (`stripe_session_id` pe DetailedReport). */
   updateReportByStripeSessionId(
     stripeSessionId: string,
     data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId" | "pdfUrl">>
   ): Promise<Report | undefined>;
-  createReportStatusEvent(
-    event: Omit<ReportStatusEvent, "id" | "createdAt">
-  ): Promise<ReportStatusEvent>;
+  createReportStatusEvent(event: Omit<ReportStatusEvent, "id" | "createdAt">): Promise<ReportStatusEvent>;
   getReportStatusEvents(reportId: number): Promise<ReportStatusEvent[]>;
 }
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    return db.select().from(users).where(eq(users.id, id)).get();
+    const db = getDb();
+    const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    return rows[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return db.select().from(users).where(eq(users.username, username)).get();
+    const db = getDb();
+    const rows = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    return rows[0];
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return db.select().from(users).where(eq(users.email, email)).get();
+    const db = getDb();
+    const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return rows[0];
   }
 
   async updateUserPassword(userId: number, passwordHash: string): Promise<void> {
-    db.update(users).set({ password: passwordHash }).where(eq(users.id, userId)).run();
+    const db = getDb();
+    await db.update(users).set({ password: passwordHash }).where(eq(users.id, userId));
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    return db.insert(users).values({
-      ...insertUser,
-      createdAt: new Date().toISOString(),
-    }).returning().get();
+    const db = getDb();
+    const [row] = await db.insert(users).values(insertUser).returning();
+    return row;
   }
 
   async getSavedProperties(userId: number): Promise<SavedProperty[]> {
-    return db.select().from(savedProperties).where(eq(savedProperties.userId, userId)).all();
+    const db = getDb();
+    return db.select().from(savedProperties).where(eq(savedProperties.userId, userId));
   }
 
   async saveProperty(property: InsertSavedProperty): Promise<SavedProperty> {
-    return db.insert(savedProperties).values({
-      ...property,
-      savedAt: new Date().toISOString(),
-    }).returning().get();
+    const db = getDb();
+    const [row] = await db.insert(savedProperties).values(property).returning();
+    return row;
   }
 
   async deleteProperty(id: number, userId: number): Promise<void> {
-    db.delete(savedProperties).where(
-      and(eq(savedProperties.id, id), eq(savedProperties.userId, userId))
-    ).run();
+    const db = getDb();
+    await db
+      .delete(savedProperties)
+      .where(and(eq(savedProperties.id, id), eq(savedProperties.userId, userId)));
   }
 
   async getReports(userId: number): Promise<Report[]> {
-    return db.select().from(reports).where(eq(reports.userId, userId)).all();
+    const db = getDb();
+    return db.select().from(reports).where(eq(reports.userId, userId));
   }
 
   async getReport(id: number, userId: number): Promise<Report | undefined> {
-    return db.select().from(reports).where(and(eq(reports.id, id), eq(reports.userId, userId))).get();
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.id, id), eq(reports.userId, userId)))
+      .limit(1);
+    return rows[0];
   }
 
   async getReportAdmin(id: number): Promise<Report | undefined> {
-    return db.select().from(reports).where(eq(reports.id, id)).get();
+    const db = getDb();
+    const rows = await db.select().from(reports).where(eq(reports.id, id)).limit(1);
+    return rows[0];
   }
 
   async getReportByProviderOrderId(providerOrderId: string): Promise<Report | undefined> {
-    return db.select().from(reports).where(eq(reports.providerOrderId, providerOrderId)).get();
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(reports)
+      .where(eq(reports.providerOrderId, providerOrderId))
+      .limit(1);
+    return rows[0];
   }
 
   async getAllReports(): Promise<Report[]> {
-    return db.select().from(reports).all();
+    const db = getDb();
+    return db.select().from(reports);
   }
 
   async createReport(report: InsertReport): Promise<Report> {
-    return db.insert(reports).values({
-      ...report,
-      createdAt: new Date().toISOString(),
-    }).returning().get();
+    const db = getDb();
+    const [row] = await db.insert(reports).values(report).returning();
+    return row;
   }
 
   async updateReport(id: number, userId: number, data: Partial<Report>): Promise<Report | undefined> {
-    db.update(reports).set(data).where(and(eq(reports.id, id), eq(reports.userId, userId))).run();
-    return db.select().from(reports).where(and(eq(reports.id, id), eq(reports.userId, userId))).get();
+    const db = getDb();
+    await db.update(reports).set(data).where(and(eq(reports.id, id), eq(reports.userId, userId)));
+    const rows = await db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.id, id), eq(reports.userId, userId)))
+      .limit(1);
+    return rows[0];
   }
 
   async updateReportAdmin(id: number, data: Partial<Report>): Promise<Report | undefined> {
-    db.update(reports).set(data).where(eq(reports.id, id)).run();
-    return db.select().from(reports).where(eq(reports.id, id)).get();
+    const db = getDb();
+    await db.update(reports).set(data).where(eq(reports.id, id));
+    const rows = await db.select().from(reports).where(eq(reports.id, id)).limit(1);
+    return rows[0];
   }
 
   async updateReportByProviderOrderId(providerOrderId: string, data: Partial<Report>): Promise<Report | undefined> {
     const row = await this.getReportByProviderOrderId(providerOrderId);
     if (!row) return undefined;
-    db.update(reports).set(data).where(eq(reports.id, row.id)).run();
-    return db.select().from(reports).where(eq(reports.id, row.id)).get();
+    const db = getDb();
+    await db.update(reports).set(data).where(eq(reports.id, row.id));
+    const rows = await db.select().from(reports).where(eq(reports.id, row.id)).limit(1);
+    return rows[0];
   }
 
   async updateReportStatus(id: number, status: string): Promise<void> {
-    db.update(reports).set({ status }).where(eq(reports.id, id)).run();
+    const db = getDb();
+    await db.update(reports).set({ status }).where(eq(reports.id, id));
   }
 
   async updateReportByStripeSessionId(
     stripeSessionId: string,
     data: Partial<Pick<Report, "status" | "reportJson" | "notaSimpleJson" | "stripeJobId" | "pdfUrl">>
   ): Promise<Report | undefined> {
-    const row = db.select().from(reports).where(eq(reports.stripeSessionId, stripeSessionId)).get();
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(reports)
+      .where(eq(reports.stripeSessionId, stripeSessionId))
+      .limit(1);
+    const row = rows[0];
     if (!row) return undefined;
     const cleaned = Object.fromEntries(
       Object.entries(data).filter(([, v]) => v !== undefined)
     ) as Partial<Report>;
     if (Object.keys(cleaned).length === 0) return row;
-    db.update(reports).set(cleaned).where(eq(reports.id, row.id)).run();
-    return db.select().from(reports).where(eq(reports.id, row.id)).get();
+    await db.update(reports).set(cleaned).where(eq(reports.id, row.id));
+    const out = await db.select().from(reports).where(eq(reports.id, row.id)).limit(1);
+    return out[0];
   }
 
   async createReportStatusEvent(
     event: Omit<ReportStatusEvent, "id" | "createdAt">
   ): Promise<ReportStatusEvent> {
-    return db.insert(reportStatusEvents).values({
-      ...event,
-      createdAt: new Date().toISOString(),
-    }).returning().get();
+    const db = getDb();
+    const [row] = await db.insert(reportStatusEvents).values(event).returning();
+    return row;
   }
 
   async getReportStatusEvents(reportId: number): Promise<ReportStatusEvent[]> {
-    return db
+    const db = getDb();
+    const list = await db
       .select()
       .from(reportStatusEvents)
-      .where(eq(reportStatusEvents.reportId, reportId))
-      .all()
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      .where(eq(reportStatusEvents.reportId, reportId));
+    return list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
 }
 

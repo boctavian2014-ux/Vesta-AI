@@ -1,4 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import { closeDatabase, initDatabase } from "./db";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -6,10 +9,35 @@ import { createServer } from "http";
 const app = express();
 const httpServer = createServer(app);
 
-// Railway / reverse proxy: needed for secure cookies and correct client IP
-if (process.env.NODE_ENV === "production") {
+const isProduction = process.env.NODE_ENV === "production";
+
+let fatalExitStarted = false;
+function exitAfterFatal(kind: string, err: unknown): void {
+  console.error(`[vesta-web] FATAL ${kind}:`, err);
+  if (fatalExitStarted) return;
+  fatalExitStarted = true;
+  process.exit(1);
+}
+
+process.on("uncaughtException", (err) => {
+  exitAfterFatal("uncaughtException", err);
+});
+process.on("unhandledRejection", (reason) => {
+  exitAfterFatal("unhandledRejection", reason);
+});
+
+// Railway / reverse proxy: needed for secure cookies, correct client IP, and rate limiting
+if (isProduction) {
   app.set("trust proxy", 1);
 }
+
+// HSTS, X-Content-Type-Options, etc. CSP off: third-party scripts (Stripe, Mapbox, Google) vary by route.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }),
+);
 
 declare module "http" {
   interface IncomingMessage {
@@ -27,6 +55,32 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 40 : 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts. Please try again shortly." },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isProduction ? 15 : 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many registration attempts. Please try again later." },
+});
+
+app.use((req, res, next) => {
+  if (req.path === "/api/auth/login" && req.method === "POST") {
+    return loginLimiter(req, res, next);
+  }
+  if (req.path === "/api/auth/register" && req.method === "POST") {
+    return registerLimiter(req, res, next);
+  }
+  next();
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -41,7 +95,8 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedJsonResponse: unknown = undefined;
+  const isProd = isProduction;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
@@ -53,8 +108,11 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      // Never log full JSON bodies in production (PII / tokens in logs).
+      if (!isProd && capturedJsonResponse !== undefined) {
+        const s = JSON.stringify(capturedJsonResponse);
+        const max = 400;
+        logLine += s.length > max ? ` :: ${s.slice(0, max)}…` : ` :: ${s}`;
       }
 
       log(logLine);
@@ -65,11 +123,13 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await initDatabase();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    const statusNum = Number(status) || 500;
+    const isProd = isProduction;
 
     console.error("Internal Server Error:", err);
 
@@ -77,13 +137,18 @@ app.use((req, res, next) => {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    const clientMessage =
+      isProd && statusNum >= 500
+        ? "Internal Server Error"
+        : err.message || "Internal Server Error";
+
+    return res.status(statusNum).json({ message: clientMessage });
   });
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
+  if (isProduction) {
     serveStatic(app);
   } else {
     const { setupVite } = await import("./vite");
@@ -97,5 +162,41 @@ app.use((req, res, next) => {
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
+  });
+
+  const shutdownMs = Number(process.env.SHUTDOWN_TIMEOUT_MS || "10000");
+  let shuttingDown = false;
+
+  async function gracefulShutdown(signal: string) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log(`shutdown (${signal}): closing HTTP server...`);
+
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        log(`shutdown: HTTP close timed out after ${shutdownMs}ms, draining pool anyway`);
+        resolve();
+      }, shutdownMs);
+      httpServer.close((err) => {
+        clearTimeout(timer);
+        if (err) console.error("[vesta-web] shutdown: httpServer.close", err);
+        resolve();
+      });
+    });
+
+    try {
+      await closeDatabase();
+      log("shutdown: PostgreSQL pool closed");
+    } catch (e) {
+      console.error("[vesta-web] shutdown: closeDatabase failed", e);
+    }
+    process.exit(0);
+  }
+
+  process.once("SIGTERM", () => {
+    void gracefulShutdown("SIGTERM");
+  });
+  process.once("SIGINT", () => {
+    void gracefulShutdown("SIGINT");
   });
 })();

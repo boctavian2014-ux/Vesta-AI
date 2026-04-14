@@ -2,7 +2,7 @@ import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import session from "express-session";
-import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import multer from "multer";
@@ -26,8 +26,9 @@ import {
   handleSpainPropertySearchStatus,
 } from "./spainPropertySearchChat";
 import { hashPasswordPlain, verifyPasswordWithUpgrade } from "./passwordAuth";
+import { getPool } from "./db";
 
-const SessionStore = MemoryStore(session);
+const PgSession = connectPgSimple(session);
 const DEFAULT_SESSION_SECRET = "vesta-ai-secret-key-2026";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 const ADMIN_EMAILS = new Set(
@@ -51,6 +52,22 @@ function resolvePythonApiBase(): string {
 }
 
 const PYTHON_API_BASE = resolvePythonApiBase();
+
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+function defaultSpaOrigin(): string {
+  return (process.env.VESTA_WEB_BASE_URL || "https://vesta-asset.com").trim().replace(/\/$/, "");
+}
+
+/** 500 JSON: omit internal `error` string in production (still logged here). */
+function jsonServerError(message: string, err: unknown) {
+  console.error(`[vesta-web] ${message}`, err);
+  if (IS_PRODUCTION) {
+    return { message };
+  }
+  const detail = err instanceof Error ? err.message : String(err);
+  return { message, error: detail };
+}
 
 const LEGACY_RO_TO_EN_REPLACEMENTS: Array<[string, string]> = [
   [
@@ -300,7 +317,8 @@ export async function registerRoutes(
       version: string | null;
     } = {
       configured: Boolean(base),
-      baseUrl: base || null,
+      // Hide upstream hostname in production (infrastructure fingerprinting).
+      baseUrl: IS_PRODUCTION ? null : base || null,
       reachable: false,
       error: null,
       version: null,
@@ -383,7 +401,7 @@ export async function registerRoutes(
     return res.json({ ok: true, id: report.id });
   });
 
-  // Session (MemoryStore: single Railway instance OK; multiple replicas need a shared store)
+  // Session in PostgreSQL (connect-pg-simple) — shared across multiple web replicas.
   const isProd = process.env.NODE_ENV === "production";
   const rawSessionSecret = (process.env.SESSION_SECRET || "").trim();
   if (isProd) {
@@ -395,12 +413,17 @@ export async function registerRoutes(
     }
   }
   const sessionSecret = rawSessionSecret || DEFAULT_SESSION_SECRET;
+  const sessionStore = new PgSession({
+    pool: getPool(),
+    createTableIfMissing: true,
+    pruneSessionInterval: 60 * 15,
+  });
   app.use(
     session({
       secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
-      store: new SessionStore({ checkPeriod: 86400000 }),
+      store: sessionStore,
       cookie: {
         maxAge: 86400000,
         httpOnly: true,
@@ -675,7 +698,7 @@ export async function registerRoutes(
         },
         "Upload/OCR exception"
       );
-      return res.status(500).json({ message: "Upload/OCR failed", error: err.message });
+      return res.status(500).json(jsonServerError("Upload/OCR failed", err));
     }
   });
 
@@ -837,7 +860,7 @@ export async function registerRoutes(
 
       return res.json({ ok: true, report: updated, partner });
     } catch (err: any) {
-      return res.status(502).json({ message: "Partner request failed", error: err?.message || String(err) });
+      return res.status(502).json(jsonServerError("Partner request failed", err));
     }
   });
 
@@ -974,7 +997,7 @@ export async function registerRoutes(
 
       return res.json({ ok: true, report: updated, partner });
     } catch (err: any) {
-      return res.status(502).json({ message: "Partner retry failed", error: err?.message || String(err) });
+      return res.status(502).json(jsonServerError("Partner retry failed", err));
     }
   });
 
@@ -1013,7 +1036,7 @@ export async function registerRoutes(
 
       return res.json(normalised);
     } catch (err: any) {
-      return res.status(500).json({ message: "Failed to identify property", error: err.message });
+      return res.status(500).json(jsonServerError("Failed to identify property", err));
     }
   });
 
@@ -1040,7 +1063,7 @@ export async function registerRoutes(
       const normalized = normalizeFinancialAnalysisForClient(data, upstreamBody);
       return res.json(normalized);
     } catch (err: any) {
-      return res.status(500).json({ message: "Failed to get financial analysis", error: err.message });
+      return res.status(500).json(jsonServerError("Failed to get financial analysis", err));
     }
   });
 
@@ -1055,7 +1078,7 @@ export async function registerRoutes(
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
-      return res.status(500).json({ message: "Failed to get market trends", error: err.message });
+      return res.status(500).json(jsonServerError("Failed to get market trends", err));
     }
   });
 
@@ -1147,7 +1170,7 @@ export async function registerRoutes(
       }
       return res.json(data);
     } catch (err: any) {
-      return res.status(500).json({ message: "Payment creation failed", error: err.message });
+      return res.status(500).json(jsonServerError("Payment creation failed", err));
     }
   });
 
@@ -1159,6 +1182,7 @@ export async function registerRoutes(
     try {
       const { property_id, success_url, cancel_url } = req.body;
       const user = req.user as any;
+      const spa = defaultSpaOrigin();
       const response = await fetch(
         `${base}/create-checkout-session`,
         {
@@ -1168,15 +1192,15 @@ export async function registerRoutes(
             property_id: property_id ?? 0,
             user_id: user.id,
             product: normalizeProductTier(req.body.product),
-            success_url: success_url ?? "https://www.perplexity.ai/computer/a/vesta-ai-dXVERI0mRBaIDCn.9K69dw/#/reports",
-            cancel_url: cancel_url ?? "https://www.perplexity.ai/computer/a/vesta-ai-dXVERI0mRBaIDCn.9K69dw/#/map",
+            success_url: success_url ?? `${spa}/#/reports`,
+            cancel_url: cancel_url ?? `${spa}/#/map`,
           }),
         }
       );
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
-      return res.status(500).json({ message: "Checkout failed", error: err.message });
+      return res.status(500).json(jsonServerError("Checkout failed", err));
     }
   });
 
@@ -1197,7 +1221,7 @@ export async function registerRoutes(
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
-      return res.status(500).json({ message: "Report generation failed", error: err.message });
+      return res.status(500).json(jsonServerError("Report generation failed", err));
     }
   });
 
@@ -1213,7 +1237,7 @@ export async function registerRoutes(
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
-      return res.status(500).json({ message: "Status check failed", error: err.message });
+      return res.status(500).json(jsonServerError("Status check failed", err));
     }
   });
 
@@ -1231,7 +1255,7 @@ export async function registerRoutes(
       }
       return res.json(data);
     } catch (err: any) {
-      return res.status(500).json({ message: "Payment flow status failed", error: err.message });
+      return res.status(500).json(jsonServerError("Payment flow status failed", err));
     }
   });
 
