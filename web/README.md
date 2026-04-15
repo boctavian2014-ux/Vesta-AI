@@ -14,6 +14,10 @@ AI-powered property analysis platform for Spanish real estate. Click any buildin
 - **Street View** — Embedded 360° street-level photos (no redirect)
 - **Property search (AI agent)** — Chat at `#/property-search` uses OpenAI with **tools**: **Tavily** finds listing URLs on allowed Spanish portals (Idealista, Fotocasa, Habitaclia, Pisos, YaEncontre, Milanuncios). The search tool accepts **`asset_focus`** (residential, commercial, industrial, land, whole_building, renovation_opportunity, mixed) and **`recency`** (`any` / `day` / `week` / `month` / `year`) mapped to Tavily `time_range` for *últimos anuncios*-style queries; results may include approximate **`publishedAt`** from the search API. **Nominatim** geocoding and **listing-page metadata** fetch add optional **`listedBy`** (public advertiser from JSON-LD / meta — not the land-registry owner). Cards show disclaimers: web results are a **sample**, not the full market. **Open on map** / **Area on map (approx.)** use `#/map?lat=&lon=` with optional `area=1`. Requires `OPENAI_API_KEY`; **recommended** `TAVILY_API_KEY`. **Official auction portals** are not in the allowlist until `fetch_listing_page_metadata` is validated on those HTML layouts.
 
+### UI language (EN / ES)
+
+The app uses a shared UI locale (`useUiLocale` → `localStorage` key **`vesta-ui-locale`**). Change language from the **sidebar** (logged-in) or **login / legal** headers; the map no longer has a separate language control. Legacy `vesta_map_ui_locale` is migrated once on load.
+
 ---
 
 ## Tech Stack

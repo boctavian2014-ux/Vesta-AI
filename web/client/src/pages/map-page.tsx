@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { createCompletedDemoReport } from "@/lib/create-demo-report";
-import { detectBrowserLocale } from "@/lib/locale";
 import { useAuth } from "@/hooks/use-auth";
+import { useUiLocale, type UiLocale } from "@/lib/ui-locale";
 import { useHashLocation } from "wouter/use-hash-location";
 import { identifyProperty } from "@/lib/propertyApi";
 import { getGoogleMapsBrowserKey, loadGoogleMapsJs } from "@/lib/googleMapsLoader";
@@ -34,7 +34,6 @@ const PRET_EXPERT_EUR =
   Number(import.meta.env.VITE_PRET_RAPORT_EXPERT_EUR) ||
   Number(import.meta.env.VITE_PRET_EXPERT_EUR) ||
   50;
-const MAP_UI_LOCALE_KEY = "vesta_map_ui_locale";
 const PROPERTY_ANALYSIS_LOGO_SRC = `${import.meta.env.BASE_URL}vesta-logo.png${VESTA_BRAND_ASSET_QUERY}`;
 /** Satellite close-up targets (Google may cap zoom by area). */
 const MAP_STREET_ZOOM = 20;
@@ -56,8 +55,6 @@ function parseMapCoordsFromHash(): { lat: number; lon: number; approxArea: boole
   const approxArea = params.get("area") === "1";
   return { lat, lon, approxArea };
 }
-
-type UiLocale = "en" | "es";
 
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
@@ -487,50 +484,50 @@ function PaymentModal({
         missingPaymentId: "Falta el identificador del pago. Intenta de nuevo.",
         generationError: "Error al generar",
         timeout: "Tiempo agotado",
-        timeoutDescription: "El pago aun no esta registrado o el informe no esta disponible.",
+        timeoutDescription: "El pago aún no está registrado o el informe no está disponible.",
         reportFailed: "Informe fallido",
         retry: "Intenta de nuevo.",
         reportTimeout: "Tiempo de informe agotado",
         networkError: "Error de red",
-        bulletsAnalysis1: "Analisis de propiedad + analisis financiero",
-        bulletsAnalysis2: "Scor de oportunidad, rentabilidad, ROI y valoracion",
-        bulletsAnalysis3: "Entrega en Informes con analisis de zona y mercado local",
-        bulletsExpert1: "Incluye paquete de analisis + Nota Simple oficial",
-        bulletsExpert2: "Informe experto AI: riesgos, resumen para inversor, due diligence",
-        bulletsExpert3: "Soporte completo para decision de compra/inversion",
+        bulletsAnalysis1: "Análisis de propiedad + análisis financiero",
+        bulletsAnalysis2: "Puntuación de oportunidad, rentabilidad, ROI y valoración",
+        bulletsAnalysis3: "Entrega en Informes con análisis de zona y mercado local",
+        bulletsExpert1: "Incluye paquete de análisis + Nota Simple oficial",
+        bulletsExpert2: "Informe experto con IA: riesgos, resumen para inversor, due diligence",
+        bulletsExpert3: "Soporte completo para decisión de compra/inversión",
         orderDocs: "Solicitar paquete",
-        twoPacks: "Dos paquetes: Analisis (15€) o Expert report + Nota Simple (50€).",
+        twoPacks: "Dos paquetes: análisis (15 €) o informe experto + Nota Simple (50 €).",
         catastroRef: "Referencia Catastro",
         choosePack: "Elige paquete",
-        analysisTitle: "Analisis de propiedad + financiero",
-        analysisSub: "Evaluacion AI: precio zona, vecinos, seguridad, servicios y rentabilidad",
+        analysisTitle: "Análisis de propiedad + financiero",
+        analysisSub: "Evaluación con IA: precio de zona, vecinos, seguridad, servicios y rentabilidad",
         expertTitle: "Informe experto completo",
-        expertSub: "Nota Simple oficial + analisis AI y due diligence",
-        include: "Que incluye",
+        expertSub: "Nota Simple oficial + análisis con IA y due diligence",
+        include: "Qué incluye",
         total: "Total",
         paymentInit: "Inicializando pago...",
         registeringOrder: "Registrando paquete",
         generatingReport: "Generando informe",
-        sendingRequest: "Procesando tu paquete de analisis",
-        waitingAI: "Analisis AI del inmueble y de la zona en curso; puede tardar unos minutos",
-        postPaymentFlow: "Proceso despues del pago",
+        sendingRequest: "Procesando tu paquete de análisis",
+        waitingAI: "Análisis con IA del inmueble y de la zona en curso; puede tardar unos minutos",
+        postPaymentFlow: "Proceso después del pago",
         analysisFlow1: "Pago confirmado",
-        analysisFlow2: "Analisis de zona: precio, servicios, seguridad y puntos de interes",
+        analysisFlow2: "Análisis de zona: precio, servicios, seguridad y puntos de interés",
         analysisFlow3: "Informe final disponible en Informes",
         expertFlow1: "Pago confirmado",
         expertFlow2: "Solicitud de Nota Simple a colaboradores",
         expertFlow3: "PDF recibido y OCR legal extraido",
-        expertFlow4: "Analisis AI experto en ejecucion",
+        expertFlow4: "Análisis experto con IA en ejecución",
         expertFlow5: "Informe final disponible en Informes",
         elapsed: "transcurridos",
         orderRegistered: "Paquete registrado",
         reportProgress: "Informe en curso / generado",
-        analysisDelivered: "Tu analisis completo de propiedad y zona ya esta disponible en Informes.",
-        notaDelivered: "La Nota Simple oficial se entregara por el flujo de colaboradores. Revisa en Informes.",
+        analysisDelivered: "Tu análisis completo de propiedad y zona ya está disponible en Informes.",
+        notaDelivered: "La Nota Simple oficial se entregará por el flujo de colaboradores. Revisa en Informes.",
         redirecting: "Redirigiendo al detalle del informe...",
         cancel: "Cancelar",
         payNow: "Pagar ahora",
-        missingStripePk: "Falta VITE_STRIPE_PUBLISHABLE_KEY en el build. Anade la clave publica de Stripe.",
+        missingStripePk: "Falta VITE_STRIPE_PUBLISHABLE_KEY en el build. Añade la clave pública de Stripe.",
         securePay: "Pagar con tarjeta",
         backToPacks: "Volver a paquetes",
         previewDemo: "Vista previa sin pago",
@@ -1127,19 +1124,7 @@ export default function MapPage() {
   const [streetViewLng, setStreetViewLng] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchBusy, setSearchBusy] = useState(false);
-  const [uiLocale, setUiLocale] = useState<UiLocale>(() => {
-    if (typeof window !== "undefined") {
-      const saved = window.localStorage.getItem(MAP_UI_LOCALE_KEY);
-      if (saved === "en" || saved === "es") return saved;
-    }
-    return detectBrowserLocale() === "es" ? "es" : "en";
-  });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(MAP_UI_LOCALE_KEY, uiLocale);
-    }
-  }, [uiLocale]);
+  const { locale: uiLocale } = useUiLocale();
 
   const fallbackCoordsFromMapCenter = (() => {
     try {
@@ -1156,33 +1141,33 @@ export default function MapPage() {
 
   const t = uiLocale === "es"
     ? {
-        searchPlaceholder: "Buscar ciudad, direccion o lat,lon (Spain)",
+        searchPlaceholder: "Buscar ciudad, dirección o lat,lon (España)",
         searchButton: "Buscar",
         streetViewButton: "Street View",
         streetViewSelectPointFirst: "Selecciona un punto en el mapa primero",
-        searchingLocation: "Buscando ubicacion...",
-        searchEmpty: "Escribe una ciudad, direccion o coordenadas.",
-        searchNoResult: "No encontramos resultados para esa busqueda.",
-        searchError: "No se pudo completar la busqueda.",
-        addressOtherCity: "La direccion no corresponde: es de otra ciudad.",
-        outsideSpainWarning: "Resultado fuera de Espana (se permite continuar).",
-        propertyAnalysis: "Analisis de propiedad",
+        searchingLocation: "Buscando ubicación...",
+        searchEmpty: "Escribe una ciudad, dirección o coordenadas.",
+        searchNoResult: "No encontramos resultados para esa búsqueda.",
+        searchError: "No se pudo completar la búsqueda.",
+        addressOtherCity: "La dirección no corresponde: es de otra ciudad.",
+        outsideSpainWarning: "Resultado fuera de España (se permite continuar).",
+        propertyAnalysis: "Análisis de propiedad",
         queryingCatastro: "Consultando Catastro...",
-        noBuildingTitle: "No se encontro edificio",
-        noBuildingDesc: "No se encontro edificio en ese punto. Prueba otra zona o aumenta el zoom.",
+        noBuildingTitle: "No se encontró edificio",
+        noBuildingDesc: "No se encontró edificio en ese punto. Prueba otra zona o aumenta el zoom.",
         catastroRef: "Referencia Catastro",
         propertyData: "Datos del inmueble",
-        address: "Direccion",
+        address: "Dirección",
         municipality: "Municipio",
         province: "Provincia",
         area: "Superficie",
         usage: "Uso",
-        yearBuilt: "Ano de construccion",
-        aiFinancial: "Analisis financiero AI para este inmueble",
-        financialAnalysis: "Analisis financiero",
+        yearBuilt: "Año de construcción",
+        aiFinancial: "Análisis financiero con IA para este inmueble",
+        financialAnalysis: "Análisis financiero",
         expertAnalysisOrder: "Informe experto",
         calculatingYield: "Calculando rentabilidad...",
-        financialSection: "Analisis financiero",
+        financialSection: "Análisis financiero",
         grossYield: "Rentabilidad bruta",
         netYield: "Rentabilidad neta",
         roi5y: "ROI 5 años (modelo)",
@@ -1192,19 +1177,19 @@ export default function MapPage() {
         annualRent: "Alquiler anual est.",
         zoneAvgPerSqm: "Zona media venta €/m²",
         zoneRentPerSqm: "Zona alquiler €/m²/mes",
-        valuationVsMarket: "Valoracion vs mercado",
+        valuationVsMarket: "Valoración vs mercado",
         vsMarketPct: "vs mercado (%)",
-        negotiationNote: "Nota negociacion",
+        negotiationNote: "Nota de negociación",
         marketCagr: "CAGR mercado (INE)",
-        capApp5y: "Apreciacion capital 5 años",
-        yieldVsSpain: "Rent. vs media Espana",
+        capApp5y: "Apreciación del capital a 5 años",
+        yieldVsSpain: "Rent. vs media España",
         ineTrendPoints: "Puntos tendencia INE",
         dataSource: "Fuente datos",
-        ineCapApp: "Apreciacion INE (serie)",
+        ineCapApp: "Apreciación INE (serie)",
         saveProperty: "Guardar propiedad",
-        noBuildingError: "No se encontro edificio en ese punto.",
-        analysisFailed: "Analisis fallido",
-        retryAnalysis: "Reintentar analisis",
+        noBuildingError: "No se encontró edificio en ese punto.",
+        analysisFailed: "Análisis fallido",
+        retryAnalysis: "Reintentar análisis",
         propertySaved: "Propiedad guardada",
         genericError: "Error",
         selectedProperty: "Inmueble seleccionado",
@@ -1743,7 +1728,7 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* Top bar — search + Street View + language */}
+      {/* Top bar — search + Street View (language: sidebar) */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
         <form
           className="flex items-center gap-2 rounded-full bg-sidebar border border-sidebar-border px-2 py-1.5"
@@ -1778,16 +1763,6 @@ export default function MapPage() {
             )}
           </Button>
         </form>
-
-        <select
-          value={uiLocale}
-          onChange={(e: any) => setUiLocale(e.target.value as UiLocale)}
-          className="rounded-full bg-sidebar border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground"
-          aria-label="Language selector"
-        >
-          <option value="en">EN</option>
-          <option value="es">ES</option>
-        </select>
 
         <div className="inline-flex items-center gap-1 rounded-full bg-sidebar border border-sidebar-border p-1">
           <button

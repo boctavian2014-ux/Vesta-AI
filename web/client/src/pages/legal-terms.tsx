@@ -1,10 +1,10 @@
 import { LegalPageShell } from "@/components/legal-page-shell";
-import { detectBrowserLocale } from "@/lib/locale";
+import { useUiLocale } from "@/lib/ui-locale";
 
 export default function LegalTermsPage() {
-  const locale = detectBrowserLocale();
+  const { locale } = useUiLocale();
   return (
-    <LegalPageShell title={locale === "es" ? "Terminos y condiciones de uso" : "Terms and Conditions of Use"}>
+    <LegalPageShell title={locale === "es" ? "Términos y condiciones de uso" : "Terms and Conditions of Use"}>
       {locale === "es" ? (
         <>
           <h2>1. Operador</h2>

@@ -1,10 +1,10 @@
 import { LegalPageShell } from "@/components/legal-page-shell";
-import { detectBrowserLocale } from "@/lib/locale";
+import { useUiLocale } from "@/lib/ui-locale";
 
 export default function LegalPrivacyPage() {
-  const locale = detectBrowserLocale();
+  const { locale } = useUiLocale();
   return (
-    <LegalPageShell title={locale === "es" ? "Politica de privacidad" : "Privacy Policy"}>
+    <LegalPageShell title={locale === "es" ? "Política de privacidad" : "Privacy Policy"}>
       {locale === "es" ? (
         <>
           <h2>1. Responsable del tratamiento</h2>

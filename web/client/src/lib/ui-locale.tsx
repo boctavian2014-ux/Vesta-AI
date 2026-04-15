@@ -16,6 +16,12 @@ function detectInitialLocale(): UiLocale {
   if (typeof window !== "undefined") {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored === "en" || stored === "es") return stored;
+    /** Legacy: map page used `vesta_map_ui_locale` — migrate once to global UI key. */
+    const legacyMap = window.localStorage.getItem("vesta_map_ui_locale");
+    if (legacyMap === "en" || legacyMap === "es") {
+      window.localStorage.setItem(STORAGE_KEY, legacyMap);
+      return legacyMap;
+    }
   }
   return detectBrowserLocale() === "es" ? "es" : "en";
 }

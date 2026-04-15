@@ -9,6 +9,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -19,7 +20,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { VestaBrandLogoSidebar } from "@/components/vesta-brand-logo";
-import { detectBrowserLocale } from "@/lib/locale";
+import { useUiLocale } from "@/lib/ui-locale";
 import {
   createCompletedDemoReport,
   DEMO_MAP_COORDS_MADRID,
@@ -90,19 +91,23 @@ export function AppSidebar() {
   const { toast } = useToast();
   const [demoBusy, setDemoBusy] = useState<null | "analysis" | "expert">(null);
   const demoRunLockRef = useRef(false);
-  const locale = detectBrowserLocale();
-  const t = locale === "es"
+  const { locale, setLocale } = useUiLocale();
+  const t =
+    locale === "es"
       ? {
           dashboard: "Panel",
           map: "Mapa",
-          propertySearch: "Búsqueda de vivienda",
+          propertySearch: "Búsqueda de propiedades",
           marketTrends: "Tendencias del mercado",
           savedProperties: "Propiedades guardadas",
           reports: "Informes",
-          adminOrders: "Pedidos admin",
+          adminOrders: "Pedidos (admin)",
           terms: "Términos",
           privacy: "Privacidad",
-          tutorial: "Tutorial / Servicios",
+          tutorial: "Tutorial y servicios",
+          language: "Idioma",
+          langEn: "Inglés",
+          langEs: "Español",
           demoAnalysis: "Demo · Análisis 15 €",
           demoExpert: "Demo · Experto 50 €",
           demoError: "No se pudo crear el demo",
@@ -115,13 +120,16 @@ export function AppSidebar() {
           dashboard: "Dashboard",
           map: "Map",
           propertySearch: "Property search",
-          marketTrends: "Market Trends",
-          savedProperties: "Saved Properties",
+          marketTrends: "Market trends",
+          savedProperties: "Saved properties",
           reports: "Reports",
-          adminOrders: "Admin Orders",
+          adminOrders: "Admin orders",
           terms: "Terms",
           privacy: "Privacy",
-          tutorial: "Tutorial / Services",
+          tutorial: "Tutorial & services",
+          language: "Language",
+          langEn: "English",
+          langEs: "Spanish",
           demoAnalysis: "Demo · Financial 15 €",
           demoExpert: "Demo · Expert 50 €",
           demoError: "Could not create demo report",
@@ -213,6 +221,51 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator className="my-1" />
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t.language}
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <div
+              className="mx-2 flex gap-1 rounded-lg border border-white/15 bg-white/10 p-1 backdrop-blur-md"
+              role="group"
+              aria-label={t.language}
+            >
+              <button
+                type="button"
+                data-testid="locale-en"
+                onClick={() => setLocale("en")}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                  locale === "en"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-white/10 hover:text-foreground",
+                )}
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                data-testid="locale-es"
+                onClick={() => setLocale("es")}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                  locale === "es"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-white/10 hover:text-foreground",
+                )}
+              >
+                ES
+              </button>
+            </div>
+            <p className="mt-1.5 px-2 text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden">
+              {locale === "es" ? t.langEs : t.langEn}
+            </p>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

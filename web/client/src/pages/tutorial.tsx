@@ -1,12 +1,12 @@
 import { useHashLocation } from "wouter/use-hash-location";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, BookOpen } from "lucide-react";
-import { detectBrowserLocale } from "@/lib/locale";
+import { useUiLocale } from "@/lib/ui-locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function TutorialPage() {
   const [, navigate] = useHashLocation();
-  const locale = detectBrowserLocale();
+  const { locale } = useUiLocale();
   const es = locale === "es";
 
   const t = {
@@ -14,10 +14,10 @@ export default function TutorialPage() {
     intro: es
       ? "Resumen de lo que ofrecemos: desde localización gratuita en el mapa hasta informes de pago con análisis financiero y, en el paquete experto, Nota Simple estructurada y riesgo legal."
       : "What we offer: from free map location to paid reports with financial analysis, and in the expert package, structured Nota Simple and legal risk.",
-    freeTitle: es ? "Gratis — Reper en el mapa" : "Free — Map lookup",
+    freeTitle: es ? "Gratis — Consulta en el mapa" : "Free — Map lookup",
     freeItems: es
       ? [
-          "Reper de la propiedad en el mapa",
+          "Localización de la propiedad en el mapa",
           "Dirección y puntos cardinales",
           "Referencia catastral (número de catastro)",
         ]

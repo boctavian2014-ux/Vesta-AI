@@ -3,7 +3,7 @@ import { useRoute } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
-import { detectBrowserLocale } from "@/lib/locale";
+import { useUiLocale } from "@/lib/ui-locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ export default function ReportDetail() {
   const [pollEnabled, setPollEnabled] = useState(false);
   const [asyncReport, setAsyncReport] = useState<any>(null);
   const [elapsed, setElapsed] = useState(0);
-  const locale = detectBrowserLocale();
+  const { locale } = useUiLocale();
   const tr = (en: string, es: string) => (locale === "es" ? es : en);
 
   const { data: report, isLoading, refetch } = useQuery<Report>({

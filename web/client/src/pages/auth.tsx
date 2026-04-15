@@ -10,12 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertCircle } from "lucide-react";
 import { VestaBrandLogoAuth } from "@/components/vesta-brand-logo";
-import { detectBrowserLocale } from "@/lib/locale";
+import { useUiLocale } from "@/lib/ui-locale";
 
 export default function AuthPage() {
   const [, navigate] = useHashLocation();
   const { login, register } = useAuth();
-  const locale = detectBrowserLocale();
+  const { locale, setLocale } = useUiLocale();
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -59,6 +59,28 @@ export default function AuthPage() {
   return (
     <div className="relative z-10 min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md">
+        <div className="mb-2 flex justify-end">
+          <div
+            className="flex items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5"
+            role="group"
+            aria-label={locale === "es" ? "Idioma" : "Language"}
+          >
+            <button
+              type="button"
+              onClick={() => setLocale("en")}
+              className={`rounded px-2 py-1 text-xs font-medium ${locale === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocale("es")}
+              className={`rounded px-2 py-1 text-xs font-medium ${locale === "es" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              ES
+            </button>
+          </div>
+        </div>
         <VestaBrandLogoAuth />
 
         <Card className="glass-card-strong border-border shadow-lg">

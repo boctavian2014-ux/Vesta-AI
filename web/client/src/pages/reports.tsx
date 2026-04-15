@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Report } from "@shared/schema";
 import { getReportsStrings } from "@/lib/reports-i18n";
 import type { AppLocale } from "@/lib/locale";
-import { detectBrowserLocale } from "@/lib/locale";
+import { useUiLocale } from "@/lib/ui-locale";
 import {
   FileText,
   Clock,
@@ -247,7 +247,7 @@ const STATUS_ORDER = [
 ];
 
 export default function Reports() {
-  const locale = detectBrowserLocale();
+  const { locale } = useUiLocale();
   const s = getReportsStrings(locale);
 
   const { data: reports, isLoading } = useQuery<Report[]>({
