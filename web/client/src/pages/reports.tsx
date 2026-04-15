@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Report } from "@shared/schema";
-import { getReportsStrings } from "@/lib/reports-i18n";
+import { getReportsStrings, isReportDemoPreview } from "@/lib/reports-i18n";
 import type { AppLocale } from "@/lib/locale";
 import { useUiLocale } from "@/lib/ui-locale";
 import {
@@ -122,7 +122,7 @@ function ReportTypeLabel({
   };
   return (
     <Badge variant="outline" className="text-xs">
-      {labels[type] ?? type}
+      {labels[type] ?? s.typeGenericPropertyReport}
     </Badge>
   );
 }
@@ -184,6 +184,11 @@ function ReportCard({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <ReportTypeLabel type={report.type} s={s} />
+                {isReportDemoPreview(report) ? (
+                  <Badge variant="secondary" className="text-[10px] font-normal text-muted-foreground">
+                    {s.reportDemoBadge}
+                  </Badge>
+                ) : null}
                 <StatusBadge status={report.status} s={s} />
               </div>
               {(report as any).address && (

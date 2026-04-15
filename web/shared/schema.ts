@@ -2,6 +2,11 @@ import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+/** ISO string for `timestamp(..., { mode: "string" })` when inserts omit the column (backup if DB default is missing). */
+function nowIsoString(): string {
+  return new Date().toISOString();
+}
+
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -9,7 +14,8 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
     .notNull()
-    .defaultNow(),
+    .defaultNow()
+    .$defaultFn(nowIsoString),
 });
 
 export const savedProperties = pgTable("saved_properties", {
@@ -27,7 +33,10 @@ export const savedProperties = pgTable("saved_properties", {
   netYield: text("net_yield"),
   roi: text("roi"),
   opportunityScore: text("opportunity_score"),
-  savedAt: timestamp("saved_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  savedAt: timestamp("saved_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow()
+    .$defaultFn(nowIsoString),
 });
 
 export const reports = pgTable("reports", {
@@ -55,7 +64,10 @@ export const reports = pgTable("reports", {
   completedAt: text("completed_at"),
   mapLat: text("map_lat"),
   mapLon: text("map_lon"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow()
+    .$defaultFn(nowIsoString),
 });
 
 export const reportStatusEvents = pgTable("report_status_events", {
@@ -69,7 +81,10 @@ export const reportStatusEvents = pgTable("report_status_events", {
   actorEmail: text("actor_email"),
   actorName: text("actor_name"),
   note: text("note"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow()
+    .$defaultFn(nowIsoString),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({

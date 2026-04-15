@@ -139,15 +139,24 @@ async function main() {
       await client.query("BEGIN");
 
       for (const row of users) {
+        const username = str(row.username);
+        const password = str(row.password);
+        const email = str(row.email);
+        if (username == null || password == null || email == null) {
+          console.warn(
+            `[import] Skipping users row id=${row.id}: missing or empty username, password, or email`
+          );
+          continue;
+        }
         await client.query(
           `insert into users (id, username, password, email, created_at)
            values ($1,$2,$3,$4,$5::timestamptz)
            on conflict (id) do nothing`,
           [
             Number(row.id),
-            String(row.username),
-            String(row.password),
-            String(row.email),
+            username,
+            password,
+            email,
             coerceTimestamptz(row.created_at),
           ]
         );
@@ -187,7 +196,7 @@ async function main() {
             provider_name, provider_order_id, provider_status, provider_raw_json,
             requested_at, completed_at, map_lat, map_lon, created_at
           ) values (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::timestamptz
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::timestamptz
           ) on conflict (id) do nothing`,
           [
             Number(row.id),

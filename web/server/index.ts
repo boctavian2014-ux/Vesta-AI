@@ -47,11 +47,14 @@ function exitAfterFatal(kind: string, err: unknown): void {
   if (fatalExitStarted) return;
   fatalExitStarted = true;
   const delay = fatalExitDelayMs();
+  const doExit = () => process.exit(1);
   if (delay <= 0) {
-    process.exit(1);
+    // Defer one tick so stderr/console buffers can flush before hard exit (Railway logs).
+    setImmediate(doExit);
     return;
   }
-  setTimeout(() => process.exit(1), delay).unref?.();
+  // Do not `.unref()` — the timer must run; unref can let the process exit before `process.exit(1)`.
+  setTimeout(doExit, delay);
 }
 
 process.on("uncaughtException", (err) => {
@@ -68,10 +71,12 @@ if (isProduction) {
 
 app.use(assignRequestId);
 
-// HSTS, X-Content-Type-Options, etc. CSP: optional report-only (see VESTA_CSP_REPORT_ONLY in README).
+// HSTS, X-Content-Type-Options, etc. CSP: only in production when VESTA_CSP_REPORT_ONLY is set (see README).
 const helmetCsp = getHelmetContentSecurityPolicy();
 if (helmetCsp !== false) {
-  console.log("[vesta-web] Content-Security-Policy: report-only (see VESTA_CSP_REPORT_ONLY).");
+  console.log(
+    "[vesta-web] Helmet: Content-Security-Policy-Report-Only header enabled (production + VESTA_CSP_REPORT_ONLY).",
+  );
 }
 app.use(
   helmet({

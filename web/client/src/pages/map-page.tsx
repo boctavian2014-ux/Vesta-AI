@@ -530,10 +530,12 @@ function PaymentModal({
         missingStripePk: "Falta VITE_STRIPE_PUBLISHABLE_KEY en el build. Añade la clave pública de Stripe.",
         securePay: "Pagar con tarjeta",
         backToPacks: "Volver a paquetes",
-        previewDemo: "Vista previa sin pago",
-        previewDemoHint: "Paga con tarjeta para generar el informe real, o usa la vista previa solo para probar la UI.",
-        loginRequiredPayment: "Inicia sesion para pagar y guardar el informe en Informes.",
-        creatingDemo: "Creando demo del informe...",
+        previewDemo: "Probar sin pagar",
+        previewDemoHint:
+          "Paga con tarjeta para un informe real de este inmueble, o prueba sin pagar para generar un demo y verlo en Informes (sin cobro).",
+        loginRequiredPayment: "Inicia sesión para pagar y guardar el informe en Informes.",
+        creatingDemo: "Creando informe de demostración...",
+        previewDemoFailed: "No se pudo crear el demo. Inténtalo de nuevo.",
       }
     : {
         missingCoords: "Missing coordinates",
@@ -589,10 +591,12 @@ function PaymentModal({
         missingStripePk: "Missing VITE_STRIPE_PUBLISHABLE_KEY in the build. Add your Stripe publishable key.",
         securePay: "Pay securely",
         backToPacks: "Back to packages",
-        previewDemo: "Preview without payment",
-        previewDemoHint: "Pay by card for a real report, or use preview-only to test the UI.",
+        previewDemo: "Try without paying",
+        previewDemoHint:
+          "Pay by card for a real report for this property, or try without paying to generate a demo and view it in Reports (no charge).",
         loginRequiredPayment: "Sign in to pay and save the report under Reports.",
-        creatingDemo: "Creating report preview...",
+        creatingDemo: "Creating demo report...",
+        previewDemoFailed: "Could not create the demo. Please try again.",
       };
 
   const { toast } = useToast();
@@ -737,7 +741,7 @@ function PaymentModal({
       setStep("done");
       onSuccess(report.id);
     } catch (err: any) {
-      toast({ title: tr.payError, description: err?.message ?? "Demo failed", variant: "destructive" });
+      toast({ title: tr.payError, description: err?.message ?? tr.previewDemoFailed, variant: "destructive" });
       setStep("confirm");
     }
   };

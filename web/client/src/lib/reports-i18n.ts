@@ -10,6 +10,8 @@ const STRINGS: Record<
     emptyTitle: string;
     emptyDescription: string;
     analyzeProperty: string;
+    /** Shown when report was created via “try without paying” / map preview (no Stripe session). */
+    reportDemoBadge: string;
     statusPending: string;
     statusProcessing: string;
     statusPaid: string;
@@ -22,6 +24,8 @@ const STRINGS: Record<
     typeAnalysisPack: string;
     typeNotaSimple: string;
     typeExpertReport: string;
+    /** When `report.type` is unknown or legacy. */
+    typeGenericPropertyReport: string;
     countProcessing: string;
     countPending: string;
     countPaid: string;
@@ -42,27 +46,29 @@ const STRINGS: Record<
     emptyDescription:
       "Order your first property report by analyzing a property on the map.",
     analyzeProperty: "Analyze a property",
+    reportDemoBadge: "Preview · no charge",
     statusPending: "Pending",
     statusProcessing: "Processing",
     statusPaid: "Paid",
     statusSubmittedManual: "Request sent",
-    statusWaitingPartner: "Awaiting Nota Simple",
+    statusWaitingPartner: "Awaiting land registry summary",
     statusPdfReceived: "PDF received",
     statusCompleted: "Completed",
     statusFailed: "Failed",
     statusFailedRefundable: "Failed (refundable)",
-    typeAnalysisPack: "Analysis pack (15€)",
-    typeNotaSimple: "Nota Simple",
-    typeExpertReport: "Expert report + Nota Simple (50€)",
+    typeAnalysisPack: "Analysis pack (15 €)",
+    typeNotaSimple: "Land registry summary",
+    typeExpertReport: "Expert report + land registry summary (50 €)",
+    typeGenericPropertyReport: "Property report",
     countProcessing: "processing",
     countPending: "pending",
     countPaid: "paid",
     countSubmittedManual: "request sent",
-    countWaitingPartner: "awaiting Nota Simple",
+    countWaitingPartner: "awaiting land registry summary",
     countPdfReceived: "pdf received",
     countCompleted: "completed",
     countFailed: "failed",
-    countFailedRefundable: "failed refundable",
+    countFailedRefundable: "failed (refundable)",
   },
   es: {
     reportsTitle: "Informes",
@@ -73,6 +79,7 @@ const STRINGS: Record<
     emptyDescription:
       "Pide tu primer informe analizando una propiedad en el mapa.",
     analyzeProperty: "Analizar una propiedad",
+    reportDemoBadge: "Vista previa · sin pago",
     statusPending: "Pendiente",
     statusProcessing: "En proceso",
     statusPaid: "Pagado",
@@ -82,9 +89,10 @@ const STRINGS: Record<
     statusCompleted: "Completado",
     statusFailed: "Fallido",
     statusFailedRefundable: "Fallido (reembolsable)",
-    typeAnalysisPack: "Paquete analisis (15€)",
+    typeAnalysisPack: "Paquete de análisis (15 €)",
     typeNotaSimple: "Nota Simple",
-    typeExpertReport: "Informe experto + Nota Simple (50€)",
+    typeExpertReport: "Informe experto con Nota Simple (50 €)",
+    typeGenericPropertyReport: "Informe de propiedad",
     countProcessing: "en proceso",
     countPending: "pendientes",
     countPaid: "pagados",
@@ -93,11 +101,17 @@ const STRINGS: Record<
     countPdfReceived: "pdf recibido",
     countCompleted: "completados",
     countFailed: "fallidos",
-    countFailedRefundable: "fallido reembolsable",
+    countFailedRefundable: "fallidos (reembolsables)",
   },
 };
 
 export function getReportsStrings(locale?: AppLocale) {
   const loc = locale ?? detectBrowserLocale();
   return STRINGS[loc];
+}
+
+/** Map / sidebar “try without paying” creates rows with this `stripe_session_id` prefix. */
+export function isReportDemoPreview(report: { stripeSessionId?: string | null }): boolean {
+  const sid = report.stripeSessionId;
+  return typeof sid === "string" && sid.startsWith("demo_preview_");
 }

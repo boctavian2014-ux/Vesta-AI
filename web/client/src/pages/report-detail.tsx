@@ -4,6 +4,7 @@ import { useHashLocation } from "wouter/use-hash-location";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { useUiLocale } from "@/lib/ui-locale";
+import { getReportsStrings, isReportDemoPreview } from "@/lib/reports-i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,6 +173,7 @@ export default function ReportDetail() {
   const [elapsed, setElapsed] = useState(0);
   const { locale } = useUiLocale();
   const tr = (en: string, es: string) => (locale === "es" ? es : en);
+  const reportListStrings = getReportsStrings(locale);
 
   const { data: report, isLoading, refetch } = useQuery<Report>({
     queryKey: ["/api/reports", reportId],
@@ -239,10 +241,10 @@ export default function ReportDetail() {
   const isExpertPackage = reportType === "expert_report";
   const isAnalysisPackage = reportType === "analysis_pack";
   const reportTypeLabel = isExpertPackage
-    ? tr("Expert report + Nota Simple", "Informe experto + Nota Simple")
+    ? reportListStrings.typeExpertReport
     : isAnalysisPackage
-      ? tr("Analysis pack (15€)", "Paquete de analisis (15€)")
-      : tr("Property report", "Informe de propiedad");
+      ? reportListStrings.typeAnalysisPack
+      : reportListStrings.typeGenericPropertyReport;
   /** Hide order-flow + deliverables rubrics for paid map packages (15€ / 50€). */
   const hidePostPaymentAndDeliverables = isAnalysisPackage || isExpertPackage;
   const reportStatus = String(report?.status || "").toLowerCase();
@@ -258,10 +260,19 @@ export default function ReportDetail() {
     : isExpertPackage
       ? [
           { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
-          { label: tr("Nota Simple request sent to collaborators", "Solicitud de Nota Simple enviada a colaboradores"), done: !!report },
-          { label: tr("PDF received + legal OCR extracted", "PDF recibido + OCR legal extraido"), done: !!notaSimple },
           {
-            label: tr("Expert AI analysis in progress (risk, due diligence)", "Analisis IA experto en curso (riesgo, due diligence)"),
+            label: tr(
+              "Land registry summary request sent to collaborators",
+              "Solicitud de Nota Simple enviada a colaboradores",
+            ),
+            done: !!report,
+          },
+          { label: tr("PDF received + legal OCR extracted", "PDF recibido + OCR legal extraído"), done: !!notaSimple },
+          {
+            label: tr(
+              "Expert AI analysis in progress (risk, due diligence)",
+              "Análisis IA experto en curso (riesgo, diligencia debida)",
+            ),
             done: !!fullReport || expertNotaOnlyComplete,
           },
           {
@@ -271,7 +282,10 @@ export default function ReportDetail() {
         ]
       : [
           { label: tr("Payment confirmed", "Pago confirmado"), done: !!report },
-          { label: tr("Analysis package registered", "Paquete de analisis registrado"), done: !!report && ["pending", "processing", "completed", "failed"].includes(reportStatus) },
+          {
+            label: tr("Analysis package registered", "Paquete de análisis registrado"),
+            done: !!report && ["pending", "processing", "completed", "failed"].includes(reportStatus),
+          },
           { label: tr("Report available in Reports", "Informe disponible en Informes"), done: reportStatus === "completed" || !!fullReport },
         ];
   const firstPendingTimelineStep = timelineBase.findIndex((step) => !step.done);
@@ -286,9 +300,18 @@ export default function ReportDetail() {
     ? []
     : isExpertPackage
       ? [
-          { label: tr("Official Nota Simple (owner data, charges, legal risk)", "Nota Simple oficial (titular, cargas, riesgo legal)"), ready: !!notaSimple },
           {
-            label: tr("Expert AI report: executive summary, investment risk, due diligence", "Informe IA experto: resumen ejecutivo, riesgo de inversion, due diligence"),
+            label: tr(
+              "Official land registry summary (owner, charges, legal risk)",
+              "Nota Simple oficial (titular, cargas, riesgo legal)",
+            ),
+            ready: !!notaSimple,
+          },
+          {
+            label: tr(
+              "Expert AI report: executive summary, investment risk, due diligence",
+              "Informe IA experto: resumen ejecutivo, riesgo de inversión, diligencia debida",
+            ),
             ready: !!fullReport,
             waived: expertNotaOnlyComplete,
           },
@@ -299,9 +322,21 @@ export default function ReportDetail() {
           },
         ]
       : [
-          { label: tr("Property financial analysis", "Analisis financiero de la propiedad"), ready: !!report },
-          { label: tr("Opportunity score, yield, ROI and valuation estimate", "Score de oportunidad, rentabilidad, ROI y valoracion estimada"), ready: !!fullReport || !!financial },
-          { label: tr("Available in Reports right after payment confirmation", "Disponible en Informes justo tras la confirmacion de pago"), ready: reportStatus === "completed" || !!fullReport },
+          { label: tr("Property financial analysis", "Análisis financiero de la propiedad"), ready: !!report },
+          {
+            label: tr(
+              "Opportunity score, yield, ROI and valuation estimate",
+              "Puntuación de oportunidad, rentabilidad, ROI y valoración estimada",
+            ),
+            ready: !!fullReport || !!financial,
+          },
+          {
+            label: tr(
+              "Available in Reports right after payment confirmation",
+              "Disponible en Informes justo tras la confirmación de pago",
+            ),
+            ready: reportStatus === "completed" || !!fullReport,
+          },
         ];
   const reportShareUrl =
     reportId && typeof window !== "undefined"
@@ -356,6 +391,11 @@ export default function ReportDetail() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="report-heading text-2xl md:text-[2rem] text-foreground">{reportTypeLabel}</h1>
             {report && <StatusPill status={report.status} locale={locale} />}
+            {report && isReportDemoPreview(report) ? (
+              <Badge variant="secondary" className="text-[11px] font-normal text-muted-foreground">
+                {reportListStrings.reportDemoBadge}
+              </Badge>
+            ) : null}
             {report && (
               <Badge variant="outline" className="text-[11px]">
                 {reportTypeLabel}
@@ -400,13 +440,18 @@ export default function ReportDetail() {
               <h3 className="text-base font-semibold text-foreground">
                 {isExpertPackage
                   ? tr("Generating expert report", "Generando informe experto")
-                  : tr("Preparing analysis package", "Preparando paquete de analisis")}
+                  : tr("Preparing analysis package", "Preparando paquete de análisis")}
               </h3>
               <div className="text-xs text-muted-foreground mt-2 space-y-1">
                 {isExpertPackage ? (
                   <>
-                    <p>{tr("Nota Simple request · Registro validation", "Solicitud Nota Simple · Validacion Registro")}</p>
-                    <p>{tr("AI legal analysis · Financial calculation", "Analisis legal IA · Calculo financiero")}</p>
+                    <p>
+                      {tr(
+                        "Land registry summary request · Land Registry validation",
+                        "Solicitud de Nota Simple · validación registral",
+                      )}
+                    </p>
+                    <p>{tr("AI legal analysis · Financial calculation", "Análisis legal IA · cálculo financiero")}</p>
                   </>
                 ) : (
                   <>
@@ -610,7 +655,10 @@ export default function ReportDetail() {
 
       {/* ── Nota Simple structured data ─────────────────────────────────────── */}
       {!isLoading && notaSimple && (
-        <Section icon={<Scale className="h-4 w-4" />} title={tr("Data extracted from Nota Simple", "Datos extraidos de Nota Simple")}>
+        <Section
+          icon={<Scale className="h-4 w-4" />}
+          title={tr("Data extracted from land registry summary", "Datos extraídos de la Nota Simple")}
+        >
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-lg glass-panel p-3">
@@ -651,7 +699,7 @@ export default function ReportDetail() {
                 value={
                   typeof notaSimple?.structured?.debts?.has_active_debts === "boolean"
                     ? (notaSimple.structured.debts.has_active_debts
-                        ? tr("Yes", "Si")
+                        ? tr("Yes", "Sí")
                         : tr("No", "No"))
                     : null
                 }
@@ -725,7 +773,10 @@ export default function ReportDetail() {
 
           {/* Legal / Nota Simple */}
           {fullReport.legal && (
-            <Section icon={<Scale className="h-4 w-4" />} title={tr("Legal situation - Nota Simple", "Situacion legal - Nota Simple")}>
+            <Section
+              icon={<Scale className="h-4 w-4" />}
+              title={tr("Legal situation — land registry summary", "Situación legal — Nota Simple")}
+            >
               <div className="space-y-4">
                 {fullReport.legal.summary && (
                   <p className="report-secondary report-aux-mobile">{fullReport.legal.summary}</p>

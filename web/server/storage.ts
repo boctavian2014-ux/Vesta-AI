@@ -73,7 +73,7 @@ export class DatabaseStorage implements IStorage {
 
   async getSavedProperties(userId: number): Promise<SavedProperty[]> {
     const db = getDb();
-    return db.select().from(savedProperties).where(eq(savedProperties.userId, userId));
+    return await db.select().from(savedProperties).where(eq(savedProperties.userId, userId));
   }
 
   async saveProperty(property: InsertSavedProperty): Promise<SavedProperty> {
@@ -91,7 +91,7 @@ export class DatabaseStorage implements IStorage {
 
   async getReports(userId: number): Promise<Report[]> {
     const db = getDb();
-    return db.select().from(reports).where(eq(reports.userId, userId));
+    return await db.select().from(reports).where(eq(reports.userId, userId));
   }
 
   async getReport(id: number, userId: number): Promise<Report | undefined> {
@@ -122,7 +122,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllReports(): Promise<Report[]> {
     const db = getDb();
-    return db.select().from(reports);
+    return await db.select().from(reports);
   }
 
   async createReport(report: InsertReport): Promise<Report> {
