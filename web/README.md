@@ -62,11 +62,18 @@ Edit `.env` and fill in your values:
 | `OPENAI_API_KEY` | **Required for property search chat** (`#/property-search`) — OpenAI API key; without it, `POST /api/spain-property-search/chat` returns **503**. The handler runs a short **agent loop** (tool calls) and returns JSON `{ reply, listings? }`. |
 | `OPENAI_MODEL` | Optional — defaults to `gpt-4o-mini` (e.g. `gpt-4o` if you prefer). |
 | `TAVILY_API_KEY` | **Recommended** — [Tavily](https://tavily.com) API key for `search_spain_property_links` (portal URLs by city/barrio, optional `asset_focus` + `recency` / `time_range`). Without it, pasted URLs and geocoding still work; the UI shows a configuration notice. |
-| `GET /api/spain-property-search/status` | (Auth) Returns `{ openaiConfigured, searchConfigured }` — booleans only; never exposes secrets. |
 | `DATABASE_URL` | **Required** — PostgreSQL connection string (e.g. Railway **Reference** from the Postgres service, or local `postgresql://user:pass@127.0.0.1:5432/vesta_web`). On startup the app runs SQL migrations from `web/migrations/`. Use a **separate** database from the Python API unless you know what you are doing. |
 | `PG_POOL_MAX` | (Optional) Max connections in the web `pg` pool (default **10**). |
 | `SHUTDOWN_TIMEOUT_MS` | (Optional) Max wait for in-flight HTTP requests to finish on **SIGTERM** / **SIGINT** before closing the DB pool (default **10000**). Relevant on Railway redeploys. |
 | `SESSION_SECRET` | **Required in production** — strong random secret for Express session signing. The server **exits on startup** if `NODE_ENV=production` and this is missing or still set to the dev default. In development you may omit it (a built-in default is used). Sessions are stored in PostgreSQL via **connect-pg-simple** (table `session`), so logins survive deploys and work across multiple web replicas. |
+| `VESTA_RL_AUTH_LOGIN_MAX` | (Optional) Max `POST /api/auth/login` attempts per IP per **15 minutes** in production (default **40**); development default **300**. |
+| `VESTA_RL_AUTH_REGISTER_MAX` | (Optional) Max `POST /api/auth/register` per IP per **hour** in production (default **15**); development default **100**. |
+| `VESTA_RL_PYTHON_PROPERTY_MAX` | (Optional) Max combined calls to `POST /api/property/identify`, `POST /api/property/financial-analysis`, and `GET /api/market-trend` per user/IP per **15 minutes** — production default **100**, development **600**. |
+| `VESTA_RL_SPAIN_SEARCH_CHAT_MAX` | (Optional) Max `POST /api/spain-property-search/chat` per user/IP per **hour** — production default **48**, development **400**. |
+| `VESTA_RL_ZONE_ANALYSIS_MAX` | (Optional) Max `POST /api/zone/analysis` per user/IP per **15 minutes** — production default **90**, development **500**. |
+| `VESTA_RL_REPORT_GENERATE_MAX` | (Optional) Max `POST /api/report/generate` per user/IP per **hour** — production default **32**, development **200**. |
+| `VESTA_RL_PAYMENT_CREATE_MAX` | (Optional) Max `POST /api/payment/create` per user/IP per **15 minutes** — production default **45**, development **250**. |
+| `VESTA_RL_CHECKOUT_CREATE_MAX` | (Optional) Max `POST /api/checkout/create` per user/IP per **15 minutes** — production default **45**, development **250**. |
 | `PORT` | Server port (default: 5000) |
 
 ### 4. PostgreSQL (local)

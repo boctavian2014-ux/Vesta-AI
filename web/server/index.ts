@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { closeDatabase, initDatabase } from "./db";
+import { envRateLimitMax } from "./rateLimitEnv";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -57,7 +58,7 @@ app.use(express.urlencoded({ extended: false }));
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isProduction ? 40 : 300,
+  max: envRateLimitMax("VESTA_RL_AUTH_LOGIN_MAX", 40, 300),
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many login attempts. Please try again shortly." },
@@ -65,7 +66,7 @@ const loginLimiter = rateLimit({
 
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: isProduction ? 15 : 100,
+  max: envRateLimitMax("VESTA_RL_AUTH_REGISTER_MAX", 15, 100),
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many registration attempts. Please try again later." },

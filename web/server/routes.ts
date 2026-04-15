@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import session from "express-session";
@@ -27,6 +28,7 @@ import {
 } from "./spainPropertySearchChat";
 import { hashPasswordPlain, verifyPasswordWithUpgrade } from "./passwordAuth";
 import { getPool } from "./db";
+import { envRateLimitMax } from "./rateLimitEnv";
 
 const PgSession = connectPgSimple(session);
 const DEFAULT_SESSION_SECRET = "vesta-ai-secret-key-2026";
@@ -54,6 +56,75 @@ function resolvePythonApiBase(): string {
 const PYTHON_API_BASE = resolvePythonApiBase();
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+/** Rate-limit key: logged-in users by id (fair behind NAT), else by IP. */
+function rateLimitKeyUserOrIp(req: Request): string {
+  if (req.isAuthenticated?.()) {
+    const u = req.user as { id?: number } | undefined;
+    if (u != null && typeof u.id === "number") return `user:${u.id}`;
+  }
+  return `ip:${req.ip || "unknown"}`;
+}
+
+/** Python-backed property endpoints (cadastral + financial) — per user/IP. */
+const pythonPropertyProxyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: envRateLimitMax("VESTA_RL_PYTHON_PROPERTY_MAX", 100, 600),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `py-property:${rateLimitKeyUserOrIp(req)}`,
+  message: { message: "Too many property API requests. Please try again shortly." },
+});
+
+/** Spain AI search (OpenAI + Tavily) — hourly cap per user/IP. */
+const spainPropertySearchChatLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: envRateLimitMax("VESTA_RL_SPAIN_SEARCH_CHAT_MAX", 48, 400),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `spain-chat:${rateLimitKeyUserOrIp(req)}`,
+  message: { message: "Too many property search requests. Please try again later." },
+});
+
+/** Zone / OSM (Overpass) — moderate cap to protect upstream & server CPU. */
+const zoneAnalysisLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: envRateLimitMax("VESTA_RL_ZONE_ANALYSIS_MAX", 90, 500),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `zone-analysis:${rateLimitKeyUserOrIp(req)}`,
+  message: { message: "Too many zone analysis requests. Please try again shortly." },
+});
+
+/** Async report job start (Python) — hourly cap per user/IP. */
+const reportGenerateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: envRateLimitMax("VESTA_RL_REPORT_GENERATE_MAX", 32, 200),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `report-generate:${rateLimitKeyUserOrIp(req)}`,
+  message: { message: "Too many report generation requests. Please try again later." },
+});
+
+/** Stripe PaymentIntent creation — per user/IP. */
+const paymentCreateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: envRateLimitMax("VESTA_RL_PAYMENT_CREATE_MAX", 45, 250),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `payment-create:${rateLimitKeyUserOrIp(req)}`,
+  message: { message: "Too many payment requests. Please try again shortly." },
+});
+
+/** Stripe Checkout session creation — separate bucket from PaymentIntent. */
+const checkoutCreateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: envRateLimitMax("VESTA_RL_CHECKOUT_CREATE_MAX", 45, 250),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `checkout-create:${rateLimitKeyUserOrIp(req)}`,
+  message: { message: "Too many checkout requests. Please try again shortly." },
+});
 
 function defaultSpaOrigin(): string {
   return (process.env.VESTA_WEB_BASE_URL || "https://vesta-asset.com").trim().replace(/\/$/, "");
@@ -1021,7 +1092,8 @@ export async function registerRoutes(
   });
 
   // Proxy to Railway backend — Property Identification
-  app.post("/api/property/identify", async (req, res) => {
+  app.post("/api/property/identify", pythonPropertyProxyLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const base = requirePythonApiBase(res);
     if (!base) return;
     try {
@@ -1060,7 +1132,8 @@ export async function registerRoutes(
   });
 
   // Proxy — Financial Analysis (adapts identify-shaped bodies → property_data / market_data)
-  app.post("/api/property/financial-analysis", async (req, res) => {
+  app.post("/api/property/financial-analysis", pythonPropertyProxyLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const base = requirePythonApiBase(res);
     if (!base) return;
     try {
@@ -1087,13 +1160,12 @@ export async function registerRoutes(
   });
 
   // Proxy — Market Trends
-  app.get("/api/market-trend", async (_req, res) => {
+  app.get("/api/market-trend", pythonPropertyProxyLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const base = requirePythonApiBase(res);
     if (!base) return;
     try {
-      const response = await fetch(
-        `${base}/market-trend`
-      );
+      const response = await fetch(`${base}/market-trend`);
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
@@ -1102,7 +1174,7 @@ export async function registerRoutes(
   });
 
   // Zone analysis: POI counts from OpenStreetMap (Overpass) when available; heuristic fallback otherwise.
-  app.post("/api/zone/analysis", async (req, res) => {
+  app.post("/api/zone/analysis", zoneAnalysisLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const lat = Number(req.body?.lat);
     const lon = Number(req.body?.lon);
@@ -1130,7 +1202,7 @@ export async function registerRoutes(
     handleSpainPropertySearchStatus(req, res);
   });
 
-  app.post("/api/spain-property-search/chat", (req, res) => {
+  app.post("/api/spain-property-search/chat", spainPropertySearchChatLimiter, (req, res) => {
     req.setTimeout(120_000);
     res.setTimeout(120_000);
     void handleSpainPropertySearchChat(req, res);
@@ -1159,7 +1231,7 @@ export async function registerRoutes(
   });
 
   // Proxy — Stripe PaymentIntent (creeaza-plata)
-  app.post("/api/payment/create", async (req, res) => {
+  app.post("/api/payment/create", paymentCreateLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const base = requirePythonApiBase(res);
     if (!base) return;
@@ -1194,7 +1266,7 @@ export async function registerRoutes(
   });
 
   // Proxy — Stripe checkout session
-  app.post("/api/checkout/create", async (req, res) => {
+  app.post("/api/checkout/create", checkoutCreateLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const base = requirePythonApiBase(res);
     if (!base) return;
@@ -1224,7 +1296,7 @@ export async function registerRoutes(
   });
 
   // Proxy — Async report generation
-  app.post("/api/report/generate", async (req, res) => {
+  app.post("/api/report/generate", reportGenerateLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const base = requirePythonApiBase(res);
     if (!base) return;
