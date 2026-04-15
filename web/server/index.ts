@@ -32,11 +32,25 @@ function assignRequestId(req: Request, res: Response, next: NextFunction): void 
 }
 
 let fatalExitStarted = false;
+
+/** Milliseconds before process.exit after a fatal handler (log flush / Railway log drain). */
+function fatalExitDelayMs(): number {
+  const raw = Number.parseInt((process.env.VESTA_FATAL_EXIT_DELAY_MS || "").trim(), 10);
+  if (Number.isFinite(raw) && raw >= 0 && raw <= 30_000) return raw;
+  return 400;
+}
+
 function exitAfterFatal(kind: string, err: unknown): void {
-  console.error(`[vesta-web] FATAL ${kind}:`, err);
+  const ts = new Date().toISOString();
+  console.error(`[vesta-web] FATAL ${ts} ${kind}:`, err);
   if (fatalExitStarted) return;
   fatalExitStarted = true;
-  process.exit(1);
+  const delay = fatalExitDelayMs();
+  if (delay <= 0) {
+    process.exit(1);
+    return;
+  }
+  setTimeout(() => process.exit(1), delay).unref?.();
 }
 
 process.on("uncaughtException", (err) => {
