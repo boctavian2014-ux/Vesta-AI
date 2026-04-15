@@ -74,6 +74,7 @@ Edit `.env` and fill in your values:
 | `VESTA_RL_REPORT_GENERATE_MAX` | (Optional) Max `POST /api/report/generate` per user/IP per **hour** — production default **32**, development **200**. |
 | `VESTA_RL_PAYMENT_CREATE_MAX` | (Optional) Max `POST /api/payment/create` per user/IP per **15 minutes** — production default **45**, development **250**. |
 | `VESTA_RL_CHECKOUT_CREATE_MAX` | (Optional) Max `POST /api/checkout/create` per user/IP per **15 minutes** — production default **45**, development **250**. |
+| `VESTA_LEGACY_RO_CLEANUP` | (Optional) In **production**, Romanian→English demo string cleanup for stored reports runs on boot only if set to `1`, `true`, or `yes`. In development it always runs. Avoids scanning every report on each cold start in prod. |
 | `PORT` | Server port (default: 5000) |
 
 ### 4. PostgreSQL (local)

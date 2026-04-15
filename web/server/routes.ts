@@ -371,12 +371,23 @@ async function addStatusEvent(
   });
 }
 
+function shouldRunLegacyRoCleanupOnBoot(): boolean {
+  if (!IS_PRODUCTION) return true;
+  return ["1", "true", "yes"].includes((process.env.VESTA_LEGACY_RO_CLEANUP || "").trim().toLowerCase());
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // One-time idempotent cleanup for old report payloads that still contain RO demo content.
-  await cleanupLegacyRomanianReports();
+  // Idempotent RO→EN string cleanup in report JSON (scans all reports — skip in prod by default).
+  if (shouldRunLegacyRoCleanupOnBoot()) {
+    await cleanupLegacyRomanianReports();
+  } else {
+    console.log(
+      "[vesta-web] Legacy RO report cleanup skipped (set VESTA_LEGACY_RO_CLEANUP=1 for a one-time run on deploy).",
+    );
+  }
 
   app.get("/api/health", async (_req, res) => {
     const base = PYTHON_API_BASE;
