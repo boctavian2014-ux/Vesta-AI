@@ -1390,6 +1390,14 @@ export default function MapPage() {
   const beginPropertySelectionRef = useRef(beginPropertySelection);
   beginPropertySelectionRef.current = beginPropertySelection;
 
+  const confirmStreetViewPosition = useCallback(
+    (lat: number, lng: number) => {
+      beginPropertySelection(lat, lng);
+      setStreetViewOpen(false);
+    },
+    [beginPropertySelection],
+  );
+
   const selectedCoordsRef = useRef(selectedCoords);
   selectedCoordsRef.current = selectedCoords;
 
@@ -2072,6 +2080,7 @@ export default function MapPage() {
         lng={streetViewLng}
         locale={uiLocale}
         onClose={() => setStreetViewOpen(false)}
+        onConfirmPosition={confirmStreetViewPosition}
       />
 
       {/* Payment Modal */}

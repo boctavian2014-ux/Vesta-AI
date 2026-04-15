@@ -10,6 +10,8 @@ type StreetViewModalProps = {
   metadata?: StreetViewMetadataResult | null;
   locale: "en" | "es";
   onClose: () => void;
+  /** When set, shows a control to re-run property analysis using the panorama camera position (street-level; may differ from a roof click). */
+  onConfirmPosition?: (lat: number, lng: number) => void;
 };
 
 type StreetViewUiState =
@@ -27,6 +29,7 @@ export function StreetViewModal({
   metadata,
   locale,
   onClose,
+  onConfirmPosition,
 }: StreetViewModalProps) {
   const t = locale === "es"
     ? {
@@ -46,6 +49,8 @@ export function StreetViewModal({
         noLocationView: "No hay Street View para esta ubicacion.",
         jsUnavailable: "Google Maps JS no esta disponible.",
         jsLoadError: "Error al cargar Google Maps JS.",
+        confirmPosition: "Analizar desde esta posición",
+        positionUnavailable: "No hay posición del panorama disponible.",
       }
     : {
         defaultTitle: "Street-level visual inspection",
@@ -64,6 +69,8 @@ export function StreetViewModal({
         noLocationView: "No Street View available for this location.",
         jsUnavailable: "Google Maps JS is unavailable.",
         jsLoadError: "Error loading Google Maps JS.",
+        confirmPosition: "Analyze from this position",
+        positionUnavailable: "Panorama position is not available.",
       };
 
   const apiKey = getGoogleMapsBrowserKey();
@@ -81,6 +88,7 @@ export function StreetViewModal({
     pitch: 10,
     zoom: 1,
   });
+  const [positionError, setPositionError] = useState<string | null>(null);
 
   const targetPosition = useMemo(() => {
     if (metadata?.location) {
@@ -128,6 +136,30 @@ export function StreetViewModal({
     pano.setZoom?.(initialPovRef.current.zoom);
     syncPovState();
   }, [syncPovState]);
+
+  const confirmPanoramaPosition = useCallback(() => {
+    setPositionError(null);
+    if (!onConfirmPosition) return;
+    const pano = panoramaRef.current;
+    const pos = pano?.getPosition?.();
+    if (!pos) {
+      setPositionError(t.positionUnavailable);
+      return;
+    }
+    const latRaw = typeof pos.lat === "function" ? pos.lat() : pos.lat;
+    const lngRaw = typeof pos.lng === "function" ? pos.lng() : pos.lng;
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setPositionError(t.positionUnavailable);
+      return;
+    }
+    onConfirmPosition(lat, lng);
+  }, [onConfirmPosition, t.positionUnavailable]);
+
+  useEffect(() => {
+    if (open) setPositionError(null);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -277,12 +309,25 @@ export function StreetViewModal({
           >
             {t.reset}
           </button>
+          {onConfirmPosition ? (
+            <button
+              type="button"
+              onClick={confirmPanoramaPosition}
+              disabled={uiState !== "ready"}
+              className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t.confirmPosition}
+            </button>
+          ) : null}
           {uiState === "ready" && (
             <span className="ml-auto text-xs text-muted-foreground">
               H {Math.round(povState.heading)} | P {Math.round(povState.pitch)} | Z {povState.zoom.toFixed(1)}
             </span>
           )}
         </div>
+        {positionError ? (
+          <p className="border-b border-destructive/30 bg-destructive/10 px-4 py-1.5 text-xs text-destructive">{positionError}</p>
+        ) : null}
 
         {(uiState === "missing_api_key" || uiState === "no_streetview" || uiState === "error") && (
           <div className="flex h-[calc(100%-97px)] items-center justify-center p-6 text-center">
