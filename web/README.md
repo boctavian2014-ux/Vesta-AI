@@ -77,6 +77,8 @@ Edit `.env` and fill in your values:
 | `VESTA_LEGACY_RO_CLEANUP` | (Optional) In **production**, Romanian→English demo string cleanup for stored reports runs on boot only if set to `1`, `true`, or `yes`. In development it always runs. Avoids scanning every report on each cold start in prod. |
 | `PORT` | Server port (default: 5000) |
 
+**Request correlation:** clients may send header `X-Request-Id` (8–128 chars, `[a-zA-Z0-9_.-]`). The server echoes the same value on the response and prefixes `/api` access logs with `[<id>]`; server errors (5xx) from the global handler include JSON field `requestId` when present.
+
 ### 4. PostgreSQL (local)
 
 Create a database and set `DATABASE_URL` before starting the server (migrations run automatically on boot).

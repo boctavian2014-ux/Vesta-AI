@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import { randomUUID } from "node:crypto";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { closeDatabase, initDatabase } from "./db";
@@ -11,6 +12,24 @@ const app = express();
 const httpServer = createServer(app);
 
 const isProduction = process.env.NODE_ENV === "production";
+
+declare module "express-serve-static-core" {
+  interface Request {
+    /** Correlates access logs, error logs, and optional client `X-Request-Id` header. */
+    requestId?: string;
+  }
+}
+
+const REQUEST_ID_INCOMING_RE = /^[a-zA-Z0-9_.-]{8,128}$/;
+
+function assignRequestId(req: Request, res: Response, next: NextFunction): void {
+  const incoming = (req.get("x-request-id") || req.get("X-Request-Id") || "").trim();
+  const id =
+    incoming.length >= 8 && REQUEST_ID_INCOMING_RE.test(incoming) ? incoming.slice(0, 128) : randomUUID();
+  req.requestId = id;
+  res.setHeader("X-Request-Id", id);
+  next();
+}
 
 let fatalExitStarted = false;
 function exitAfterFatal(kind: string, err: unknown): void {
@@ -31,6 +50,8 @@ process.on("unhandledRejection", (reason) => {
 if (isProduction) {
   app.set("trust proxy", 1);
 }
+
+app.use(assignRequestId);
 
 // HSTS, X-Content-Type-Options, etc. CSP off: third-party scripts (Stripe, Mapbox, Google) vary by route.
 app.use(
@@ -108,7 +129,8 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      const rid = req.requestId ? `[${req.requestId}] ` : "";
+      let logLine = `${rid}${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       // Never log full JSON bodies in production (PII / tokens in logs).
       if (!isProd && capturedJsonResponse !== undefined) {
         const s = JSON.stringify(capturedJsonResponse);
@@ -127,12 +149,17 @@ app.use((req, res, next) => {
   await initDatabase();
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const statusNum = Number(status) || 500;
     const isProd = isProduction;
+    const rid = req.requestId;
 
-    console.error("Internal Server Error:", err);
+    if (rid) {
+      console.error(`[vesta-web] [${rid}] Internal Server Error:`, err);
+    } else {
+      console.error("[vesta-web] Internal Server Error:", err);
+    }
 
     if (res.headersSent) {
       return next(err);
@@ -143,6 +170,9 @@ app.use((req, res, next) => {
         ? "Internal Server Error"
         : err.message || "Internal Server Error";
 
+    if (statusNum >= 500 && rid) {
+      return res.status(statusNum).json({ message: clientMessage, requestId: rid });
+    }
     return res.status(statusNum).json({ message: clientMessage });
   });
 
