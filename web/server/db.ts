@@ -74,15 +74,6 @@ export async function initDatabase(): Promise<void> {
   db = drizzle(pool, { schema });
   const migrationsFolder = path.join(process.cwd(), "migrations");
 
-  // Check whether all migrations have already been applied so we can skip
-  // re-running them on subsequent deployments. Drizzle records applied
-  // migrations in __drizzle_migrations; if every entry in the local journal
-  // is already present there we have nothing to do.
-  if (await areMigrationsAlreadyApplied(pool, migrationsFolder)) {
-    console.log("[vesta-web] All migrations already applied — skipping migrate().");
-    return;
-  }
-
   try {
     await migrate(db, { migrationsFolder });
   } catch (e: unknown) {
@@ -108,88 +99,6 @@ export async function initDatabase(): Promise<void> {
       return;
     }
     throw e;
-  }
-}
-
-/**
- * Returns true when every migration tag listed in the local Drizzle journal
- * is already recorded in the __drizzle_migrations table, meaning there is
- * nothing new to apply.
- */
-async function areMigrationsAlreadyApplied(
-  pgPool: Pool,
-  migrationsFolder: string
-): Promise<boolean> {
-  // Read the local journal to find out which migrations we expect.
-  let journalEntries: Array<{ tag: string }> = [];
-  try {
-    const fs = await import("node:fs/promises");
-    const journalPath = path.join(migrationsFolder, "meta", "_journal.json");
-    const raw = await fs.readFile(journalPath, "utf-8");
-    const journal = JSON.parse(raw) as { entries?: Array<{ tag: string }> };
-    journalEntries = journal.entries ?? [];
-  } catch {
-    // If we cannot read the journal we cannot make a determination — let
-    // migrate() run normally and surface any real errors itself.
-    return false;
-  }
-
-  if (journalEntries.length === 0) {
-    return false;
-  }
-
-  const client = await pgPool.connect();
-  try {
-    // Check whether the Drizzle migrations tracking table exists at all.
-    const tableCheck = await client.query<{ exists: boolean }>(`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name = '__drizzle_migrations'
-      ) AS exists
-    `);
-    if (!tableCheck.rows[0]?.exists) {
-      return false;
-    }
-
-    // Fetch every tag that has already been recorded.
-    const applied = await client.query<{ tag: string }>(
-      "SELECT tag FROM __drizzle_migrations"
-    );
-    const appliedTags = new Set(applied.rows.map((r) => r.tag));
-
-    // All local journal entries must be present for us to skip migration.
-    const journalComplete = journalEntries.every((entry) => appliedTags.has(entry.tag));
-    if (!journalComplete) {
-      return false;
-    }
-
-    // Guard against partial failures where the migration journal was written
-    // but the actual schema creation did not complete (e.g. the "users" table
-    // is missing even though __drizzle_migrations has an entry). In that case
-    // we must run migrations again to finish building the schema.
-    const usersTableCheck = await client.query<{ exists: boolean }>(`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name = 'users'
-      ) AS exists
-    `);
-    if (!usersTableCheck.rows[0]?.exists) {
-      console.warn(
-        "[vesta-web] WARNING: migration journal is complete but the 'users' table does not exist — " +
-          "schema creation likely failed partway through. Re-running migrations."
-      );
-      return false;
-    }
-
-    return true;
-  } catch {
-    // Any unexpected error (e.g. permission denied) — fall through to the
-    // normal migrate() path and let it handle things.
-    return false;
-  } finally {
-    client.release();
   }
 }
 
