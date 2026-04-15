@@ -154,6 +154,12 @@ Serviciul **vesta-web** (React + Express) e separat de API-ul Python de mai sus.
 | `VEST_PYTHON_API_URL` | Runtime | **Obligatoriu în producție** — URL public al serviciului FastAPI (`uvicorn`), fără slash final (ex. `https://<serviciu-api>.up.railway.app`). Site-ul public poate fi [vesta-asset.com](https://vesta-asset.com/), dar proxy-ul Express trebuie să lovească **hostname-ul Python**, nu domeniul SPA. Fără variabilă, rutele `/api/*` care proxy-uiesc Python răspund **503**. În dev local, serverul web folosește implicit `http://127.0.0.1:8000` dacă variabila lipsește. |
 | `VESTA_INTERNAL_SYNC_SECRET` | Runtime | Același secret ca pe serviciul Python; protejează `POST /api/internal/sync-registro-report`. |
 
+### Probleme frecvente (vesta-web)
+
+- **`DATABASE_URL is required` / `FATAL: DATABASE_URL`**: pe serviciul **vesta-web** lipsește variabila. Adaugă un serviciu **PostgreSQL** în același proiect Railway, apoi la **vesta-web** → **Variables** → **+ New Variable** → **Reference** → alege Postgres → **`DATABASE_URL`**. Redeploy după salvare.
+- **`ENOTFOUND` / host `base` / migrări Drizzle care pică la `CREATE SCHEMA`**: `DATABASE_URL` e **stricat** (host inexistent, de ex. literal `base`). Șterge variabila și adaug-o din nou cu **Reference** la serviciul **PostgreSQL** (nu alt serviciu), sau lipește URI-ul complet din tab-ul Postgres → **Connect** (private). Nu folosi fragmente de URL sau valori scrise manual incomplet.
+- **`npm warn config production Use --omit=dev instead`**: apare când comanda de start e `npm start` (npm citește config-ul vechi). În repo, start-ul este **`NODE_ENV=production node dist/index.cjs`** (`web/railway.json`, `web/nixpacks.toml`). Fă deploy cu ultimul cod; dacă în Railway ai setat manual **Start Command**, înlocuiește-l cu aceeași comandă sau lasă gol ca să se folosească `railway.json`.
+
 ### Aliniere URL backend Python
 
 Proxy-urile din `web/server/routes.ts` folosesc `VEST_PYTHON_API_URL` în producție; în dev, implicit `http://127.0.0.1:8000` dacă lipsește. Pe Railway, setează **întotdeauna** `VEST_PYTHON_API_URL`.

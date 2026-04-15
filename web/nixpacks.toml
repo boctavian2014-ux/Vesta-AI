@@ -8,5 +8,6 @@ cmds = ["npm ci"]
 [phases.build]
 cmds = ["npm run build"]
 
+# Run node directly (avoids npm "config production" deprecation warning on `npm start`).
 [start]
-cmd = "npm start"
+cmd = "NODE_ENV=production node dist/index.cjs"
