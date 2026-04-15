@@ -76,6 +76,7 @@ Edit `.env` and fill in your values:
 | `VESTA_RL_PAYMENT_CREATE_MAX` | (Optional) Max `POST /api/payment/create` per user/IP per **15 minutes** — production default **45**, development **250**. |
 | `VESTA_RL_CHECKOUT_CREATE_MAX` | (Optional) Max `POST /api/checkout/create` per user/IP per **15 minutes** — production default **45**, development **250**. |
 | `VESTA_LEGACY_RO_CLEANUP` | (Optional) In **production**, Romanian→English demo string cleanup for stored reports runs on boot only if set to `1`, `true`, or `yes`. In development it always runs. Avoids scanning every report on each cold start in prod. |
+| `VESTA_CSP_REPORT_ONLY` | (Optional) In **production** only: set to `1`, `true`, or `yes` to send a **Content-Security-Policy-Report-Only** header (does not block). Lets you find missing `script-src` / `connect-src` / etc. before enforcing. Directives cover Stripe, Mapbox, Google Maps, OSM Nominatim, Fontshare/Google Fonts. |
 | `PORT` | Server port (default: 5000) |
 
 **Request correlation:** clients may send header `X-Request-Id` (8–128 chars, `[a-zA-Z0-9_.-]`). The server echoes the same value on the response and prefixes `/api` access logs with `[<id>]`; server errors (5xx) from the global handler include JSON field `requestId` when present.

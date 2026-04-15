@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { randomUUID } from "node:crypto";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+import { getHelmetContentSecurityPolicy } from "./cspConfig";
 import { closeDatabase, initDatabase } from "./db";
 import { envRateLimitMax } from "./rateLimitEnv";
 import { registerRoutes } from "./routes";
@@ -67,10 +68,14 @@ if (isProduction) {
 
 app.use(assignRequestId);
 
-// HSTS, X-Content-Type-Options, etc. CSP off: third-party scripts (Stripe, Mapbox, Google) vary by route.
+// HSTS, X-Content-Type-Options, etc. CSP: optional report-only (see VESTA_CSP_REPORT_ONLY in README).
+const helmetCsp = getHelmetContentSecurityPolicy();
+if (helmetCsp !== false) {
+  console.log("[vesta-web] Content-Security-Policy: report-only (see VESTA_CSP_REPORT_ONLY).");
+}
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: helmetCsp === false ? false : helmetCsp,
     crossOriginEmbedderPolicy: false,
   }),
 );
