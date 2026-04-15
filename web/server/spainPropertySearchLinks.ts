@@ -42,7 +42,24 @@ export type SpainSearchLinkResult = {
 
 type TavilyRawRow = { title?: string; url?: string; content?: string; published_date?: string };
 
-/** Prefer direct listing URLs; Tavily often returns search hub pages. */
+const MAX_LISTING_RESULTS = 12;
+
+function dedupeTavilyRows(a: TavilyRawRow[], b: TavilyRawRow[]): TavilyRawRow[] {
+  const seen = new Set<string>();
+  const out: TavilyRawRow[] = [];
+  for (const r of [...a, ...b]) {
+    const u = typeof r.url === "string" ? r.url.trim() : "";
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    out.push(r);
+  }
+  return out;
+}
+
+/**
+ * Classify URLs: **listing** = single property ad (opens that ad on the portal).
+ * **hub** = search results, agency home, city/zone lists — never returned to the user as primary links.
+ */
 function portalUrlKind(urlStr: string): "listing" | "hub" {
   let u: URL;
   try {
@@ -54,21 +71,63 @@ function portalUrlKind(urlStr: string): "listing" | "hub" {
   const p = u.pathname.toLowerCase();
 
   if (h.endsWith("idealista.com")) {
-    return p.includes("/inmueble/") ? "listing" : "hub";
-  }
-  if (h.endsWith("fotocasa.es")) {
-    if (p.includes("/comprar/viviendas/") || p.includes("/alquiler/viviendas/")) return "hub";
-    if (p.includes("/comprar/vivienda/") || p.includes("/alquiler/vivienda/")) return "listing";
-    if (p.includes("/comprar/piso/") || p.includes("/alquiler/piso/")) return "listing";
+    if (/\/inmueble\/\d+/i.test(p)) return "listing";
     return "hub";
   }
+
+  if (h.endsWith("fotocasa.es")) {
+    if (p.includes("/comprar/viviendas/") || p.includes("/alquiler/viviendas/")) return "hub";
+    if (p.includes("/comprar/vivienda/") || p.includes("/alquiler/vivienda/")) {
+      if (/\d{6,}/.test(p)) return "listing";
+      return "hub";
+    }
+    if (p.includes("/comprar/piso/") || p.includes("/alquiler/piso/")) {
+      if (/\d{6,}/.test(p)) return "listing";
+      return "hub";
+    }
+    if (/\/comprar\/local\//i.test(p) || /\/alquiler\/local\//i.test(p)) {
+      if (/\d{6,}/.test(p)) return "listing";
+      return "hub";
+    }
+    return "hub";
+  }
+
   if (h.endsWith("milanuncios.com")) {
     if (p.includes("/anuncios/") && /\d{7,}/.test(p)) return "listing";
     if (/\/(venta|alquiler)-de-[^/]+.*\.htm$/i.test(p)) return "hub";
-    return "listing";
+    return "hub";
   }
-  // Habitaclia, Pisos, YaEncontre: URL shapes vary; only Idealista/Fotocasa/Milanuncios hubs are filtered strictly above.
-  return "listing";
+
+  if (h.endsWith("habitaclia.com")) {
+    if (
+      p.includes("/inmobiliaria") ||
+      p.includes("/agencias") ||
+      p.includes("/buscar") ||
+      p === "/" ||
+      /^\/[a-z]{2}\/?$/.test(p)
+    ) {
+      return "hub";
+    }
+    if (/\/(vivienda|casa|piso|local|nave|terreno|parcela|garaje)-/i.test(p) && /\d{5,}/.test(p)) return "listing";
+    if (/\d{7,}\.htm/i.test(p)) return "listing";
+    return "hub";
+  }
+
+  if (h.endsWith("pisos.com")) {
+    if (/\/comprar\/(pisos|viviendas|locales)\/[^/]+\/[^/]+\/\d+/i.test(p)) return "listing";
+    if (/\/anuncio\//i.test(p) && /\d/.test(p)) return "listing";
+    if (/\/comprar\/(pisos|viviendas)\/[^/]+\/?$/i.test(p)) return "hub";
+    return "hub";
+  }
+
+  if (h.endsWith("yaencontre.com")) {
+    if (/\/inmueble\//i.test(p) && /\d/.test(p)) return "listing";
+    if (/\/anuncio\//i.test(p) && /\d/.test(p)) return "listing";
+    if (p.includes("/buscar") || p.includes("/agencias") || p.includes("/inmobiliaria")) return "hub";
+    return "hub";
+  }
+
+  return "hub";
 }
 
 function normalizeProfile(raw: string | undefined): SpainSearchProfile {
@@ -158,11 +217,13 @@ export async function searchSpainPropertyLinksJson(params: {
   if (rf) parts.push(rf);
 
   parts.push(querySuffixForProfile(profile));
+  // Bias Tavily toward concrete listing pages (not agency homepages / portal home).
+  parts.push("anuncio detalle enlace directo portales inmobiliarios");
 
   const query = parts.join(" ");
-  const maxResults = Math.min(Math.max(params.maxResults ?? 6, 1), 8);
-  // Ask Tavily for extra rows so we can drop hub pages and still return `maxResults` links.
-  const tavilyFetchCount = Math.min(15, Math.max(maxResults + 8, 12));
+  const maxResults = Math.min(Math.max(params.maxResults ?? 8, 1), MAX_LISTING_RESULTS);
+  // Tavily allows up to ~20 results; fetch extra so strict listing-only filter still fills `maxResults`.
+  const tavilyFetchCount = Math.min(20, Math.max(maxResults + 14, 16));
 
   async function runTavily(bodyIn: Record<string, unknown>): Promise<{
     okHttp: boolean;
@@ -230,9 +291,8 @@ export async function searchSpainPropertyLinksJson(params: {
       candidates.push(item);
     }
     const listings = candidates.filter((c) => portalUrlKind(c.url) === "listing");
-    const hubs = candidates.filter((c) => portalUrlKind(c.url) === "hub");
-    const merged = [...listings, ...hubs];
-    return merged.slice(0, cap);
+    // Never return hub/agency/search URLs — "View listing" must open the **specific ad** on the portal.
+    return listings.slice(0, cap);
   }
 
   // "basic" is much faster than "advanced"; time_range + query text already bias recency.
@@ -257,7 +317,9 @@ export async function searchSpainPropertyLinksJson(params: {
         results: [] as SpainSearchLinkResult[],
       });
     }
-    let results = filterMapAndRank(tavily.rawResults, maxResults);
+    /** Last Tavily `results` array from a successful HTTP response (retry may fail). */
+    let lastGoodRaw = tavily.rawResults;
+    let results = filterMapAndRank(lastGoodRaw, maxResults);
     let recencyRelaxed = false;
     // time_range + strict domains often returns zero hits; one fast retry without time_range
     if (results.length === 0 && recency !== "any") {
@@ -265,10 +327,42 @@ export async function searchSpainPropertyLinksJson(params: {
       delete fallback.time_range;
       tavily = await runTavily(fallback);
       if (tavily.okHttp) {
-        results = filterMapAndRank(tavily.rawResults, maxResults);
+        lastGoodRaw = tavily.rawResults;
+        results = filterMapAndRank(lastGoodRaw, maxResults);
         if (results.length > 0) recencyRelaxed = true;
       }
     }
+
+    let alternateQueryUsed = false;
+    if (results.length === 0) {
+      const altParts = ["Spain", city, "venta", "alquiler", "inmueble", "anuncio", "idealista", "fotocasa"];
+      if (nb) altParts.push(nb);
+      if (ptype) altParts.push(ptype);
+      const altQuery = altParts.join(" ");
+      const altBody: Record<string, unknown> = {
+        api_key: apiKey,
+        query: altQuery.slice(0, 400),
+        search_depth: "basic",
+        max_results: tavilyFetchCount,
+        include_domains: TAVILY_LISTING_DOMAINS,
+      };
+      const alt = await runTavily(altBody);
+      if (alt.okHttp && alt.rawResults.length > 0) {
+        const merged = dedupeTavilyRows(lastGoodRaw, alt.rawResults);
+        const fromAlt = filterMapAndRank(merged, maxResults);
+        if (fromAlt.length > 0) {
+          results = fromAlt;
+          alternateQueryUsed = true;
+        }
+      }
+    }
+
+    const listingOnlyNote =
+      results.length === 0
+        ? "No direct listing URLs in this batch (search returned only list/hub/agency pages). Try another wording, city, or paste a listing link from the portal."
+        : results.length < maxResults
+          ? "Only individual listing pages are returned (not agency homepages or portal search hubs); fewer hits than requested is normal."
+          : undefined;
 
     return JSON.stringify({
       ok: true,
@@ -280,6 +374,13 @@ export async function searchSpainPropertyLinksJson(params: {
             note: "time_range filter returned no portal hits; relaxed to any date for this query — dates/snippets are still approximate.",
           }
         : {}),
+      ...(alternateQueryUsed
+        ? {
+            noteAlternateQuery:
+              "A second broader Tavily query was used because the first pass returned no direct listing URLs.",
+          }
+        : {}),
+      ...(listingOnlyNote ? { noteListingPagesOnly: listingOnlyNote } : {}),
       results,
     });
   } catch (e) {

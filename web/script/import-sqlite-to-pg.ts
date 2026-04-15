@@ -90,6 +90,25 @@ async function main() {
   const pool = new Pool({ connectionString: databaseUrl, max: 2 });
 
   try {
+    await pool.query("select 1");
+  } catch (e: unknown) {
+    const err = e as { code?: string };
+    if (err?.code === "3D000") {
+      console.error(
+        `[import] The database in DATABASE_URL does not exist (PostgreSQL 3D000).\n` +
+          `Create it on the server, then retry. Example (connect to default DB "postgres"):\n` +
+          `  psql "postgresql://postgres:PASSWORD@127.0.0.1:5432/postgres" -c "CREATE DATABASE vesta_web;"\n` +
+          `Docker (if the container only has DB "postgres"): docker exec -it CONTAINER psql -U postgres -c "CREATE DATABASE vesta_web;"\n` +
+          `Or use a DATABASE_URL whose database name already exists.`
+      );
+      sqlite.close();
+      await pool.end();
+      process.exit(1);
+    }
+    throw e;
+  }
+
+  try {
     const uc = await pool.query<{ c: number }>(`select count(*)::int as c from users`);
     const rc = await pool.query<{ c: number }>(`select count(*)::int as c from reports`);
     const hasData = (uc.rows[0]?.c ?? 0) > 0 || (rc.rows[0]?.c ?? 0) > 0;

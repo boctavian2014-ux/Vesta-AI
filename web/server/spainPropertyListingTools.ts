@@ -1,5 +1,8 @@
 /** Server-side tools for Spain property search agent (geocoding + allowed listing URLs). */
 
+/** Max cards per assistant turn (matches search_spain_property_links cap). */
+export const MAX_EMITTED_LISTING_CARDS = 12;
+
 export type SpainListingCard = {
   title: string;
   sourceUrl: string;
@@ -288,7 +291,7 @@ export function recordEmittedListings(raw: unknown, acc: SpainListingCard[]): st
   if (!raw || typeof raw !== "object" || !Array.isArray((raw as { listings?: unknown }).listings)) {
     return JSON.stringify({ error: "invalid_payload", recorded: 0 });
   }
-  const arr = (raw as { listings: unknown[] }).listings;
+  const arr = (raw as { listings: unknown[] }).listings.slice(0, MAX_EMITTED_LISTING_CARDS);
   let recorded = 0;
   for (const item of arr) {
     if (!item || typeof item !== "object") continue;

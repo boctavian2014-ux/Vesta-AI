@@ -81,6 +81,14 @@ docker run -d --name vesta-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=vesta
 
 Then set `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/vesta_web` in your environment or `.env`.
 
+If Postgres is already running **without** `POSTGRES_DB=vesta_web` (only the default `postgres` database exists), create the DB once:
+
+```powershell
+psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -c "CREATE DATABASE vesta_web;"
+```
+
+Or change `DATABASE_URL` to end with `/postgres` for a quick test (not ideal for production).
+
 ### 4b. Import legacy SQLite → PostgreSQL (optional)
 
 If you still have an old `data.db` from the SQLite era (import uses **sql.js** / WASM — no native `better-sqlite3` build):
