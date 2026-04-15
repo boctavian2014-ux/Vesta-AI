@@ -56,6 +56,31 @@ function dedupeTavilyRows(a: TavilyRawRow[], b: TavilyRawRow[]): TavilyRawRow[] 
   return out;
 }
 
+/** Upgrade http → https for known portal hosts so Tavily rows are not dropped. */
+function normalizeToHttpsPortalUrl(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  let s = t;
+  if (s.startsWith("http://")) s = `https://${s.slice(7)}`;
+  if (!s.startsWith("https://")) return null;
+  try {
+    const u = new URL(s);
+    if (!isAllowedListingHost(u.hostname)) return null;
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+/** Fotocasa detail URLs contain a long numeric ad id as a path segment or before /detalles. */
+function fotocasaPathHasAdId(p: string): boolean {
+  if (/\/\d{8,}(?:\/|$|\?)/.test(p)) return true;
+  if (/\/\d{6,}\/(?:detalles|deta|detail)(?:\/|$|\?)/i.test(p)) return true;
+  if (/\/\d{7,}\/[^/]*$/i.test(p)) return true;
+  return false;
+}
+
 /**
  * Classify URLs: **listing** = single property ad (opens that ad on the portal).
  * **hub** = search results, agency home, city/zone lists — never returned to the user as primary links.
@@ -76,24 +101,54 @@ function portalUrlKind(urlStr: string): "listing" | "hub" {
   }
 
   if (h.endsWith("fotocasa.es")) {
+    if (p.includes("/all-zones/") || p.includes("/tasacion-") || p.includes("/indice-precio")) return "hub";
+    if (/\/en\/(buy|rent)\/homes\//i.test(p)) return "hub";
     if (p.includes("/comprar/viviendas/") || p.includes("/alquiler/viviendas/")) return "hub";
-    if (p.includes("/comprar/vivienda/") || p.includes("/alquiler/vivienda/")) {
-      if (/\d{6,}/.test(p)) return "listing";
+    if (p.includes("/comprar/pisos/") || p.includes("/alquiler/pisos/")) {
+      if (fotocasaPathHasAdId(p)) return "listing";
       return "hub";
     }
-    if (p.includes("/comprar/piso/") || p.includes("/alquiler/piso/")) {
-      if (/\d{6,}/.test(p)) return "listing";
+    if (p.includes("/comprar/casas/") || p.includes("/alquiler/casas/")) {
+      if (fotocasaPathHasAdId(p)) return "listing";
+      return "hub";
+    }
+    // English detail pages: /en/buy/house/…/id/detalles (not /homes/ search)
+    if (/\/en\/buy\/(house|flat|property)(?:\/|$)/i.test(p) && fotocasaPathHasAdId(p)) return "listing";
+    if (/\/en\/rent\/(house|flat|property)(?:\/|$)/i.test(p) && fotocasaPathHasAdId(p)) return "listing";
+    if (p.includes("/comprar/vivienda/") || p.includes("/alquiler/vivienda/")) {
+      if (fotocasaPathHasAdId(p) || /\d{6,}/.test(p)) return "listing";
+      return "hub";
+    }
+    if (
+      p.includes("/comprar/piso/") ||
+      p.includes("/alquiler/piso/") ||
+      p.includes("/comprar/casa/") ||
+      p.includes("/alquiler/casa/") ||
+      p.includes("/comprar/chalet/") ||
+      p.includes("/alquiler/chalet/") ||
+      p.includes("/comprar/atico/") ||
+      p.includes("/alquiler/atico/") ||
+      p.includes("/comprar/duplex/") ||
+      p.includes("/alquiler/duplex/") ||
+      p.includes("/comprar/edificio/") ||
+      p.includes("/alquiler/edificio/")
+    ) {
+      if (fotocasaPathHasAdId(p) || /\d{6,}/.test(p)) return "listing";
       return "hub";
     }
     if (/\/comprar\/local\//i.test(p) || /\/alquiler\/local\//i.test(p)) {
-      if (/\d{6,}/.test(p)) return "listing";
+      if (fotocasaPathHasAdId(p) || /\d{6,}/.test(p)) return "listing";
+      return "hub";
+    }
+    if (/\/comprar\/nave\//i.test(p) || /\/alquiler\/nave\//i.test(p) || /\/comprar\/terreno\//i.test(p)) {
+      if (fotocasaPathHasAdId(p) || /\d{6,}/.test(p)) return "listing";
       return "hub";
     }
     return "hub";
   }
 
   if (h.endsWith("milanuncios.com")) {
-    if (p.includes("/anuncios/") && /\d{7,}/.test(p)) return "listing";
+    if (p.includes("/anuncios/") && /\d{6,}/.test(p)) return "listing";
     if (/\/(venta|alquiler)-de-[^/]+.*\.htm$/i.test(p)) return "hub";
     return "hub";
   }
@@ -224,6 +279,8 @@ export async function searchSpainPropertyLinksJson(params: {
   const maxResults = Math.min(Math.max(params.maxResults ?? 8, 1), MAX_LISTING_RESULTS);
   // Tavily allows up to ~20 results; fetch extra so strict listing-only filter still fills `maxResults`.
   const tavilyFetchCount = Math.min(20, Math.max(maxResults + 14, 16));
+  /** Per-request cap — parallel fallbacks mean wall time ≈ max(single call), not sum. */
+  const tavilyFetchTimeoutMs = 14_000;
 
   async function runTavily(bodyIn: Record<string, unknown>): Promise<{
     okHttp: boolean;
@@ -232,7 +289,7 @@ export async function searchSpainPropertyLinksJson(params: {
     rawResults: TavilyRawRow[];
   }> {
     const controller = new AbortController();
-    const to = setTimeout(() => controller.abort(), 20_000);
+    const to = setTimeout(() => controller.abort(), tavilyFetchTimeoutMs);
     try {
       const res = await fetch("https://api.tavily.com/search", {
         method: "POST",
@@ -269,8 +326,9 @@ export async function searchSpainPropertyLinksJson(params: {
   function filterMapAndRank(raw: TavilyRawRow[], cap: number): SpainSearchLinkResult[] {
     const candidates: SpainSearchLinkResult[] = [];
     for (const r of raw) {
-      const url = typeof r.url === "string" ? r.url.trim() : "";
-      if (!url.startsWith("https://")) continue;
+      const rawUrl = typeof r.url === "string" ? r.url.trim() : "";
+      const url = normalizeToHttpsPortalUrl(rawUrl);
+      if (!url) continue;
       let host: string;
       try {
         host = new URL(url).hostname;
@@ -319,42 +377,69 @@ export async function searchSpainPropertyLinksJson(params: {
     }
     /** Last Tavily `results` array from a successful HTTP response (retry may fail). */
     let lastGoodRaw = tavily.rawResults;
+    /** All raw rows from domain-filtered Tavily calls (for merging with open-web fallback). */
+    let allDomainRaw = lastGoodRaw;
     let results = filterMapAndRank(lastGoodRaw, maxResults);
     let recencyRelaxed = false;
-    // time_range + strict domains often returns zero hits; one fast retry without time_range
-    if (results.length === 0 && recency !== "any") {
-      const fallback = { ...baseBody };
-      delete fallback.time_range;
-      tavily = await runTavily(fallback);
-      if (tavily.okHttp) {
-        lastGoodRaw = tavily.rawResults;
-        results = filterMapAndRank(lastGoodRaw, maxResults);
-        if (results.length > 0) recencyRelaxed = true;
-      }
-    }
+    let combinedParallelSearch = false;
 
-    let alternateQueryUsed = false;
     if (results.length === 0) {
+      const profileHint =
+        profile === "commercial"
+          ? "local comercial oficina"
+          : profile === "whole_building" || profile === "renovation_opportunity"
+            ? "edificio entero reformar"
+            : "piso casa";
+      const tx =
+        params.transaction === "rent"
+          ? "alquiler"
+          : params.transaction === "sale"
+            ? "venta"
+            : "venta alquiler";
+
       const altParts = ["Spain", city, "venta", "alquiler", "inmueble", "anuncio", "idealista", "fotocasa"];
       if (nb) altParts.push(nb);
       if (ptype) altParts.push(ptype);
-      const altQuery = altParts.join(" ");
       const altBody: Record<string, unknown> = {
         api_key: apiKey,
-        query: altQuery.slice(0, 400),
+        query: altParts.join(" ").slice(0, 400),
         search_depth: "basic",
         max_results: tavilyFetchCount,
         include_domains: TAVILY_LISTING_DOMAINS,
       };
-      const alt = await runTavily(altBody);
-      if (alt.okHttp && alt.rawResults.length > 0) {
-        const merged = dedupeTavilyRows(lastGoodRaw, alt.rawResults);
-        const fromAlt = filterMapAndRank(merged, maxResults);
-        if (fromAlt.length > 0) {
-          results = fromAlt;
-          alternateQueryUsed = true;
-        }
-      }
+
+      const openParts = [city, "Spain", profileHint, tx, "idealista inmueble fotocasa habitaclia anuncio"];
+      if (nb) openParts.push(nb);
+      const openBody: Record<string, unknown> = {
+        api_key: apiKey,
+        query: openParts.join(" ").slice(0, 400),
+        search_depth: "basic",
+        max_results: Math.min(20, tavilyFetchCount + 2),
+      };
+
+      const fallbackBody: Record<string, unknown> = { ...baseBody };
+      delete fallbackBody.time_range;
+
+      const emptyTavily = (): Promise<{
+        okHttp: boolean;
+        status: number;
+        detail: string;
+        rawResults: TavilyRawRow[];
+      }> => Promise.resolve({ okHttp: false, status: 0, detail: "", rawResults: [] });
+
+      const [fbRes, altRes, openRes] = await Promise.all([
+        recency !== "any" ? runTavily(fallbackBody) : emptyTavily(),
+        runTavily(altBody),
+        runTavily(openBody),
+      ]);
+
+      combinedParallelSearch = true;
+      let merged = allDomainRaw;
+      if (fbRes.okHttp) merged = dedupeTavilyRows(merged, fbRes.rawResults);
+      if (altRes.okHttp) merged = dedupeTavilyRows(merged, altRes.rawResults);
+      if (openRes.okHttp) merged = dedupeTavilyRows(merged, openRes.rawResults);
+      results = filterMapAndRank(merged, maxResults);
+      recencyRelaxed = recency !== "any" && fbRes.okHttp && results.length > 0;
     }
 
     const listingOnlyNote =
@@ -374,10 +459,10 @@ export async function searchSpainPropertyLinksJson(params: {
             note: "time_range filter returned no portal hits; relaxed to any date for this query — dates/snippets are still approximate.",
           }
         : {}),
-      ...(alternateQueryUsed
+      ...(combinedParallelSearch
         ? {
-            noteAlternateQuery:
-              "A second broader Tavily query was used because the first pass returned no direct listing URLs.",
+            noteCombinedSearch:
+              "Extra Tavily searches ran in parallel (broader portal query + open web) and were merged — faster than sequential retries.",
           }
         : {}),
       ...(listingOnlyNote ? { noteListingPagesOnly: listingOnlyNote } : {}),
