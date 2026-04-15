@@ -413,9 +413,28 @@ export async function registerRoutes(
     }
   }
   const sessionSecret = rawSessionSecret || DEFAULT_SESSION_SECRET;
+
+  // Manually create the session table so connect-pg-simple never needs to read
+  // its bundled table.sql file (which is absent from the compiled /app/dist build).
+  try {
+    const pgPool = getPool();
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS "session" (
+        "sid" varchar NOT NULL COLLATE "default",
+        "sess" json NOT NULL,
+        "expire" timestamp(6) NOT NULL,
+        PRIMARY KEY ("sid")
+      );
+      CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+    `);
+  } catch (err) {
+    console.error("[vesta-web] Failed to create session table:", err);
+    throw err;
+  }
+
   const sessionStore = new PgSession({
     pool: getPool(),
-    createTableIfMissing: true,
+    createTableIfMissing: false,
     pruneSessionInterval: 60 * 15,
   });
   app.use(
