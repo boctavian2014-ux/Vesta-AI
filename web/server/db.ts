@@ -73,12 +73,22 @@ export async function initDatabase(): Promise<void> {
   pool = new Pool({ connectionString: url, max: Number(process.env.PG_POOL_MAX || 10) });
   db = drizzle(pool, { schema });
   const migrationsFolder = path.join(process.cwd(), "migrations");
+
+  // Check whether all migrations have already been applied so we can skip
+  // re-running them on subsequent deployments. Drizzle records applied
+  // migrations in __drizzle_migrations; if every entry in the local journal
+  // is already present there we have nothing to do.
+  if (await areMigrationsAlreadyApplied(pool, migrationsFolder)) {
+    console.log("[vesta-web] All migrations already applied — skipping migrate().");
+    return;
+  }
+
   try {
     await migrate(db, { migrationsFolder });
   } catch (e: unknown) {
-    const err = e as { cause?: NodeJS.ErrnoException & { hostname?: string } };
+    const err = e as { cause?: NodeJS.ErrnoException & { hostname?: string }; code?: string };
     const cause = err?.cause;
-    const code = cause?.code;
+    const code = cause?.code ?? err?.code;
     const hostname = cause?.hostname;
     if (code === "ENOTFOUND") {
       console.error(
@@ -87,7 +97,75 @@ export async function initDatabase(): Promise<void> {
       );
       process.exit(1);
     }
+    // 42P07 — "relation already exists". The schema is already in place but
+    // the migration journal was missing or out of sync. Treat this as a
+    // non-fatal warning so the app can still start successfully.
+    if (code === "42P07") {
+      console.warn(
+        "[vesta-web] WARNING: migration skipped — relation already exists (42P07). " +
+          "The database schema appears to be up to date from a previous deployment."
+      );
+      return;
+    }
     throw e;
+  }
+}
+
+/**
+ * Returns true when every migration tag listed in the local Drizzle journal
+ * is already recorded in the __drizzle_migrations table, meaning there is
+ * nothing new to apply.
+ */
+async function areMigrationsAlreadyApplied(
+  pgPool: Pool,
+  migrationsFolder: string
+): Promise<boolean> {
+  // Read the local journal to find out which migrations we expect.
+  let journalEntries: Array<{ tag: string }> = [];
+  try {
+    const fs = await import("node:fs/promises");
+    const journalPath = path.join(migrationsFolder, "meta", "_journal.json");
+    const raw = await fs.readFile(journalPath, "utf-8");
+    const journal = JSON.parse(raw) as { entries?: Array<{ tag: string }> };
+    journalEntries = journal.entries ?? [];
+  } catch {
+    // If we cannot read the journal we cannot make a determination — let
+    // migrate() run normally and surface any real errors itself.
+    return false;
+  }
+
+  if (journalEntries.length === 0) {
+    return false;
+  }
+
+  const client = await pgPool.connect();
+  try {
+    // Check whether the Drizzle migrations tracking table exists at all.
+    const tableCheck = await client.query<{ exists: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = '__drizzle_migrations'
+      ) AS exists
+    `);
+    if (!tableCheck.rows[0]?.exists) {
+      return false;
+    }
+
+    // Fetch every tag that has already been recorded.
+    const applied = await client.query<{ tag: string }>(
+      "SELECT tag FROM __drizzle_migrations"
+    );
+    const appliedTags = new Set(applied.rows.map((r) => r.tag));
+
+    // All local journal entries must be present for us to skip migration.
+    return journalEntries.every((entry) => appliedTags.has(entry.tag));
+  } catch {
+    // Any unexpected error (e.g. permission denied) — fall through to the
+    // normal migrate() path and let it handle things.
+    return false;
+  } finally {
+    client.release();
   }
 }
 
