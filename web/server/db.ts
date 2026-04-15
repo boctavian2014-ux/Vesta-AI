@@ -159,7 +159,31 @@ async function areMigrationsAlreadyApplied(
     const appliedTags = new Set(applied.rows.map((r) => r.tag));
 
     // All local journal entries must be present for us to skip migration.
-    return journalEntries.every((entry) => appliedTags.has(entry.tag));
+    const journalComplete = journalEntries.every((entry) => appliedTags.has(entry.tag));
+    if (!journalComplete) {
+      return false;
+    }
+
+    // Guard against partial failures where the migration journal was written
+    // but the actual schema creation did not complete (e.g. the "users" table
+    // is missing even though __drizzle_migrations has an entry). In that case
+    // we must run migrations again to finish building the schema.
+    const usersTableCheck = await client.query<{ exists: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+      ) AS exists
+    `);
+    if (!usersTableCheck.rows[0]?.exists) {
+      console.warn(
+        "[vesta-web] WARNING: migration journal is complete but the 'users' table does not exist — " +
+          "schema creation likely failed partway through. Re-running migrations."
+      );
+      return false;
+    }
+
+    return true;
   } catch {
     // Any unexpected error (e.g. permission denied) — fall through to the
     // normal migrate() path and let it handle things.
