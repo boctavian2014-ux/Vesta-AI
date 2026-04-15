@@ -1,3 +1,11 @@
+DROP TABLE IF EXISTS "report_status_events" CASCADE;
+--> statement-breakpoint
+DROP TABLE IF EXISTS "saved_properties" CASCADE;
+--> statement-breakpoint
+DROP TABLE IF EXISTS "reports" CASCADE;
+--> statement-breakpoint
+DROP TABLE IF EXISTS "users" CASCADE;
+--> statement-breakpoint
 CREATE TABLE "report_status_events" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"report_id" integer NOT NULL,
