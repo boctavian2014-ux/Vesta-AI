@@ -88,16 +88,6 @@ export async function initDatabase(): Promise<void> {
       );
       process.exit(1);
     }
-    // 42P07 — "relation already exists". The schema is already in place but
-    // the migration journal was missing or out of sync. Treat this as a
-    // non-fatal warning so the app can still start successfully.
-    if (code === "42P07") {
-      console.warn(
-        "[vesta-web] WARNING: migration skipped — relation already exists (42P07). " +
-          "The database schema appears to be up to date from a previous deployment."
-      );
-      return;
-    }
     throw e;
   }
 }
