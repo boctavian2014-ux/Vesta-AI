@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useHashLocation } from "wouter/use-hash-location";
+import { useLocation } from "wouter";
 import { useUiLocale } from "@/lib/ui-locale";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,7 +34,7 @@ type ChatMessage = {
 
 export default function PropertySearchChatPage() {
   const { locale } = useUiLocale();
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);

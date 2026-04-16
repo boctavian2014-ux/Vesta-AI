@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { useRoute } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
+import { useRoute, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { useUiLocale } from "@/lib/ui-locale";
@@ -181,7 +180,7 @@ function LegalRiskBadge({ level, locale }: { level?: string; locale: "en" | "es"
 
 export default function ReportDetail() {
   const [, params] = useRoute("/reports/:id");
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   const reportId = params ? parseInt(params.id) : null;
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -358,8 +357,8 @@ export default function ReportDetail() {
         ];
   const reportShareUrl =
     reportId && typeof window !== "undefined"
-      ? `${window.location.origin}/#/reports/${reportId}`
-      : `#/reports/${reportId ?? ""}`;
+      ? `${window.location.origin}/reports/${reportId}`
+      : `/reports/${reportId ?? ""}`;
   const reportPdfUrl = (() => {
     const raw = report?.pdfUrl?.trim();
     if (!raw) return null;

@@ -318,7 +318,7 @@ async function sendCompletedEmailToClient(report: Report) {
   const from = (process.env.SMTP_FROM || smtpUser || "no-reply@vesta.local").trim();
   const useTls = ["1", "true", "yes"].includes((process.env.SMTP_TLS || "true").toLowerCase());
   const webBase = (process.env.VESTA_WEB_BASE_URL || "https://vesta-asset.com").replace(/\/$/, "");
-  const reportUrl = `${webBase}/#/reports/${report.id}`;
+  const reportUrl = `${webBase}/reports/${report.id}`;
 
   const subject = "Vesta AI: Nota Simple este gata";
   const text = [
@@ -1294,8 +1294,8 @@ export async function registerRoutes(
             property_id: property_id ?? 0,
             user_id: user.id,
             product: normalizeProductTier(req.body.product),
-            success_url: success_url ?? `${spa}/#/reports`,
-            cancel_url: cancel_url ?? `${spa}/#/map`,
+            success_url: success_url ?? `${spa}/reports`,
+            cancel_url: cancel_url ?? `${spa}/map`,
           }),
         }
       );

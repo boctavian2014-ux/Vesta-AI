@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useHashLocation } from "wouter/use-hash-location";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useUiLocale } from "@/lib/ui-locale";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -84,7 +84,7 @@ function CustomTooltip({ active, payload, label }: any) {
 export default function Dashboard() {
   const { user } = useAuth();
   const { locale } = useUiLocale();
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   const t = locale === "es"
     ? {
         goodMorning: "Buenos días",

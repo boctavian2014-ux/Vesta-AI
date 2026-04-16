@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
-import { Link } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
+import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import {
@@ -85,7 +84,7 @@ function DemoSidebarAction({
 }
 
 export function AppSidebar() {
-  const [location, navigate] = useHashLocation();
+  const [location, navigate] = useLocation();
   const { user, logout } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();

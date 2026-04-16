@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useHashLocation } from "wouter/use-hash-location";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useUiLocale } from "@/lib/ui-locale";
@@ -11,7 +11,7 @@ export function LegalPageShell({
   title: string;
   children: ReactNode;
 }) {
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   const { locale, setLocale } = useUiLocale();
 
   return (

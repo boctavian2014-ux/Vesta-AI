@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Switch, Route, Router } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
+import { Switch, Route, Router, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { UiLocaleProvider } from "@/lib/ui-locale";
@@ -34,7 +33,7 @@ function applyDefaultTheme() {
 
 function AppRouter() {
   const { user, isLoading } = useAuth();
-  const [location] = useHashLocation();
+  const [location] = useLocation();
   const [authGateTimedOut, setAuthGateTimedOut] = useState(false);
 
   const isLegalRoute =
@@ -130,7 +129,7 @@ function App() {
             <AuthProvider>
               <TooltipProvider>
                 <Toaster />
-                <Router hook={useHashLocation}>
+                <Router>
                   <AppRouter />
                 </Router>
               </TooltipProvider>

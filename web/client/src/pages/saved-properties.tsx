@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
-import { useHashLocation } from "wouter/use-hash-location";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -168,7 +168,7 @@ function PropertyCard({
 }
 
 function EmptyState() {
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
       <div className="rounded-full glass-panel p-4">

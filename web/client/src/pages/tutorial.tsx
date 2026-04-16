@@ -1,11 +1,11 @@
-import { useHashLocation } from "wouter/use-hash-location";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, BookOpen } from "lucide-react";
 import { useUiLocale } from "@/lib/ui-locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function TutorialPage() {
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   const { locale } = useUiLocale();
   const es = locale === "es";
 

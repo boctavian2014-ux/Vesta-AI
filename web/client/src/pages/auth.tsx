@@ -1,6 +1,5 @@
 import { useState, FormEvent } from "react";
-import { Link } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,7 +12,7 @@ import { VestaBrandLogoAuth } from "@/components/vesta-brand-logo";
 import { useUiLocale } from "@/lib/ui-locale";
 
 export default function AuthPage() {
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   const { login, register } = useAuth();
   const { locale, setLocale } = useUiLocale();
 

@@ -7,7 +7,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { createCompletedDemoReport } from "@/lib/create-demo-report";
 import { useAuth } from "@/hooks/use-auth";
 import { useUiLocale, type UiLocale } from "@/lib/ui-locale";
-import { useHashLocation } from "wouter/use-hash-location";
+import { useLocation } from "wouter";
 import { identifyProperty } from "@/lib/propertyApi";
 import { getGoogleMapsBrowserKey, loadGoogleMapsJs } from "@/lib/googleMapsLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,15 +39,13 @@ const PROPERTY_ANALYSIS_LOGO_SRC = `${import.meta.env.BASE_URL}vesta-logo.png${V
 const MAP_STREET_ZOOM = 20;
 const MAP_MAX_ZOOM = 22;
 
-/** Parse `#/map?lat=&lon=` from the hash (e.g. deep link from property search). `area=1` = approximate neighborhood center. */
-function parseMapCoordsFromHash(): { lat: number; lon: number; approxArea: boolean } | null {
+/** Parse `/map?lat=&lon=` from the URL (e.g. deep link from property search). `area=1` = approximate neighborhood center. */
+function parseMapCoordsFromUrl(): { lat: number; lon: number; approxArea: boolean } | null {
   if (typeof window === "undefined") return null;
-  const hash = window.location.hash || "";
-  const q = hash.indexOf("?");
-  if (q < 0) return null;
-  const pathPart = hash.slice(0, q);
-  if (!pathPart.includes("/map")) return null;
-  const params = new URLSearchParams(hash.slice(q + 1));
+  const { pathname, search } = window.location;
+  if (pathname !== "/map" && !pathname.endsWith("/map")) return null;
+  if (!search || search.length < 2) return null;
+  const params = new URLSearchParams(search.slice(1));
   const lat = Number(params.get("lat"));
   const lon = Number(params.get("lon"));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
@@ -427,11 +425,11 @@ function PaymentModalStripeForm({
         setBusy(false);
         return;
       }
-      const base = `${window.location.origin}${window.location.pathname || "/"}`;
+      const mapReturn = new URL("/map", window.location.origin).href;
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: `${base}#/map`,
+          return_url: mapReturn,
         },
         redirect: "if_required",
       });
@@ -1111,7 +1109,7 @@ export default function MapPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { user: authUser } = useAuth();
-  const [, navigate] = useHashLocation();
+  const [, navigate] = useLocation();
   const mapDeepLinkConsumedRef = useRef(false);
 
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
@@ -1486,7 +1484,7 @@ export default function MapPage() {
       setMapInitError(null);
 
       if (!mapDeepLinkConsumedRef.current && googleMapRef.current) {
-        const deep = parseMapCoordsFromHash();
+        const deep = parseMapCoordsFromUrl();
         if (deep) {
           mapDeepLinkConsumedRef.current = true;
           googleMapRef.current.setCenter({ lat: deep.lat, lng: deep.lon });
