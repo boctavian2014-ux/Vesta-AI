@@ -205,23 +205,23 @@ html[data-vesta-page="property-search"] .app-ambient__whisper {
   letter-spacing: inherit;
   font-weight: 500;
   font-style: italic;
-  color: hsl(190 100% 55%);
-  opacity: 0.9;
-  filter: blur(10px);
-  transform: scale(1.04);
+  color: hsl(190 85% 52%);
+  opacity: 0.58;
+  filter: blur(11px);
+  transform: scale(1.03);
   text-shadow:
-    0 0 20px hsl(190 100% 52% / 0.95),
-    0 0 44px hsl(200 100% 50% / 0.65),
-    0 0 72px hsl(205 95% 48% / 0.4);
+    0 0 14px hsl(190 100% 52% / 0.42),
+    0 0 32px hsl(200 100% 50% / 0.28),
+    0 0 52px hsl(205 95% 48% / 0.18);
 }
 
 .dark .app-ambient__whisper-glow {
-  color: hsl(188 100% 58%);
+  color: hsl(188 90% 54%);
   text-shadow:
-    0 0 16px hsl(188 100% 55% / 1),
-    0 0 36px hsl(195 100% 52% / 0.85),
-    0 0 64px hsl(203 95% 50% / 0.55),
-    0 0 96px hsl(210 90% 45% / 0.25);
+    0 0 12px hsl(188 100% 55% / 0.45),
+    0 0 28px hsl(195 100% 52% / 0.32),
+    0 0 48px hsl(203 95% 50% / 0.2),
+    0 0 72px hsl(210 90% 45% / 0.12);
 }
 
 .app-ambient__whisper-face {
@@ -235,9 +235,9 @@ html[data-vesta-page="property-search"] .app-ambient__whisper {
   font-style: italic;
   color: hsl(186 45% 96%);
   text-shadow:
-    0 0 1px hsl(190 100% 85% / 0.95),
-    0 0 12px hsl(192 100% 55% / 0.45),
-    0 2px 4px hsl(222 40% 4% / 0.85);
+    0 0 1px hsl(190 100% 85% / 0.55),
+    0 0 8px hsl(192 100% 55% / 0.22),
+    0 2px 3px hsl(222 40% 4% / 0.55);
 }
 
 .dark .app-ambient__whisper-face {
@@ -245,17 +245,17 @@ html[data-vesta-page="property-search"] .app-ambient__whisper {
 }
 
 html:not(.dark) .app-ambient__whisper-glow {
-  color: hsl(32 100% 42%);
+  color: hsl(32 90% 40%);
   text-shadow:
-    0 0 18px hsl(38 95% 48% / 0.75),
-    0 0 40px hsl(28 90% 45% / 0.45);
+    0 0 12px hsl(38 95% 48% / 0.38),
+    0 0 28px hsl(28 90% 45% / 0.22);
 }
 
 html:not(.dark) .app-ambient__whisper-face {
   color: hsl(28 30% 18%);
   text-shadow:
-    0 0 12px hsl(38 90% 55% / 0.35),
-    0 1px 2px hsl(220 20% 98% / 0.9);
+    0 0 8px hsl(38 90% 55% / 0.2),
+    0 1px 2px hsl(220 20% 98% / 0.85);
 }
 
 @media (min-width: 768px) {
@@ -271,19 +271,19 @@ html:not(.dark) .app-ambient__whisper-face {
 
 @media (prefers-reduced-motion: no-preference) {
   .app-ambient__whisper-glow {
-    animation: ambient-neon-breathe 4.5s ease-in-out infinite;
+    animation: ambient-neon-breathe 10s ease-in-out infinite;
   }
 }
 
 @keyframes ambient-neon-breathe {
   0%,
   100% {
-    opacity: 0.72;
-    filter: blur(10px);
+    opacity: 0.42;
+    filter: blur(12px);
   }
   50% {
-    opacity: 1;
-    filter: blur(11px);
+    opacity: 0.62;
+    filter: blur(13px);
   }
 }
 
