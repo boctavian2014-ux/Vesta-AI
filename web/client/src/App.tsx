@@ -54,7 +54,7 @@ function AppRouter() {
 
   if (isLoading && !authGateTimedOut) {
     return (
-      <div className="relative z-10 flex h-screen items-center justify-center">
+      <div className="relative z-10 flex min-h-dvh items-center justify-center">
         <div className="flex flex-col items-center gap-4 px-4">
           <div className="rounded-3xl glass-card px-6 py-4">
             <img
@@ -87,14 +87,14 @@ function AppRouter() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="min-h-0">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
           <SidebarTrigger data-testid="sidebar-trigger" className="-ml-1" />
           <div className="ml-auto">
             <ThemeToggle />
           </div>
         </header>
-        <main className="flex-1 overflow-auto">
+        <main className="min-h-0 flex-1 overflow-auto">
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/map" component={MapPage} />

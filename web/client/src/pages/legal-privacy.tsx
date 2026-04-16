@@ -9,8 +9,20 @@ export default function LegalPrivacyPage() {
         <>
           <h2>1. Responsable del tratamiento</h2>
           <p>
-            El responsable del tratamiento de datos personales en Vesta AI debe identificarse aqui de forma
-            completa (nombre, direccion, contacto DPO o persona designada, si aplica).
+            El responsable del tratamiento de los datos personales obtenidos a traves de Vesta AI es{" "}
+            <strong>Dev AI LTD</strong>, sociedad de responsabilidad limitada (Limited Liability Company) bajo la
+            legislacion de Bulgaria.
+          </p>
+          <p>
+            <strong>Domicilio social y direccion de gestion:</strong> Bulgaria, Provincia de Ruse, 7002 Ruse,
+            Municipio de Ruse, calle Bogdan Voyvoda n.º 1.
+          </p>
+          <p>
+            <strong>Identificacion de la entidad (Bulgaria, ЕИК/ПИК):</strong> 208553841
+          </p>
+          <p>
+            No hemos designado un delegado de proteccion de datos (DPD). Para ejercer tus derechos o consultas de
+            privacidad, utiliza el contacto indicado en la seccion 8.
           </p>
 
           <h2>2. Que datos recopilamos</h2>
@@ -43,8 +55,9 @@ export default function LegalPrivacyPage() {
           <h2>6. Tus derechos (RGPD)</h2>
           <p>
             Tienes derecho de acceso, rectificacion, supresion, limitacion, oposicion y portabilidad, conforme
-            a la ley aplicable. Para ejercer estos derechos, contacta al responsable. Tambien puedes presentar
-            una reclamacion ante la autoridad de control de tu pais de residencia.
+            a la ley aplicable. Para ejercer estos derechos, escribe a la direccion de la seccion 8. Tambien puedes
+            presentar una reclamacion ante la autoridad de control de tu pais de residencia (por ejemplo, la AEPD
+            en Espana si te aplica).
           </p>
 
           <h2>7. Seguridad</h2>
@@ -52,7 +65,17 @@ export default function LegalPrivacyPage() {
             Aplicamos medidas tecnicas y organizativas razonables; sin embargo, ningun sistema es 100% seguro.
           </p>
 
-          <h2>8. Cambios</h2>
+          <h2>8. Contacto (privacidad y derechos)</h2>
+          <p>
+            <a className="underline underline-offset-2" href="mailto:contact@devaieood.com">
+              contact@devaieood.com
+            </a>
+          </p>
+          <p>
+            Direccion postal: Bogdan Voyvoda n.º 1, 7002 Ruse, Municipio de Ruse, Provincia de Ruse, Bulgaria.
+          </p>
+
+          <h2>9. Cambios</h2>
           <p>
             Actualizaremos esta politica cuando sea necesario y te informaremos por medios razonables si la ley lo exige.
           </p>
@@ -61,8 +84,19 @@ export default function LegalPrivacyPage() {
         <>
           <h2>1. Data controller</h2>
           <p>
-            The data controller processing personal data through Vesta AI must be fully identified here
-            (name, address, DPO contact or designated person, if applicable).
+            The controller of personal data collected through Vesta AI is{" "}
+            <strong>Dev AI LTD</strong>, a limited liability company incorporated under the laws of Bulgaria.
+          </p>
+          <p>
+            <strong>Registered office and management address:</strong> Bulgaria, Ruse Province, 7002 Ruse, Ruse
+            Municipality, Bogdan Voyvoda Street No. 1.
+          </p>
+          <p>
+            <strong>Company identification (Bulgaria, ЕИК/ПИК):</strong> 208553841
+          </p>
+          <p>
+            We have not appointed a Data Protection Officer (DPO). For privacy requests or to exercise your
+            rights, use the contact in section 8.
           </p>
 
           <h2>2. What data we collect</h2>
@@ -95,8 +129,9 @@ export default function LegalPrivacyPage() {
           <h2>6. Your rights (GDPR)</h2>
           <p>
             You have the right of access, rectification, erasure, restriction, objection, and portability,
-            under applicable law. To exercise these rights, contact the controller. You also have the right
-            to lodge a complaint with a supervisory authority in your country of residence.
+            under applicable law. To exercise these rights, write to the address in section 8. You also have the
+            right to lodge a complaint with a supervisory authority in your country of residence (for example,
+            the AEPD in Spain, where relevant).
           </p>
 
           <h2>7. Security</h2>
@@ -104,7 +139,17 @@ export default function LegalPrivacyPage() {
             We implement reasonable technical and organizational measures; however, no system is 100% secure.
           </p>
 
-          <h2>8. Changes</h2>
+          <h2>8. Contact (privacy and rights)</h2>
+          <p>
+            <a className="underline underline-offset-2" href="mailto:contact@devaieood.com">
+              contact@devaieood.com
+            </a>
+          </p>
+          <p>
+            Postal address: Bogdan Voyvoda Street No. 1, 7002 Ruse, Ruse Municipality, Ruse Province, Bulgaria.
+          </p>
+
+          <h2>9. Changes</h2>
           <p>
             We will update this policy when necessary and inform you through reasonable means if required by law.
           </p>

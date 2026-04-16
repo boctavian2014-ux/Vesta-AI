@@ -38,6 +38,7 @@ export default function PropertySearchChatPage() {
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const pendingRef = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
@@ -70,12 +71,12 @@ export default function PropertySearchChatPage() {
             send: "Enviar",
             sending: "Enviando…",
             chips: [
-              "Últimos anuncios de venta en Valencia (esta semana)",
-              "Local comercial en Madrid, zona céntrica",
-              "Nave industrial en polígono cerca de Barcelona",
-              "Edificio entero para reformar en Sevilla",
-              "Piso hasta 250.000 € en Málaga",
-              "Terreno urbanizable en la Costa Blanca",
+              "Pisos en venta en Valencia",
+              "Últimos anuncios: pisos en venta en Madrid (esta semana)",
+              "Local comercial en venta en Barcelona",
+              "Nave industrial en Zaragoza",
+              "Terreno en venta en Sevilla",
+              "Pisos en venta en Málaga",
             ],
             errorTitle: "No se pudo obtener respuesta",
             networkError: "Error de red o del servidor. Inténtalo de nuevo.",
@@ -107,12 +108,12 @@ export default function PropertySearchChatPage() {
             send: "Send",
             sending: "Sending…",
             chips: [
-              "Latest sale listings in Valencia (this week)",
-              "Commercial unit in central Madrid",
-              "Industrial warehouse near Barcelona",
-              "Whole building to renovate in Seville",
-              "Apartment under €250k in Málaga",
-              "Building plot on the Costa Blanca",
+              "Homes for sale in Valencia",
+              "Latest listings: homes for sale in Madrid this week",
+              "Commercial property for sale in Barcelona",
+              "Industrial warehouse in Zaragoza",
+              "Land for sale in Seville",
+              "Apartments for sale in Málaga",
             ],
             errorTitle: "Could not get a reply",
             networkError: "Network or server error. Please try again.",
@@ -153,12 +154,14 @@ export default function PropertySearchChatPage() {
   const sendWithText = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || pending) return;
+      if (!trimmed || pendingRef.current) return;
 
       const userMsg: ChatMessage = { role: "user", content: trimmed };
       const historyPayload = [...messagesRef.current, userMsg];
+      messagesRef.current = historyPayload;
       setMessages(historyPayload);
       setInput("");
+      pendingRef.current = true;
       setPending(true);
 
       const abortCtl = new AbortController();
@@ -208,10 +211,11 @@ export default function PropertySearchChatPage() {
         ]);
       } finally {
         window.clearTimeout(abortTimer);
+        pendingRef.current = false;
         setPending(false);
       }
     },
-    [locale, pending, t, toast],
+    [locale, t, toast],
   );
 
   const onSubmit = (e: React.FormEvent) => {
@@ -220,7 +224,7 @@ export default function PropertySearchChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col bg-background">
+    <div className="flex h-app-main flex-col bg-background">
       <div
         ref={scrollRef}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-8"

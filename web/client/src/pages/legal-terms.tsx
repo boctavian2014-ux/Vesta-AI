@@ -9,9 +9,16 @@ export default function LegalTermsPage() {
         <>
           <h2>1. Operador</h2>
           <p>
-            Los servicios disponibles en la aplicacion Vesta AI son prestados por el operador de la plataforma
-            ("nosotros" / "Vesta"). Los datos completos de identificacion de la entidad legal deben completarse
-            aqui antes de publicar.
+            Los servicios disponibles en la aplicacion Vesta AI son prestados por{" "}
+            <strong>Dev AI LTD</strong>, sociedad de responsabilidad limitada (Limited Liability Company) constituida
+            conforme a la legislacion de Bulgaria (&quot;nosotros&quot; / el operador de la marca Vesta AI).
+          </p>
+          <p>
+            <strong>Domicilio social y direccion de gestion:</strong> Bulgaria, Provincia de Ruse, 7002 Ruse,
+            Municipio de Ruse, calle Bogdan Voyvoda n.º 1.
+          </p>
+          <p>
+            <strong>Identificacion de la entidad (Bulgaria, ЕИК/ПИК):</strong> 208553841
           </p>
 
           <h2>2. Descripcion de los servicios</h2>
@@ -61,15 +68,28 @@ export default function LegalTermsPage() {
           </p>
 
           <h2>8. Contacto</h2>
-          <p>Anade aqui un email y, opcionalmente, direccion postal para solicitudes relacionadas con estos terminos.</p>
+          <p>
+            Para consultas relacionadas con estos terminos:{" "}
+            <a className="underline underline-offset-2" href="mailto:contact@devaieood.com">
+              contact@devaieood.com
+            </a>
+            . Direccion postal: Bogdan Voyvoda n.º 1, 7002 Ruse, Municipio de Ruse, Provincia de Ruse, Bulgaria.
+          </p>
         </>
       ) : (
         <>
           <h2>1. Operator</h2>
           <p>
-            The services available through the Vesta AI application are provided by the platform operator
-            ("we" / "Vesta"). The full legal entity identification details should be completed here before
-            publication.
+            The services available through the Vesta AI application are provided by{" "}
+            <strong>Dev AI LTD</strong>, a limited liability company incorporated under the laws of Bulgaria
+            (&quot;we&quot; / the operator of the Vesta AI brand).
+          </p>
+          <p>
+            <strong>Registered office and management address:</strong> Bulgaria, Ruse Province, 7002 Ruse, Ruse
+            Municipality, Bogdan Voyvoda Street No. 1.
+          </p>
+          <p>
+            <strong>Company identification (Bulgaria, ЕИК/ПИК):</strong> 208553841
           </p>
 
           <h2>2. Service description</h2>
@@ -119,7 +139,13 @@ export default function LegalTermsPage() {
           </p>
 
           <h2>8. Contact</h2>
-          <p>Add your email and, optionally, postal address for terms-related requests.</p>
+          <p>
+            For questions about these terms:{" "}
+            <a className="underline underline-offset-2" href="mailto:contact@devaieood.com">
+              contact@devaieood.com
+            </a>
+            . Postal address: Bogdan Voyvoda Street No. 1, 7002 Ruse, Ruse Municipality, Ruse Province, Bulgaria.
+          </p>
         </>
       )}
     </LegalPageShell>

@@ -1704,7 +1704,7 @@ export default function MapPage() {
   ]);
 
   return (
-    <div data-vesta-map-root className="relative h-[calc(100vh-3rem)] w-full overflow-hidden">
+    <div data-vesta-map-root className="relative h-app-main w-full overflow-hidden">
       <style>{`
         [data-vesta-map-root] .gm-style-mtc,
         [data-vesta-map-root] .gm-svpc,
