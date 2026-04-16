@@ -21,16 +21,30 @@ import { VestaBrandLogoMark } from "@/components/vesta-brand-logo";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
+function formatReportDocTimestamp(iso: string, locale: "en" | "es") {
+  try {
+    return new Date(iso).toLocaleString(locale === "es" ? "es-ES" : "en-GB", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 function StatusPill({ status, locale }: { status: string; locale: "en" | "es" }) {
   const map: Record<string, { label: string; cls: string }> = {
-    pending:    { label: locale === "es" ? "Pendiente" : "Pending", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
-    processing: { label: locale === "es" ? "En proceso" : "Processing", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-    completed:  { label: locale === "es" ? "Completado" : "Completed", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-    failed:     { label: locale === "es" ? "Fallido" : "Failed", cls: "bg-red-500/15 text-red-400 border-red-500/30" },
+    pending:    { label: locale === "es" ? "Pendiente" : "Pending", cls: "border-amber-600/30 bg-amber-500/[0.07] text-foreground" },
+    processing: { label: locale === "es" ? "En proceso" : "Processing", cls: "border-sky-600/30 bg-sky-500/[0.07] text-foreground" },
+    completed:  { label: locale === "es" ? "Completado" : "Completed", cls: "border-emerald-700/30 bg-emerald-600/[0.07] text-foreground" },
+    failed:     { label: locale === "es" ? "Fallido" : "Failed", cls: "border-red-600/30 bg-red-500/[0.07] text-foreground" },
   };
-  const c = map[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border" };
+  const c = map[status] ?? { label: status, cls: "border-border bg-muted/50 text-muted-foreground" };
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${c.cls}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-xs font-medium uppercase tracking-wide ${c.cls}`}>
       {status === "processing" && <Loader2 className="h-3 w-3 animate-spin" />}
       {status === "completed"  && <CheckCircle2 className="h-3 w-3" />}
       {status === "failed"     && <AlertCircle className="h-3 w-3" />}
@@ -43,10 +57,10 @@ function Section({ icon, title, children, accent }: {
   icon: React.ReactNode; title: string; children: React.ReactNode; accent?: string;
 }) {
   return (
-    <Card className={`glass-card-strong border-border ${accent ?? ""}`}>
+    <Card className={`border border-border bg-card shadow-sm border-l-[3px] border-l-border ${accent ?? ""}`}>
       <CardHeader className="pb-4 pt-5 px-6">
         <div className="flex items-center gap-2">
-          <span className="text-primary">{icon}</span>
+          <span className="text-muted-foreground">{icon}</span>
           <CardTitle className="report-title text-[15px]">{title}</CardTitle>
         </div>
       </CardHeader>
@@ -102,8 +116,13 @@ function BulletList({
   /** When set, the substring "OpenStreetMap" in each item becomes a link to this map URL. */
   openStreetMapUrl?: string;
 }) {
-  const icon = variant === "check" ? "✓" : variant === "warning" ? "⚠" : "•";
-  const color = variant === "check" ? "text-emerald-400" : variant === "warning" ? "text-amber-400" : "text-primary";
+  const icon = variant === "check" ? "✓" : variant === "warning" ? "!" : "—";
+  const color =
+    variant === "check"
+      ? "text-muted-foreground"
+      : variant === "warning"
+        ? "text-amber-800 dark:text-amber-200"
+        : "text-muted-foreground";
   return (
     <ul className="space-y-1.5">
       {items.map((item, i) => (
@@ -118,13 +137,12 @@ function BulletList({
 
 function RiskScore({ score, level, locale }: { score?: number; level?: string; locale: "en" | "es" }) {
   if (!score) return null;
-  const color = score >= 70 ? "text-red-400" : score >= 40 ? "text-amber-400" : "text-emerald-400";
-  const bg    = score >= 70 ? "bg-red-500/10" : score >= 40 ? "bg-amber-500/10" : "bg-emerald-500/10";
+  const color = score >= 70 ? "text-red-900 dark:text-red-200" : score >= 40 ? "text-amber-900 dark:text-amber-200" : "text-emerald-900 dark:text-emerald-200";
   return (
-    <div className={`rounded-lg ${bg} px-4 py-3 flex items-center justify-between`}>
+    <div className="rounded-md border border-border bg-muted/25 px-4 py-3 flex items-center justify-between">
       <div>
-        <p className="text-xs text-muted-foreground">{locale === "es" ? "Puntuación de riesgo" : "Risk score"}</p>
-        <p className={`text-2xl font-bold ${color}`}>{score}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
+        <p className="text-xs text-muted-foreground uppercase tracking-wide">{locale === "es" ? "Puntuación de riesgo" : "Risk score"}</p>
+        <p className={`text-2xl font-semibold ${color}`}>{score}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
       </div>
       {level && (
         <span className={`text-sm font-semibold uppercase tracking-wide ${color}`}>{level}</span>
@@ -145,15 +163,15 @@ function LegalRiskBadge({ level, locale }: { level?: string; locale: "en" | "es"
   const key = String(level).toLowerCase();
   const cfg =
     key === "high"
-      ? { label: locale === "es" ? "ALTO" : "HIGH", cls: "bg-red-500/15 text-red-400 border-red-500/30" }
+      ? { label: locale === "es" ? "ALTO" : "HIGH", cls: "border-red-600/35 bg-red-500/[0.08] text-foreground" }
       : key === "medium"
-        ? { label: locale === "es" ? "MEDIO" : "MEDIUM", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" }
+        ? { label: locale === "es" ? "MEDIO" : "MEDIUM", cls: "border-amber-700/35 bg-amber-600/[0.08] text-foreground" }
         : key === "low"
-          ? { label: locale === "es" ? "BAJO" : "LOW", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" }
-          : { label: key.toUpperCase(), cls: "bg-muted text-muted-foreground border-border" };
+          ? { label: locale === "es" ? "BAJO" : "LOW", cls: "border-emerald-700/35 bg-emerald-600/[0.08] text-foreground" }
+          : { label: key.toUpperCase(), cls: "border-border bg-muted/50 text-muted-foreground" };
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold tracking-wide ${cfg.cls}`}>
+    <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[11px] font-semibold tracking-wide uppercase ${cfg.cls}`}>
       {cfg.label}
     </span>
   );
@@ -392,15 +410,10 @@ export default function ReportDetail() {
             <h1 className="report-heading text-2xl md:text-[2rem] text-foreground">{reportTypeLabel}</h1>
             {report && <StatusPill status={report.status} locale={locale} />}
             {report && isReportDemoPreview(report) ? (
-              <Badge variant="secondary" className="text-[11px] font-normal text-muted-foreground">
+              <Badge variant="secondary" className="text-[11px] font-normal rounded-sm text-muted-foreground border-border">
                 {reportListStrings.reportDemoBadge}
               </Badge>
             ) : null}
-            {report && (
-              <Badge variant="outline" className="text-[11px]">
-                {reportTypeLabel}
-              </Badge>
-            )}
           </div>
           <div className="report-aux-stack-mobile mt-1">
             {(report as any)?.referenciaCatastral && (
@@ -415,6 +428,21 @@ export default function ReportDetail() {
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
+
+      {report && !isLoading && (
+        <div className="report-inset-panel px-4 py-3 text-xs leading-relaxed">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-10 gap-y-2">
+            <span>
+              <span className="text-muted-foreground">{tr("File reference", "Referencia de expediente")}: </span>
+              <span className="font-mono tabular-nums text-foreground">#{report.id}</span>
+            </span>
+            <span>
+              <span className="text-muted-foreground">{tr("Registration", "Alta registral")}: </span>
+              <span className="text-foreground">{formatReportDocTimestamp(report.createdAt, locale)}</span>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Loading */}
       {isLoading && (
@@ -431,9 +459,9 @@ export default function ReportDetail() {
 
       {/* Processing */}
       {!isLoading && isProcessing && (
-        <Card className="glass-card-strong border-border">
+        <Card className="border border-border bg-card shadow-sm">
           <CardContent className="p-8 flex flex-col items-center gap-5 text-center">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-md border border-border bg-muted/30 flex items-center justify-center">
               <Loader2 className="h-8 w-8 text-primary animate-spin" />
             </div>
             <div>
@@ -492,7 +520,7 @@ export default function ReportDetail() {
       {/* Post-payment timeline (hidden for analysis_pack / expert_report) */}
       {!isLoading && report && !hidePostPaymentAndDeliverables && (
         <Section icon={<Info className="h-4 w-4" />} title={tr("Post-payment process", "Proceso despues del pago")}>
-          <div className="rounded-lg glass-panel p-4 space-y-2 md:space-y-2.5">
+          <div className="report-inset-panel p-4 space-y-2 md:space-y-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground report-aux-mobile">
               {tr("Order flow", "Flujo del pedido")}
             </p>
@@ -517,7 +545,7 @@ export default function ReportDetail() {
       {/* Deliverables (hidden for analysis_pack / expert_report) */}
       {!isLoading && report && !hidePostPaymentAndDeliverables && (
         <Section icon={<FileText className="h-4 w-4" />} title={tr("What you receive", "Que recibes")}>
-          <div className="rounded-lg glass-panel p-4 space-y-2 md:space-y-2.5">
+          <div className="report-inset-panel p-4 space-y-2 md:space-y-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground report-aux-mobile">
               {tr("Package deliverables", "Entregables del paquete")}
             </p>
@@ -548,9 +576,9 @@ export default function ReportDetail() {
       {!isLoading && cadastral && (
         <Section icon={<VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />} title={tr("Catastro data", "Datos de Catastro")}>
           {cadastral.referenciaCatastral && (
-            <div className="rounded-lg bg-primary/10 border border-primary/20 px-3 py-2 mb-3">
+            <div className="report-inset-panel px-3 py-2 mb-3 border-l-[3px] !border-l-muted-foreground/40">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tr("Reference", "Referencia")}</p>
-              <p className="text-sm font-bold text-primary font-mono">{cadastral.referenciaCatastral}</p>
+              <p className="text-sm font-semibold text-foreground font-mono">{cadastral.referenciaCatastral}</p>
             </div>
           )}
           <Row label={tr("Address", "Direccion")} value={cadastral.address} />
@@ -661,7 +689,7 @@ export default function ReportDetail() {
         >
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-lg glass-panel p-3">
+              <div className="report-inset-panel p-3">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Owner", "Titular")}</p>
                 <Row
                   label={tr("Holder", "Titular")}
@@ -674,7 +702,7 @@ export default function ReportDetail() {
                 <Row label={tr("Ownership type", "Tipo de titularidad")} value={notaSimple?.structured?.owner?.ownership_type} />
                 <Row label={tr("Ownership share", "Cuota")} value={notaSimple?.structured?.owner?.ownership_share} />
               </div>
-              <div className="rounded-lg glass-panel p-3">
+              <div className="report-inset-panel p-3">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Property details", "Datos del inmueble")}</p>
                 <Row label={tr("Address", "Direccion")} value={notaSimple?.structured?.property?.address || notaSimple?.direccion} />
                 <Row label={tr("Property type", "Tipo de inmueble")} value={notaSimple?.structured?.property?.property_type} />
@@ -686,7 +714,7 @@ export default function ReportDetail() {
               </div>
             </div>
 
-            <div className="rounded-lg glass-panel p-3">
+            <div className="report-inset-panel p-3">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Debts and encumbrances", "Deudas y cargas")}</p>
               <Row label={tr("Summary", "Resumen")} value={notaSimple?.cargas} />
               <Row label={tr("Encumbrance expiry", "Caducidad de cargas")} value={notaSimple?.caducidad_cargas} />
@@ -708,7 +736,7 @@ export default function ReportDetail() {
                 notaSimple.structured.debts.items.length > 0 && (
                   <div className="space-y-2 mt-2">
                     {notaSimple.structured.debts.items.map((item: any, idx: number) => (
-                      <div key={idx} className="rounded glass-panel px-3 py-2 text-xs">
+                      <div key={idx} className="report-inset-panel px-3 py-2 text-xs">
                         <p className="font-semibold text-foreground">
                           {(item.type || tr("Encumbrance", "Carga")).toString().toUpperCase()}
                         </p>
@@ -725,7 +753,7 @@ export default function ReportDetail() {
                 )}
             </div>
 
-            <div className="rounded-lg glass-panel p-3">
+            <div className="report-inset-panel p-3">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Legal risk", "Riesgo legal")}</p>
               <div className="flex items-center justify-between py-1.5 border-b border-border/40">
                 <span className="text-xs text-muted-foreground">{tr("Risk level", "Nivel de riesgo")}</span>
@@ -758,7 +786,7 @@ export default function ReportDetail() {
 
           {/* Risk */}
           {fullReport.risk && (
-            <Section icon={<ShieldAlert className="h-4 w-4" />} title={tr("Investment risk", "Riesgo de inversion")} accent="border-amber-500/20">
+            <Section icon={<ShieldAlert className="h-4 w-4" />} title={tr("Investment risk", "Riesgo de inversion")} accent="!border-l-amber-700/40">
               <div className="space-y-3">
                 <RiskScore score={fullReport.risk.score} level={fullReport.risk.level} locale={locale} />
                 {fullReport.risk.drivers?.length > 0 && (
@@ -876,7 +904,7 @@ export default function ReportDetail() {
       {/* Share actions */}
       {!isLoading && report && report.status === "completed" && (
         <Section icon={<Share2 className="h-4 w-4" />} title={tr("Share report", "Compartir informe")}>
-          <div className="rounded-lg glass-panel p-4 space-y-3">
+          <div className="report-inset-panel p-4 space-y-3">
             <p className="text-xs text-muted-foreground">
               {tr(
                 "Use your device share sheet to send the report link.",

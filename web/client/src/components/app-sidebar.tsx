@@ -66,16 +66,16 @@ function DemoSidebarAction({
         onRun();
       }}
       className={cn(
-        "flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-white/15 bg-white/10 px-2 text-left text-sm text-foreground backdrop-blur-md transition-colors",
-        "hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        "flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-sm border border-sidebar-border bg-sidebar-accent/40 px-2 text-left text-sm text-sidebar-foreground transition-colors",
+        "hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         blocked && "cursor-default",
-        !blocked && "active:bg-white/20",
-        busyOther && "pointer-events-none",
-        busySelf && "pointer-events-none bg-white/15",
+        !blocked && "active:bg-sidebar-accent",
+        busyOther && "pointer-events-none opacity-60",
+        busySelf && "pointer-events-none bg-sidebar-accent",
       )}
     >
       {busySelf ? (
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-sidebar-foreground" aria-hidden />
       ) : (
         <span className="w-4 shrink-0" aria-hidden />
       )}
@@ -108,12 +108,12 @@ export function AppSidebar() {
           language: "Idioma",
           langEn: "Inglés",
           langEs: "Español",
-          demoAnalysis: "Prueba · paquete de análisis (15 €)",
-          demoExpert: "Prueba · informe experto (50 €)",
-          demoError: "No se pudo crear el demo",
-          demoReady: "Informe de prueba listo",
-          demoReadyDesc: "Informe de demostración: ábrelo en Informes para revisar el paquete.",
-          demoReportsLabel: "Probar sin pagar",
+          demoAnalysis: "Modelo ordinario — paquete de análisis (15 €)",
+          demoExpert: "Modelo ampliado — expediente experto (50 €)",
+          demoError: "No se pudo generar el modelo",
+          demoReady: "Modelo generado",
+          demoReadyDesc: "Consulta demostrativa registrada. Acceda a Informes para revisar el contenido.",
+          demoReportsLabel: "Consultas demostrativas",
           logOut: "Cerrar sesión",
         }
       : {
@@ -130,12 +130,12 @@ export function AppSidebar() {
           language: "Language",
           langEn: "English",
           langEs: "Spanish",
-          demoAnalysis: "Sample · analysis pack (15 €)",
-          demoExpert: "Sample · expert report (50 €)",
-          demoError: "Could not create demo report",
-          demoReady: "Sample report ready",
-          demoReadyDesc: "Sample demo report — open it in Reports to review the package.",
-          demoReportsLabel: "Try without paying",
+          demoAnalysis: "Standard template — analysis package (15 €)",
+          demoExpert: "Extended template — expert file (50 €)",
+          demoError: "Could not generate demonstration file",
+          demoReady: "Demonstration file ready",
+          demoReadyDesc: "A demonstration entry has been filed. Open Reports to review the contents.",
+          demoReportsLabel: "Demonstration requests",
           logOut: "Log out",
         };
   const navItems = user?.isAdmin

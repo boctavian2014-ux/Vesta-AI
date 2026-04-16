@@ -47,7 +47,7 @@
   --chart-4: 280 45% 50%;
   --chart-5: 15 75% 55%;
   --font-sans: 'General Sans', 'Manrope', 'Inter', 'Helvetica Neue', Arial, sans-serif;
-  --font-report: 'Space Grotesk', 'General Sans', 'Manrope', sans-serif;
+  --font-report: 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --font-serif: Georgia, serif;
   --font-mono: 'JetBrains Mono', monospace;
   --radius: .5rem;
@@ -561,17 +561,22 @@ html:not(.dark) .app-ambient__blob--c {
 
   .font-report {
     font-family: var(--font-report);
-    letter-spacing: -0.01em;
+    letter-spacing: 0.01em;
   }
 
   .report-heading {
-    @apply font-semibold tracking-tight;
-    letter-spacing: -0.02em;
+    @apply font-semibold tracking-wide;
+    letter-spacing: 0.02em;
   }
 
   .report-title {
-    @apply font-semibold;
-    letter-spacing: -0.015em;
+    @apply font-semibold tracking-wide;
+    letter-spacing: 0.015em;
+  }
+
+  /** Flat inset blocks (replaces glass panels on report pages). */
+  .report-inset-panel {
+    @apply rounded-md border border-border bg-muted/30;
   }
 
   .report-card-spacing {
@@ -580,7 +585,7 @@ html:not(.dark) .app-ambient__blob--c {
 
   .report-secondary {
     color: hsl(var(--muted-foreground) / 0.82);
-    line-height: 1.72;
+    line-height: 1.78;
   }
 
   .report-aux-mobile {

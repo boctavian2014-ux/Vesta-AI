@@ -39,68 +39,68 @@ function StatusBadge({
     pending: {
       label: s.statusPending,
       className:
-        "bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/20",
+        "border-amber-700/30 bg-amber-600/[0.06] text-foreground hover:bg-amber-600/[0.1]",
       icon: <Clock className="h-3 w-3" />,
     },
     processing: {
       label: s.statusProcessing,
       className:
-        "bg-blue-500/15 text-blue-400 border-blue-500/30 hover:bg-blue-500/20",
+        "border-sky-700/30 bg-sky-600/[0.06] text-foreground hover:bg-sky-600/[0.1]",
       icon: <Loader2 className="h-3 w-3 animate-spin" />,
     },
     paid: {
       label: s.statusPaid,
       className:
-        "bg-violet-500/15 text-violet-400 border-violet-500/30 hover:bg-violet-500/20",
+        "border-violet-700/30 bg-violet-600/[0.06] text-foreground hover:bg-violet-600/[0.1]",
       icon: <Clock className="h-3 w-3" />,
     },
     submitted_manual: {
       label: s.statusSubmittedManual,
       className:
-        "bg-sky-500/15 text-sky-400 border-sky-500/30 hover:bg-sky-500/20",
+        "border-sky-800/30 bg-sky-700/[0.06] text-foreground hover:bg-sky-700/[0.1]",
       icon: <Clock className="h-3 w-3" />,
     },
     waiting_partner: {
       label: s.statusWaitingPartner,
       className:
-        "bg-indigo-500/15 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20",
+        "border-indigo-800/30 bg-indigo-700/[0.06] text-foreground hover:bg-indigo-700/[0.1]",
       icon: <Clock className="h-3 w-3" />,
     },
     pdf_received: {
       label: s.statusPdfReceived,
       className:
-        "bg-cyan-500/15 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20",
+        "border-cyan-800/30 bg-cyan-700/[0.06] text-foreground hover:bg-cyan-700/[0.1]",
       icon: <FileText className="h-3 w-3" />,
     },
     completed: {
       label: s.statusCompleted,
       className:
-        "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20",
+        "border-emerald-800/30 bg-emerald-700/[0.06] text-foreground hover:bg-emerald-700/[0.1]",
       icon: <CheckCircle2 className="h-3 w-3" />,
     },
     failed: {
       label: s.statusFailed,
       className:
-        "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/20",
+        "border-red-700/30 bg-red-600/[0.06] text-foreground hover:bg-red-600/[0.1]",
       icon: <XCircle className="h-3 w-3" />,
     },
     failed_refundable: {
       label: s.statusFailedRefundable,
       className:
-        "bg-rose-500/15 text-rose-400 border-rose-500/30 hover:bg-rose-500/20",
+        "border-rose-800/30 bg-rose-700/[0.06] text-foreground hover:bg-rose-700/[0.1]",
       icon: <XCircle className="h-3 w-3" />,
     },
   };
 
   const config = configs[status] ?? {
     label: status,
-    className: "bg-muted text-muted-foreground border-border",
+    className: "border-border bg-muted/50 text-muted-foreground",
     icon: null,
   };
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${config.className}`}
+      className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-xs font-medium uppercase tracking-wide ${config.className}`}
     >
       {config.icon}
       {config.label}
@@ -121,7 +121,7 @@ function ReportTypeLabel({
     expert_report: s.typeExpertReport,
   };
   return (
-    <Badge variant="outline" className="text-xs">
+    <Badge variant="outline" className="text-xs rounded-sm font-normal border-border">
       {labels[type] ?? s.typeGenericPropertyReport}
     </Badge>
   );
@@ -172,20 +172,20 @@ function ReportCard({
   return (
     <Link href={`/reports/${report.id}`}>
       <Card
-        className="border-border hover:border-primary/30 transition-colors cursor-pointer"
+        className="border-border bg-card shadow-sm border-l-[3px] border-l-border hover:border-l-muted-foreground/40 transition-colors cursor-pointer"
         data-testid={`report-card-${report.id}`}
       >
         <CardContent className="report-card-spacing">
           <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-lg bg-primary/10 shrink-0">
-              <FileText className="h-4 w-4 text-primary" />
+            <div className="p-2.5 rounded-sm border border-border bg-muted/30 shrink-0">
+              <FileText className="h-4 w-4 text-muted-foreground" />
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <ReportTypeLabel type={report.type} s={s} />
                 {isReportDemoPreview(report) ? (
-                  <Badge variant="secondary" className="text-[10px] font-normal text-muted-foreground">
+                  <Badge variant="secondary" className="text-[10px] font-normal rounded-sm text-muted-foreground border-border">
                     {s.reportDemoBadge}
                   </Badge>
                 ) : null}
@@ -278,53 +278,53 @@ export default function Reports() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="report-heading text-2xl md:text-[2rem] text-foreground">{s.reportsTitle}</h1>
-          <p className="report-secondary report-aux-mobile mt-1 tracking-[-0.005em]">{countSubtitle}</p>
+          <p className="report-secondary report-aux-mobile mt-1">{countSubtitle}</p>
         </div>
 
         {counts && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
             {counts.processing && (
-              <span className="text-xs text-blue-400">
+              <span>
                 {counts.processing} {s.countProcessing}
               </span>
             )}
             {counts.pending && (
-              <span className="text-xs text-amber-400">
+              <span>
                 {counts.pending} {s.countPending}
               </span>
             )}
             {counts.paid && (
-              <span className="text-xs text-violet-400">
+              <span>
                 {counts.paid} {s.countPaid}
               </span>
             )}
             {counts.submitted_manual && (
-              <span className="text-xs text-sky-400">
+              <span>
                 {counts.submitted_manual} {s.countSubmittedManual}
               </span>
             )}
             {counts.waiting_partner && (
-              <span className="text-xs text-indigo-400">
+              <span>
                 {counts.waiting_partner} {s.countWaitingPartner}
               </span>
             )}
             {counts.pdf_received && (
-              <span className="text-xs text-cyan-400">
+              <span>
                 {counts.pdf_received} {s.countPdfReceived}
               </span>
             )}
             {counts.completed && (
-              <span className="text-xs text-emerald-400">
+              <span>
                 {counts.completed} {s.countCompleted}
               </span>
             )}
             {counts.failed_refundable && (
-              <span className="text-xs text-rose-400">
+              <span className="text-rose-800 dark:text-rose-300">
                 {counts.failed_refundable} {s.countFailedRefundable}
               </span>
             )}
             {counts.failed && (
-              <span className="text-xs text-red-400">
+              <span className="text-red-800 dark:text-red-300">
                 {counts.failed} {s.countFailed}
               </span>
             )}

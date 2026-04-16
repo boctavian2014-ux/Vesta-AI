@@ -530,12 +530,12 @@ function PaymentModal({
         missingStripePk: "Falta VITE_STRIPE_PUBLISHABLE_KEY en el build. Añade la clave pública de Stripe.",
         securePay: "Pagar con tarjeta",
         backToPacks: "Volver a paquetes",
-        previewDemo: "Probar sin pagar",
+        previewDemo: "Consulta demostrativa",
         previewDemoHint:
-          "Paga con tarjeta para un informe real de este inmueble, o prueba sin pagar para generar un demo y verlo en Informes (sin cobro).",
-        loginRequiredPayment: "Inicia sesión para pagar y guardar el informe en Informes.",
-        creatingDemo: "Creando informe de demostración...",
-        previewDemoFailed: "No se pudo crear el demo. Inténtalo de nuevo.",
+          "Pague con tarjeta para un informe con validez comercial, o genere un modelo sin cargo y consúltelo en Informes.",
+        loginRequiredPayment: "Inicie sesión para abonar el informe y archivarlo en Informes.",
+        creatingDemo: "Generando modelo de consulta...",
+        previewDemoFailed: "No se pudo generar el modelo. Inténtelo de nuevo.",
       }
     : {
         missingCoords: "Missing coordinates",
@@ -591,12 +591,12 @@ function PaymentModal({
         missingStripePk: "Missing VITE_STRIPE_PUBLISHABLE_KEY in the build. Add your Stripe publishable key.",
         securePay: "Pay securely",
         backToPacks: "Back to packages",
-        previewDemo: "Try without paying",
+        previewDemo: "Demonstration request",
         previewDemoHint:
-          "Pay by card for a real report for this property, or try without paying to generate a demo and view it in Reports (no charge).",
-        loginRequiredPayment: "Sign in to pay and save the report under Reports.",
-        creatingDemo: "Creating demo report...",
-        previewDemoFailed: "Could not create the demo. Please try again.",
+          "Pay by card for a commercial-grade report, or generate a no-fee demonstration file and review it under Reports.",
+        loginRequiredPayment: "Sign in to pay and file the report under Reports.",
+        creatingDemo: "Generating demonstration file...",
+        previewDemoFailed: "Could not generate the demonstration file. Please try again.",
       };
 
   const { toast } = useToast();
