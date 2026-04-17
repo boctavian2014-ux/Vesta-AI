@@ -5,7 +5,7 @@ import enUS from "antd/locale/en_US";
 import esES from "antd/locale/es_ES";
 import { useUiLocale } from "@/lib/ui-locale";
 
-/** Matches Vesta dark theme `--primary` / sidebar-primary (cyan). */
+/** North star: fintech premium — single accent, Ant mapped to Vesta tokens (`--vesta-*` shell rhythm in index.css). */
 const VESTA_PRIMARY = "#2ea3eb";
 
 function subscribeDarkClass(onChange: () => void) {

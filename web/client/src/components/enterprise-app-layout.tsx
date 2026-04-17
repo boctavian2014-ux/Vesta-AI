@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,7 +30,7 @@ import { Link } from "wouter";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const { Sider, Header, Content } = Layout;
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 const NAV_ITEMS = [
   { key: "dashboard", href: "/" },
@@ -148,7 +148,29 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
     },
   ];
 
-  const normalizedPath = !location || location === "/" ? "/" : location;
+  const normalizedPath = !location || location === "/" ? "/" : location.split("?")[0] || "/";
+
+  const pageCrumb = useMemo(() => {
+    const path = normalizedPath;
+    const reportMatch = path.match(/^\/reports\/(\d+)$/);
+    if (reportMatch) {
+      return locale === "es" ? `${t.reports} · #${reportMatch[1]}` : `${t.reports} · #${reportMatch[1]}`;
+    }
+    const map: Record<string, string> = {
+      "/": t.dashboard,
+      "/map": t.map,
+      "/property-search": t.propertySearch,
+      "/trends": t.marketTrends,
+      "/properties": t.savedProperties,
+      "/reports": t.reports,
+      "/tutorial": t.tutorial,
+      "/admin/orders": t.adminOrders,
+      "/legal/terms": t.terms,
+      "/legal/privacy": t.privacy,
+    };
+    return map[path] ?? null;
+  }, [normalizedPath, locale, t]);
+
   const selectablePaths = new Set<string>([
     ...navItems.map((i) => i.href),
     "/tutorial",
@@ -192,149 +214,120 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Layout style={{ minHeight: "100vh", background: "transparent" }}>
+    <Layout className="min-h-screen bg-transparent">
       <Sider
         collapsed={collapsed}
         width={260}
         collapsedWidth={72}
         theme="dark"
-        style={{
-          background: "hsl(var(--sidebar))",
-          borderRight: `1px solid hsl(var(--sidebar-border))`,
-          overflow: "hidden",
-        }}
+        className="border-r border-sidebar-border !bg-sidebar"
         trigger={null}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            height: "100vh",
-            minHeight: 0,
-          }}
-        >
-          <div style={{ padding: collapsed ? "12px 8px" : "16px 12px", flexShrink: 0 }}>
+        <div className="flex min-h-0 h-dvh flex-col">
+          <div className={`shrink-0 ${collapsed ? "px-2 py-3" : "px-3 py-4"}`}>
             <div
-              className="group"
+              className={`group overflow-hidden ${collapsed ? "max-h-11" : ""}`}
               data-collapsible={collapsed ? "icon" : undefined}
-              style={{ maxHeight: collapsed ? 44 : undefined, overflow: "hidden" }}
             >
               <VestaBrandLogoSidebar />
             </div>
           </div>
-          <Divider style={{ margin: "8px 0", borderColor: "hsl(var(--sidebar-border))", flexShrink: 0 }} />
+          <Divider className="!my-2 shrink-0 border-sidebar-border" />
           <Menu
             theme="dark"
             mode="inline"
             selectedKeys={selectedKeys}
             items={menuItems}
             onClick={onMenuClick}
-            style={{
-              flex: 1,
-              minHeight: 0,
-              overflowY: "auto",
-              background: "transparent",
-              borderInlineEnd: "none",
-            }}
+            className="min-h-0 flex-1 border-e-0 bg-transparent overflow-y-auto"
           />
-          <div style={{ flexShrink: 0, padding: collapsed ? "8px 6px 16px" : "12px 12px 20px" }}>
+          <div className={`shrink-0 space-y-0 ${collapsed ? "px-1.5 pb-4 pt-1" : "px-3 pb-5 pt-2"}`}>
             {!collapsed && (
-              <>
-                <Text
-                  type="secondary"
-                  style={{
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    display: "block",
-                    marginBottom: 8,
-                  }}
-                >
-                  {t.language}
-                </Text>
-                <Space.Compact block style={{ marginBottom: 8 }}>
-                  <Button
-                    type={locale === "en" ? "primary" : "default"}
-                    size="small"
-                    data-testid="locale-en"
-                    onClick={() => setLocale("en")}
-                    style={{ width: "50%" }}
-                  >
-                    EN
-                  </Button>
-                  <Button
-                    type={locale === "es" ? "primary" : "default"}
-                    size="small"
-                    data-testid="locale-es"
-                    onClick={() => setLocale("es")}
-                    style={{ width: "50%" }}
-                  >
-                    ES
-                  </Button>
-                </Space.Compact>
-                <Text type="secondary" style={{ fontSize: 10, display: "block", marginBottom: 12 }}>
-                  {locale === "es" ? t.langEs : t.langEn}
-                </Text>
-                <Text
-                  type="secondary"
-                  style={{
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    display: "block",
-                    marginBottom: 8,
-                  }}
-                >
-                  {t.demoReportsLabel}
-                </Text>
-                <Space direction="vertical" size={6} style={{ width: "100%", marginBottom: 12 }}>
-                  <Button
-                    size="small"
-                    block
-                    loading={demoBusy === "analysis"}
-                    disabled={demoBusy === "expert"}
-                    data-testid="nav-demo-analysis"
-                    onClick={() => void runDemo("analysis_pack")}
-                  >
-                    {t.demoAnalysis}
-                  </Button>
-                  <Button
-                    size="small"
-                    block
-                    loading={demoBusy === "expert"}
-                    disabled={demoBusy === "analysis"}
-                    data-testid="nav-demo-expert"
-                    onClick={() => void runDemo("expert_report")}
-                  >
-                    {t.demoExpert}
-                  </Button>
-                </Space>
-                <Space size={8} wrap style={{ marginBottom: 12 }}>
+              <div className="mb-3 space-y-3">
+                <div>
+                  <Text type="secondary" className="mb-2 block text-[10px] font-medium uppercase tracking-wide">
+                    {t.language}
+                  </Text>
+                  <Space.Compact block className="mb-2">
+                    <Button
+                      type={locale === "en" ? "primary" : "default"}
+                      size="small"
+                      data-testid="locale-en"
+                      onClick={() => setLocale("en")}
+                      className="!w-1/2"
+                    >
+                      EN
+                    </Button>
+                    <Button
+                      type={locale === "es" ? "primary" : "default"}
+                      size="small"
+                      data-testid="locale-es"
+                      onClick={() => setLocale("es")}
+                      className="!w-1/2"
+                    >
+                      ES
+                    </Button>
+                  </Space.Compact>
+                  <Text type="secondary" className="block text-[10px] leading-tight">
+                    {locale === "es" ? t.langEs : t.langEn}
+                  </Text>
+                </div>
+                <Divider className="!my-0 border-sidebar-border/80" />
+                <div>
+                  <Text type="secondary" className="mb-2 block text-[10px] font-medium uppercase tracking-wide">
+                    {t.demoReportsLabel}
+                  </Text>
+                  <Space direction="vertical" size={6} className="w-full">
+                    <Button
+                      size="small"
+                      block
+                      loading={demoBusy === "analysis"}
+                      disabled={demoBusy === "expert"}
+                      data-testid="nav-demo-analysis"
+                      onClick={() => void runDemo("analysis_pack")}
+                    >
+                      {t.demoAnalysis}
+                    </Button>
+                    <Button
+                      size="small"
+                      block
+                      loading={demoBusy === "expert"}
+                      disabled={demoBusy === "analysis"}
+                      data-testid="nav-demo-expert"
+                      onClick={() => void runDemo("expert_report")}
+                    >
+                      {t.demoExpert}
+                    </Button>
+                  </Space>
+                </div>
+                <Space size={8} wrap className="gap-y-1">
                   <Link href="/legal/terms">
-                    <Button type="link" size="small" style={{ padding: 0, height: "auto" }}>
+                    <Button type="link" size="small" className="!h-auto !p-0 !text-xs">
                       {t.terms}
                     </Button>
                   </Link>
                   <Link href="/legal/privacy">
-                    <Button type="link" size="small" style={{ padding: 0, height: "auto" }}>
+                    <Button type="link" size="small" className="!h-auto !p-0 !text-xs">
                       {t.privacy}
                     </Button>
                   </Link>
                 </Space>
-              </>
+              </div>
             )}
-            <Divider style={{ margin: "8px 0", borderColor: "hsl(var(--sidebar-border))" }} />
+            <Divider className="!my-2 border-sidebar-border" />
             <Space
               direction={collapsed ? "vertical" : "horizontal"}
               align="center"
-              style={{ width: "100%", justifyContent: collapsed ? "center" : "space-between" }}
+              className={`w-full ${collapsed ? "justify-center" : "justify-between"}`}
               size={collapsed ? 8 : "middle"}
             >
-              <Avatar style={{ backgroundColor: "hsl(var(--primary))", flexShrink: 0 }}>{initials}</Avatar>
+              <Avatar className="!bg-primary shrink-0 !text-primary-foreground">{initials}</Avatar>
               {!collapsed && (
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <Text strong ellipsis style={{ display: "block", color: "hsl(var(--sidebar-foreground))" }}>
+                <div className="min-w-0 flex-1">
+                  <Text strong ellipsis className="!block text-sidebar-foreground">
                     {user?.username ?? "User"}
                   </Text>
-                  <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+                  <Text type="secondary" ellipsis className="!block text-[11px]">
                     {user?.email ?? ""}
                   </Text>
                 </div>
@@ -350,7 +343,7 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
                 <Button
                   size="small"
                   block
-                  style={{ marginTop: 8 }}
+                  className="mt-2"
                   data-testid="logout-button"
                   icon={<LogoutOutlined />}
                   aria-label={t.logOut}
@@ -361,18 +354,10 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </Sider>
-      <Layout style={{ minHeight: 0, background: "transparent" }}>
+      <Layout className="min-h-0 bg-transparent">
         <Header
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            height: 48,
-            lineHeight: "48px",
-            paddingInline: 16,
-            borderBottom: `1px solid hsl(var(--border))`,
-            backdropFilter: "blur(8px)",
-          }}
+          className="flex items-center gap-2 border-b border-border bg-card/85 px-4 backdrop-blur-md"
+          style={{ height: "var(--vesta-header-h)", lineHeight: "var(--vesta-header-h)" }}
         >
           <Tooltip title={collapsed ? (locale === "es" ? "Expandir menú" : "Expand menu") : locale === "es" ? "Contraer menú" : "Collapse menu"}>
             <Button
@@ -383,11 +368,16 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
               onClick={() => setCollapsed((c) => !c)}
             />
           </Tooltip>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+          {pageCrumb ? (
+            <Title level={5} className="!mb-0 !ml-1 !text-sm !font-semibold !text-foreground/90 truncate max-w-[min(420px,50vw)]">
+              {pageCrumb}
+            </Title>
+          ) : null}
+          <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
           </div>
         </Header>
-        <Content style={{ minHeight: 0, overflow: "auto" }}>{children}</Content>
+        <Content className="min-h-0 overflow-auto">{children}</Content>
       </Layout>
     </Layout>
   );

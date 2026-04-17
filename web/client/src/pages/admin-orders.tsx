@@ -259,7 +259,7 @@ export default function AdminOrders() {
         </Col>
       </Row>
 
-      <Card title={`Orders (${filteredRows.length} / ${rows.length})`} variant="borderless" className="glass-panel">
+      <Card title={`Orders (${filteredRows.length} / ${rows.length})`} variant="borderless" className="border border-border bg-card shadow-sm">
         <Space wrap size={[8, 8]} style={{ marginBottom: 16 }}>
           {FILTER_CHIPS.map((chip) => {
             const count = chip === "all" ? rows.length : (counts[chip] ?? 0);
@@ -312,7 +312,7 @@ export default function AdminOrders() {
         )}
         {!isLoading &&
           filteredRows.map((report) => (
-            <Card key={report.id} size="small" style={{ marginBottom: 16 }} className="glass-panel">
+            <Card key={report.id} size="small" style={{ marginBottom: 16 }} className="border border-border bg-card shadow-sm">
               <Row justify="space-between" align="middle" wrap gutter={[8, 8]}>
                 <Col>
                   <Text strong>Order #{report.id}</Text>
@@ -549,7 +549,7 @@ export default function AdminOrders() {
               </Space>
 
               {auditByReport[report.id]?.length ? (
-                <Card size="small" className="glass-panel" style={{ marginTop: 12 }}>
+                <Card size="small" className="border border-border bg-card shadow-sm" style={{ marginTop: 12 }}>
                   <Text strong style={{ fontSize: 12 }}>
                     Audit trail
                   </Text>

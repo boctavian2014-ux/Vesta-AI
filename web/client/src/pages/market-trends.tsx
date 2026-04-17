@@ -234,8 +234,8 @@ export default function MarketTrends() {
               <AreaChart data={filteredData} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="ipvGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(38 65% 55%)" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="hsl(38 65% 55%)" stopOpacity={0} />
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -264,11 +264,11 @@ export default function MarketTrends() {
                 <Area
                   type="monotone"
                   dataKey="value"
-                  stroke="hsl(38 65% 55%)"
+                  stroke="hsl(var(--primary))"
                   strokeWidth={2.5}
                   fill="url(#ipvGradient)"
                   dot={false}
-                  activeDot={{ r: 5, fill: "hsl(38 65% 55%)" }}
+                  activeDot={{ r: 5, fill: "hsl(var(--primary))" }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -278,7 +278,7 @@ export default function MarketTrends() {
 
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-0.5 bg-[hsl(38_65%_55%)]" />
+          <div className="w-3 h-0.5 bg-primary" />
           <span>IPV — official INE series (Spain, national)</span>
         </div>
         <Tag>Ministerio de Vivienda — Spain</Tag>

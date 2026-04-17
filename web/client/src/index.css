@@ -61,6 +61,10 @@
   --shadow-2xl: 0px 16px 48px hsl(220 30% 20% / 0.14);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+  /** App shell rhythm (Direction A: fintech premium — single accent, consistent spacing) */
+  --vesta-header-h: 52px;
+  --vesta-space-section: 1.25rem;
+  --vesta-radius-page: 0.75rem;
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
@@ -142,6 +146,9 @@
   --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
   --destructive-border: hsl(var(--destructive));
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --vesta-header-h: 52px;
+  --vesta-space-section: 1.25rem;
+  --vesta-radius-page: 0.75rem;
 }
 
 @layer base {

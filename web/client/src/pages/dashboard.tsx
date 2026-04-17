@@ -226,8 +226,8 @@ export default function Dashboard() {
                   <AreaChart data={TREND_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="dashGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(38 65% 55%)" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="hsl(38 65% 55%)" stopOpacity={0} />
+                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.38} />
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -247,11 +247,11 @@ export default function Dashboard() {
                     <Area
                       type="monotone"
                       dataKey="ipv"
-                      stroke="hsl(38 65% 55%)"
+                      stroke="hsl(var(--primary))"
                       strokeWidth={2}
                       fill="url(#dashGradient)"
                       dot={false}
-                      activeDot={{ r: 4, fill: "hsl(38 65% 55%)" }}
+                      activeDot={{ r: 4, fill: "hsl(var(--primary))" }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

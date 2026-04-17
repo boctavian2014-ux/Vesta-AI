@@ -607,6 +607,23 @@ function PaymentModal({
   const [tier, setTier] = useState<ProductTier>("analysis_pack");
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qc = useQueryClient();
+  const [stripeColorPrimary, setStripeColorPrimary] = useState(() =>
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+      ? "hsl(203, 78%, 52%)"
+      : "hsl(38, 70%, 50%)",
+  );
+
+  useEffect(() => {
+    const read = () => {
+      setStripeColorPrimary(
+        document.documentElement.classList.contains("dark") ? "hsl(203, 78%, 52%)" : "hsl(38, 70%, 50%)",
+      );
+    };
+    read();
+    const obs = new MutationObserver(read);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
 
   const priceForTier = tier === "expert_report" ? PRET_EXPERT_EUR : PRET_ANALYSIS_PACK_EUR;
   const resolvedCoords = selectedCoords ?? fallbackCoords ?? null;
@@ -1004,10 +1021,14 @@ function PaymentModal({
           {step === "payment" && clientSecret && stripePromise && paymentIntentId && (
             <div className="space-y-3 py-1">
               <Elements
+                key={`${clientSecret}-${stripeColorPrimary}`}
                 stripe={stripePromise}
                 options={{
                   clientSecret,
-                  appearance: { theme: "stripe", variables: { colorPrimary: "hsl(38, 70%, 50%)" } },
+                  appearance: {
+                    theme: "stripe",
+                    variables: { colorPrimary: stripeColorPrimary },
+                  },
                 }}
               >
                 <PaymentModalStripeForm
@@ -1191,6 +1212,7 @@ export default function MapPage() {
         usage: "Uso",
         yearBuilt: "Año de construcción",
         aiFinancial: "Análisis financiero con IA para este inmueble",
+        mapPanelCtaHint: "Usa el botón inferior para solicitar el paquete de análisis o el informe experto.",
         financialAnalysis: "Análisis financiero",
         expertAnalysisOrder: "Informe experto",
         calculatingYield: "Calculando rentabilidad...",
@@ -1259,6 +1281,7 @@ export default function MapPage() {
         usage: "Usage",
         yearBuilt: "Year built",
         aiFinancial: "AI financial analysis for this property",
+        mapPanelCtaHint: "Use the actions below to order the analysis pack or the expert report.",
         financialAnalysis: "Financial analysis",
         expertAnalysisOrder: "Expert analysis",
         calculatingYield: "Calculating yield...",
@@ -1764,10 +1787,10 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* Top bar — search + Street View (language: sidebar) */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
+      {/* Top bar — single surface (fintech): search + Street View */}
+      <div className="absolute left-1/2 top-3 z-10 flex w-[min(100%,42rem)] max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-col gap-2 sm:top-4 sm:flex-row sm:items-center sm:gap-0 sm:rounded-2xl sm:border sm:border-sidebar-border/90 sm:bg-sidebar/95 sm:shadow-lg sm:backdrop-blur-md">
         <form
-          className="flex items-center gap-2 rounded-full bg-sidebar border border-sidebar-border px-2 py-1.5"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-sidebar-border/90 bg-sidebar/95 px-2 py-1.5 shadow-md backdrop-blur-md sm:rounded-none sm:border-0 sm:bg-transparent sm:px-3 sm:py-2 sm:shadow-none sm:backdrop-blur-none"
           onSubmit={(event) => {
             event.preventDefault();
             void runSearch();
@@ -1777,14 +1800,14 @@ export default function MapPage() {
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder={t.searchPlaceholder}
-            className="w-[270px] bg-transparent px-2 text-xs text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/50"
+            className="min-w-0 flex-1 bg-transparent px-2 text-xs text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/50 sm:max-w-[min(270px,42vw)]"
             aria-label={t.searchPlaceholder}
           />
           <Button
             htmlType="submit"
             type="primary"
             size="small"
-            className="h-7 rounded-full px-3 text-xs"
+            className="h-8 shrink-0 rounded-full px-3 text-xs"
             disabled={searchBusy}
           >
             {searchBusy ? (
@@ -1801,14 +1824,14 @@ export default function MapPage() {
           </Button>
         </form>
 
-        <div className="inline-flex items-center gap-1 rounded-full bg-sidebar border border-sidebar-border p-1">
+        <div className="flex shrink-0 justify-center sm:justify-end sm:border-l sm:border-sidebar-border/60 sm:pr-2">
           <button
             type="button"
             onClick={() => openStreetView()}
             disabled={!selectedCoords}
             title={selectedCoords ? t.streetViewButton : t.streetViewSelectPointFirst}
             aria-label={selectedCoords ? t.streetViewButton : t.streetViewSelectPointFirst}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors enabled:bg-sidebar-primary enabled:text-sidebar-primary-foreground enabled:hover:bg-sidebar-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-sidebar-accent disabled:text-sidebar-foreground/55"
+            className="inline-flex w-full max-w-[20rem] items-center justify-center gap-1.5 rounded-2xl border border-sidebar-border/90 bg-sidebar/95 px-3 py-2 text-xs font-medium shadow-md backdrop-blur-md transition-colors enabled:bg-sidebar-primary enabled:text-sidebar-primary-foreground enabled:hover:bg-sidebar-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-sidebar-accent disabled:text-sidebar-foreground/55 sm:w-auto sm:rounded-full sm:border-0 sm:bg-transparent sm:px-3 sm:py-1.5 sm:shadow-none sm:backdrop-blur-none sm:enabled:bg-sidebar-primary"
           >
             <ScanLine className="h-3.5 w-3.5 shrink-0" />
             {t.streetViewButton}
@@ -1873,7 +1896,8 @@ export default function MapPage() {
                 </div>
               </div>
 
-              <div className="text-sidebar-foreground flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
+              <div className="text-sidebar-foreground flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {/* Identifying */}
                 {isIdentifying && (
                   <div className="space-y-3">
@@ -1951,19 +1975,11 @@ export default function MapPage() {
                     )}
 
                     {!financialData && !financialMutation.isPending && !financialMutation.isError && (
-                      <div className="text-center py-2 space-y-3">
+                      <div className="py-2 text-center">
                         <p className="text-sm text-sidebar-foreground/80">{t.aiFinancial}</p>
-                        <Button
-                          type="primary"
-                          block
-                          className="w-full"
-                          onClick={() => {
-                            setPaymentModalTier("analysis_pack");
-                            setPaymentModalOpen(true);
-                          }}
-                        >
-                          {t.financialAnalysis} — {PRET_ANALYSIS_PACK_EUR} €
-                        </Button>
+                        <p className="mt-2 text-xs text-sidebar-foreground/55 sm:hidden">
+                          {t.mapPanelCtaHint}
+                        </p>
                       </div>
                     )}
 
@@ -2095,37 +2111,53 @@ export default function MapPage() {
                       </div>
                     )}
 
-                    {/* Actions */}
-                    <Divider className="bg-sidebar-border my-2" />
-                    <div className="space-y-2 pb-2">
-                      <Button
-                        block
-                        className="w-full"
-                        onClick={() => saveMutation.mutate()}
-                        disabled={saveMutation.isPending}
-                        icon={
-                          saveMutation.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Bookmark className="h-4 w-4" />
-                          )
-                        }
-                      >
-                        {t.saveProperty}
-                      </Button>
+                  </div>
+                )}
+                </div>
+
+                {/* Primary actions: pinned on small screens so pay/analysis stays reachable */}
+                {propertyInfo && !isIdentifying && !identifyError && (
+                  <div className="shrink-0 space-y-2 border-t border-sidebar-border/60 bg-sidebar/95 px-4 py-3 backdrop-blur-md max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:border-t-0 sm:bg-transparent sm:px-4 sm:py-2 sm:backdrop-blur-none">
+                    {!financialData && !financialMutation.isPending && !financialMutation.isError && (
                       <Button
                         type="primary"
                         block
-                        className="w-full font-semibold"
+                        className="w-full"
                         onClick={() => {
-                          setPaymentModalTier("expert_report");
+                          setPaymentModalTier("analysis_pack");
                           setPaymentModalOpen(true);
                         }}
-                        data-testid="order-full-report"
                       >
-                        {t.expertAnalysisOrder} — {PRET_EXPERT_EUR} €
+                        {t.financialAnalysis} — {PRET_ANALYSIS_PACK_EUR} €
                       </Button>
-                    </div>
+                    )}
+                    <Button
+                      block
+                      className="w-full"
+                      onClick={() => saveMutation.mutate()}
+                      disabled={saveMutation.isPending}
+                      icon={
+                        saveMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Bookmark className="h-4 w-4" />
+                        )
+                      }
+                    >
+                      {t.saveProperty}
+                    </Button>
+                    <Button
+                      type="primary"
+                      block
+                      className="w-full font-semibold"
+                      onClick={() => {
+                        setPaymentModalTier("expert_report");
+                        setPaymentModalOpen(true);
+                      }}
+                      data-testid="order-full-report"
+                    >
+                      {t.expertAnalysisOrder} — {PRET_EXPERT_EUR} €
+                    </Button>
                   </div>
                 )}
               </div>

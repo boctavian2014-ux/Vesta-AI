@@ -5,7 +5,8 @@ import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { useUiLocale } from "@/lib/ui-locale";
 import { getReportsStrings, isReportDemoPreview } from "@/lib/reports-i18n";
 import { showVestaMessage } from "@/lib/vesta-message";
-import { App, Button, Card, Divider, Skeleton, Tag, Typography } from "antd";
+import { App, Button, Card, Divider, Skeleton, Tabs, Tag, Typography } from "antd";
+import type { TabsProps } from "antd";
 import type { Report } from "@shared/schema";
 import {
   ArrowLeft, TrendingUp, Loader2, CheckCircle2,
@@ -246,6 +247,16 @@ export default function ReportDetail() {
   const financial  = (() => { try { return report?.financialJson ? JSON.parse(report.financialJson) : null; } catch { return null; } })();
   const notaSimple = (() => { try { return (report as any)?.notaSimpleJson ? JSON.parse((report as any).notaSimpleJson) : null; } catch { return null; } })();
   const fullReport = asyncReport ?? (() => { try { return report?.reportJson ? JSON.parse(report.reportJson) : null; } catch { return null; } })();
+  /** Prefer linear layout for JSON blobs that have no AI narrative blocks (e.g. empty `{}`). */
+  const tabbedReportLayout = Boolean(
+    fullReport &&
+      (fullReport.executive_summary ||
+        fullReport.risk ||
+        fullReport.legal ||
+        fullReport.financials ||
+        fullReport.urbanism ||
+        fullReport.neighborhood),
+  );
   const zoneAnalysis = fullReport?.zone_analysis ?? fullReport?.zoneAnalysis ?? null;
   const zoneOpenStreetMapUrl = (() => {
     const u = zoneAnalysis?.snapshot?.openstreetmap_url;
@@ -580,333 +591,536 @@ export default function ReportDetail() {
         </Section>
       )}
 
-      {/* ── Catastro ─────────────────────────────────────────────────────── */}
-      {!isLoading && cadastral && (
-        <Section icon={<VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />} title={tr("Catastro data", "Datos de Catastro")}>
-          {cadastral.referenciaCatastral && (
-            <div className="report-inset-panel px-3 py-2 mb-3 border-l-[3px] !border-l-muted-foreground/40">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tr("Reference", "Referencia")}</p>
-              <p className="text-sm font-semibold text-foreground font-mono">{cadastral.referenciaCatastral}</p>
-            </div>
-          )}
-          <Row label={tr("Address", "Direccion")} value={cadastral.address} />
-          <Row label={tr("Municipality", "Municipio")} value={cadastral.municipio} />
-          <Row label={tr("Province", "Provincia")} value={cadastral.provincia} />
-          <Row label={tr("Area", "Superficie")} value={cadastral.superficie ? `${cadastral.superficie} m²` : null} />
-          <Row label={tr("Use", "Uso")} value={cadastral.uso} />
-          <Row label={tr("Construction year", "Ano de construccion")} value={cadastral.anoConstruccion} />
-        </Section>
-      )}
+      {/* ── Catastro / financial / zone / registry / AI narrative (tabs when long-form AI report exists) ─ */}
+      {!isLoading && !isProcessing && !isFailed && report && (
+        tabbedReportLayout ? (
+          <Tabs
+            key={report.id}
+            className="report-detail-tabs"
+            defaultActiveKey="details"
+            items={
+              [
+                {
+                  key: "details",
+                  label: tr("Property & zone", "Propiedad y zona"),
+                  children: (
+                    <div className="space-y-5 pt-1">
+                      {cadastral && (
+                        <Section icon={<VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />} title={tr("Catastro data", "Datos de Catastro")}>
+                          {cadastral.referenciaCatastral && (
+                            <div className="report-inset-panel px-3 py-2 mb-3 border-l-[3px] !border-l-muted-foreground/40">
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tr("Reference", "Referencia")}</p>
+                              <p className="text-sm font-semibold text-foreground font-mono">{cadastral.referenciaCatastral}</p>
+                            </div>
+                          )}
+                          <Row label={tr("Address", "Direccion")} value={cadastral.address} />
+                          <Row label={tr("Municipality", "Municipio")} value={cadastral.municipio} />
+                          <Row label={tr("Province", "Provincia")} value={cadastral.provincia} />
+                          <Row label={tr("Area", "Superficie")} value={cadastral.superficie ? `${cadastral.superficie} m²` : null} />
+                          <Row label={tr("Use", "Uso")} value={cadastral.uso} />
+                          <Row label={tr("Construction year", "Ano de construccion")} value={cadastral.anoConstruccion} />
+                        </Section>
+                      )}
+                      {financial && Object.keys(financial).length > 0 && (
+                        <Section icon={<TrendingUp className="h-4 w-4" />} title={tr("Financial analysis", "Analisis financiero")}>
+                          <div className="grid grid-cols-2 gap-x-6">
+                            {financial.grossYield != null && <Row label={tr("Gross yield", "Rentabilidad bruta")} value={`${parseFloat(String(financial.grossYield)).toFixed(2)}%`} highlight />}
+                            {financial.netYield != null && <Row label={tr("Net yield", "Rentabilidad neta")} value={`${parseFloat(String(financial.netYield)).toFixed(2)}%`} highlight />}
+                            {financial.roi != null && <Row label="ROI" value={`${parseFloat(String(financial.roi)).toFixed(2)}%`} highlight />}
+                            {financial.opportunityScore != null && <Row label={tr("Opportunity score", "Puntuacion de oportunidad")} value={`${financial.opportunityScore}/100`} highlight />}
+                            {financial.pricePerSqm != null && <Row label={tr("Price/m²", "Precio/m²")} value={`€${parseFloat(String(financial.pricePerSqm)).toLocaleString()}`} />}
+                            {financial.estimatedValue != null && <Row label={tr("Estimated value", "Valor estimado")} value={`€${parseFloat(String(financial.estimatedValue)).toLocaleString()}`} />}
+                            {financial.monthlyRent != null && <Row label={tr("Monthly rent", "Alquiler mensual")} value={`€${parseFloat(String(financial.monthlyRent)).toLocaleString()}`} />}
+                          </div>
+                        </Section>
+                      )}
+                      {zoneAnalysis && (
+                        <Section icon={<MapPin className="h-4 w-4" />} title={tr("Zone analysis (MVP)", "Analisis de zona (MVP)")}>
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <Row label={tr("City", "Ciudad")} value={zoneAnalysis.snapshot?.city} />
+                              <Row label={tr("District", "Distrito")} value={zoneAnalysis.snapshot?.district} />
+                              <Row label={tr("Area price band", "Rango de precios zona")} value={zoneAnalysis.snapshot?.price_band} />
+                              <Row
+                                label={tr("Average area price / m²", "Precio medio zona / m²")}
+                                value={
+                                  zoneAnalysis.snapshot?.market_price_per_m2 != null
+                                    ? `€${Number(zoneAnalysis.snapshot.market_price_per_m2).toLocaleString()}`
+                                    : null
+                                }
+                              />
+                            </div>
+                            <Divider />
+                            <div className="space-y-1">
+                              <Row label={tr("Nearby schools", "Escuelas cercanas")} value={zoneAnalysis.nearby_essentials?.schools_nearby} />
+                              <Row label={tr("Nearby hospitals/clinics", "Hospitales/clinicas cercanas")} value={zoneAnalysis.nearby_essentials?.hospitals_nearby} />
+                              <Row label={tr("Nearby police", "Policia cercana")} value={zoneAnalysis.nearby_essentials?.police_nearby} />
+                              <Row label={tr("Nearby transit stops", "Paradas de transporte cercanas")} value={zoneAnalysis.nearby_essentials?.transit_stops_nearby} />
+                              <Row label={tr("Points of interest", "Puntos de interes")} value={zoneAnalysis.nearby_essentials?.attractions_nearby} />
+                            </div>
+                            {Array.isArray(zoneAnalysis.named_attractions) && zoneAnalysis.named_attractions.length > 0 && (
+                              <>
+                                <Divider />
+                                <div className="space-y-1">
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                                    {tr("Named attractions nearby", "Atracciones con nombre cercanas")}
+                                  </p>
+                                  {zoneAnalysis.named_attractions.map((a: { name?: string; kind?: string; distance_m?: number }, idx: number) => (
+                                    <Row
+                                      key={`${a.name ?? idx}-${idx}`}
+                                      label={a.name ?? "—"}
+                                      value={a.distance_m != null ? `~${a.distance_m} m${a.kind ? ` · ${a.kind}` : ""}` : a.kind ?? null}
+                                    />
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                            <Divider />
+                            <div className="space-y-1">
+                              <Row label={tr("Safety score", "Puntuacion de seguridad")} value={zoneAnalysis.safety_liquidity?.safety_score != null ? `${zoneAnalysis.safety_liquidity.safety_score}/100` : null} />
+                              <Row label={tr("Liquidity score", "Puntuacion de liquidez")} value={zoneAnalysis.safety_liquidity?.liquidity_score != null ? `${zoneAnalysis.safety_liquidity.liquidity_score}/100` : null} />
+                              <Row label={tr("Risk level", "Nivel de riesgo")} value={zoneAnalysis.safety_liquidity?.risk_level} />
+                              <Row label={tr("Final opportunity score", "Puntuacion final de oportunidad")} value={zoneAnalysis.final_opportunity?.score != null ? `${zoneAnalysis.final_opportunity.score}/100` : null} highlight />
+                              {zoneAnalysis.safety_liquidity?.summary && (
+                                <p className="report-secondary text-xs pt-1">{zoneAnalysis.safety_liquidity.summary}</p>
+                              )}
+                            </div>
+                            {Array.isArray(zoneAnalysis.poi_attractiveness?.highlights) && zoneAnalysis.poi_attractiveness.highlights.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">{tr("Area highlights", "Fortalezas de la zona")}</p>
+                                <BulletList
+                                  items={zoneAnalysis.poi_attractiveness.highlights}
+                                  variant="check"
+                                  openStreetMapUrl={zoneOpenStreetMapUrl}
+                                />
+                              </div>
+                            )}
+                            {Array.isArray(zoneAnalysis.poi_attractiveness?.cautions) && zoneAnalysis.poi_attractiveness.cautions.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Notes", "Observaciones")}</p>
+                                <BulletList
+                                  items={zoneAnalysis.poi_attractiveness.cautions}
+                                  variant="warning"
+                                  openStreetMapUrl={zoneOpenStreetMapUrl}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </Section>
+                      )}
+                      {notaSimple && (
+                        <Section
+                          icon={<Scale className="h-4 w-4" />}
+                          title={tr("Data extracted from land registry summary", "Datos extraídos de la Nota Simple")}
+                        >
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="report-inset-panel p-3">
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Owner", "Titular")}</p>
+                                <Row
+                                  label={tr("Holder", "Titular")}
+                                  value={
+                                    notaSimple?.structured?.owner?.names?.length
+                                      ? notaSimple.structured.owner.names.join(", ")
+                                      : notaSimple?.titular
+                                  }
+                                />
+                                <Row label={tr("Ownership type", "Tipo de titularidad")} value={notaSimple?.structured?.owner?.ownership_type} />
+                                <Row label={tr("Ownership share", "Cuota")} value={notaSimple?.structured?.owner?.ownership_share} />
+                              </div>
+                              <div className="report-inset-panel p-3">
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Property details", "Datos del inmueble")}</p>
+                                <Row label={tr("Address", "Direccion")} value={notaSimple?.structured?.property?.address || notaSimple?.direccion} />
+                                <Row label={tr("Property type", "Tipo de inmueble")} value={notaSimple?.structured?.property?.property_type} />
+                                <Row label="IDUFIR/CRU" value={notaSimple?.structured?.property?.idufir_cru} />
+                                <Row label={tr("Registry reference", "Referencia registral")} value={notaSimple?.structured?.property?.registry_reference} />
+                                <Row label={tr("Cadastral reference", "Referencia catastral")} value={notaSimple?.structured?.property?.cadastral_reference} />
+                                <Row label={tr("Built area", "Superficie construida")} value={notaSimple?.structured?.property?.built_area_m2 ? `${notaSimple.structured.property.built_area_m2} m²` : null} />
+                                <Row label={tr("Usable area", "Superficie util")} value={notaSimple?.structured?.property?.usable_area_m2 ? `${notaSimple.structured.property.usable_area_m2} m²` : null} />
+                              </div>
+                            </div>
 
-      {/* ── Financial ─────────────────────────────────────────────────────── */}
-      {!isLoading && financial && Object.keys(financial).length > 0 && (
-        <Section icon={<TrendingUp className="h-4 w-4" />} title={tr("Financial analysis", "Analisis financiero")}>
-          <div className="grid grid-cols-2 gap-x-6">
-            {financial.grossYield != null && <Row label={tr("Gross yield", "Rentabilidad bruta")} value={`${parseFloat(String(financial.grossYield)).toFixed(2)}%`} highlight />}
-            {financial.netYield != null && <Row label={tr("Net yield", "Rentabilidad neta")} value={`${parseFloat(String(financial.netYield)).toFixed(2)}%`} highlight />}
-            {financial.roi != null && <Row label="ROI" value={`${parseFloat(String(financial.roi)).toFixed(2)}%`} highlight />}
-            {financial.opportunityScore != null && <Row label={tr("Opportunity score", "Puntuacion de oportunidad")} value={`${financial.opportunityScore}/100`} highlight />}
-            {financial.pricePerSqm != null && <Row label={tr("Price/m²", "Precio/m²")} value={`€${parseFloat(String(financial.pricePerSqm)).toLocaleString()}`} />}
-            {financial.estimatedValue != null && <Row label={tr("Estimated value", "Valor estimado")} value={`€${parseFloat(String(financial.estimatedValue)).toLocaleString()}`} />}
-            {financial.monthlyRent != null && <Row label={tr("Monthly rent", "Alquiler mensual")} value={`€${parseFloat(String(financial.monthlyRent)).toLocaleString()}`} />}
-          </div>
-        </Section>
-      )}
+                            <div className="report-inset-panel p-3">
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Debts and encumbrances", "Deudas y cargas")}</p>
+                              <Row label={tr("Summary", "Resumen")} value={notaSimple?.cargas} />
+                              <Row label={tr("Encumbrance expiry", "Caducidad de cargas")} value={notaSimple?.caducidad_cargas} />
+                              <Row
+                                label={tr("Known total", "Total conocido")}
+                                value={formatEuroMaybe(notaSimple?.structured?.debts?.total_known_amount_eur, locale)}
+                              />
+                              <Row
+                                label={tr("Has active debts", "Tiene deudas activas")}
+                                value={
+                                  typeof notaSimple?.structured?.debts?.has_active_debts === "boolean"
+                                    ? (notaSimple.structured.debts.has_active_debts
+                                        ? tr("Yes", "Sí")
+                                        : tr("No", "No"))
+                                    : null
+                                }
+                              />
+                              {Array.isArray(notaSimple?.structured?.debts?.items) &&
+                                notaSimple.structured.debts.items.length > 0 && (
+                                  <div className="space-y-2 mt-2">
+                                    {notaSimple.structured.debts.items.map((item: any, idx: number) => (
+                                      <div key={idx} className="report-inset-panel px-3 py-2 text-xs">
+                                        <p className="font-semibold text-foreground">
+                                          {(item.type || tr("Encumbrance", "Carga")).toString().toUpperCase()}
+                                        </p>
+                                        <p className="text-muted-foreground">
+                                          {[item.creditor, formatEuroMaybe(item.amount_eur, locale), item.rank].filter(Boolean).join(" · ")}
+                                        </p>
+                                        {item.maturity_or_expiry_date && (
+                                          <p className="text-muted-foreground">{tr("Maturity/expiry", "Vencimiento/caducidad")}: {item.maturity_or_expiry_date}</p>
+                                        )}
+                                        {item.notes && <p className="text-muted-foreground">{item.notes}</p>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                            </div>
 
-      {/* Zone / POI (analysis_pack merge sau raport demo/expert cu zona) — nu depinde de sectiunile AI */}
-      {zoneAnalysis && (
-        <Section icon={<MapPin className="h-4 w-4" />} title={tr("Zone analysis (MVP)", "Analisis de zona (MVP)")}>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Row label={tr("City", "Ciudad")} value={zoneAnalysis.snapshot?.city} />
-              <Row label={tr("District", "Distrito")} value={zoneAnalysis.snapshot?.district} />
-              <Row label={tr("Area price band", "Rango de precios zona")} value={zoneAnalysis.snapshot?.price_band} />
-              <Row
-                label={tr("Average area price / m²", "Precio medio zona / m²")}
-                value={
-                  zoneAnalysis.snapshot?.market_price_per_m2 != null
-                    ? `€${Number(zoneAnalysis.snapshot.market_price_per_m2).toLocaleString()}`
-                    : null
-                }
-              />
-            </div>
-            <Divider />
-            <div className="space-y-1">
-              <Row label={tr("Nearby schools", "Escuelas cercanas")} value={zoneAnalysis.nearby_essentials?.schools_nearby} />
-              <Row label={tr("Nearby hospitals/clinics", "Hospitales/clinicas cercanas")} value={zoneAnalysis.nearby_essentials?.hospitals_nearby} />
-              <Row label={tr("Nearby police", "Policia cercana")} value={zoneAnalysis.nearby_essentials?.police_nearby} />
-              <Row label={tr("Nearby transit stops", "Paradas de transporte cercanas")} value={zoneAnalysis.nearby_essentials?.transit_stops_nearby} />
-              <Row label={tr("Points of interest", "Puntos de interes")} value={zoneAnalysis.nearby_essentials?.attractions_nearby} />
-            </div>
-            {Array.isArray(zoneAnalysis.named_attractions) && zoneAnalysis.named_attractions.length > 0 && (
-              <>
-                <Divider />
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                    {tr("Named attractions nearby", "Atracciones con nombre cercanas")}
-                  </p>
-                  {zoneAnalysis.named_attractions.map((a: { name?: string; kind?: string; distance_m?: number }, idx: number) => (
-                    <Row
-                      key={`${a.name ?? idx}-${idx}`}
-                      label={a.name ?? "—"}
-                      value={a.distance_m != null ? `~${a.distance_m} m${a.kind ? ` · ${a.kind}` : ""}` : a.kind ?? null}
-                    />
-                  ))}
+                            <div className="report-inset-panel p-3">
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Legal risk", "Riesgo legal")}</p>
+                              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                                <span className="text-xs text-muted-foreground">{tr("Risk level", "Nivel de riesgo")}</span>
+                                <LegalRiskBadge level={notaSimple?.structured?.risk?.legal_risk_level} locale={locale} />
+                              </div>
+                              {Array.isArray(notaSimple?.structured?.risk?.legal_risk_reasons) &&
+                                notaSimple.structured.risk.legal_risk_reasons.length > 0 && (
+                                  <BulletList items={notaSimple.structured.risk.legal_risk_reasons} variant="warning" />
+                                )}
+                              {notaSimple?.embargo_caducado && (
+                                <p className="text-xs text-amber-400 mt-2">{tr("Expired embargo detected: legal verification required.", "Embargo caducado detectado: se requiere revision legal.")}</p>
+                              )}
+                              {notaSimple?.manual_check && (
+                                <p className="text-xs text-amber-400 mt-1">{tr("Document requires manual verification (low-confidence OCR).", "El documento requiere revision manual (OCR de baja confianza).")}</p>
+                              )}
+                            </div>
+                          </div>
+                        </Section>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  key: "ai",
+                  label: tr("AI report", "Informe IA"),
+                  children: (
+                    <div className="space-y-5 pt-1">
+                      {fullReport.executive_summary && (
+                        <Section icon={<FileText className="h-4 w-4" />} title={tr("Executive summary", "Resumen ejecutivo")}>
+                          <p className="report-secondary report-aux-mobile">{fullReport.executive_summary}</p>
+                        </Section>
+                      )}
+                      {fullReport.risk && (
+                        <Section icon={<ShieldAlert className="h-4 w-4" />} title={tr("Investment risk", "Riesgo de inversion")} accent="!border-l-amber-700/40">
+                          <div className="space-y-3">
+                            <RiskScore score={fullReport.risk.score} level={fullReport.risk.level} locale={locale} />
+                            {fullReport.risk.drivers?.length > 0 && (
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-2 font-medium">{tr("Risk drivers", "Factores de riesgo")}</p>
+                                <BulletList items={fullReport.risk.drivers} variant="warning" />
+                              </div>
+                            )}
+                          </div>
+                        </Section>
+                      )}
+                      {fullReport.legal && (
+                        <Section
+                          icon={<Scale className="h-4 w-4" />}
+                          title={tr("Legal situation — land registry summary", "Situación legal — Nota Simple")}
+                        >
+                          <div className="space-y-4">
+                            {fullReport.legal.summary && (
+                              <p className="report-secondary report-aux-mobile">{fullReport.legal.summary}</p>
+                            )}
+                            {fullReport.legal.active_mortgages?.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{tr("Active mortgages", "Hipotecas activas")}</p>
+                                <BulletList items={fullReport.legal.active_mortgages} variant="warning" />
+                              </div>
+                            )}
+                            {fullReport.legal.encumbrances?.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{tr("Encumbrances", "Cargas")}</p>
+                                <BulletList items={fullReport.legal.encumbrances} variant="warning" />
+                              </div>
+                            )}
+                            {fullReport.legal.red_flags?.length > 0 && (
+                              <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3">
+                                <p className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-2">⚠ {tr("Legal alerts", "Alertas legales")}</p>
+                                <BulletList items={fullReport.legal.red_flags} variant="warning" />
+                              </div>
+                            )}
+                          </div>
+                        </Section>
+                      )}
+                      {fullReport.financials && (
+                        <Section icon={<BarChart3 className="h-4 w-4" />} title={tr("AI financial evaluation", "Evaluacion financiera IA")}>
+                          <div className="space-y-1">
+                            {fullReport.financials.market_value_min != null && fullReport.financials.market_value_max != null && (
+                              <Row label={tr("Market value", "Valor de mercado")} value={`€${fullReport.financials.market_value_min?.toLocaleString()} – €${fullReport.financials.market_value_max?.toLocaleString()}`} highlight />
+                            )}
+                            {fullReport.financials.expected_rent_min != null && (
+                              <Row label={tr("Expected rent", "Alquiler esperado")} value={`€${fullReport.financials.expected_rent_min?.toLocaleString()} – €${fullReport.financials.expected_rent_max?.toLocaleString()}${tr("/month", "/mes")}`} />
+                            )}
+                            {fullReport.financials.gross_yield_percent != null && (
+                              <Row label={tr("Gross yield", "Rentabilidad bruta")} value={`${fullReport.financials.gross_yield_percent}%`} highlight />
+                            )}
+                            {fullReport.financials.roi_5_years_percent != null && (
+                              <Row label={tr("5-year ROI", "ROI a 5 anos")} value={`${fullReport.financials.roi_5_years_percent}%`} highlight />
+                            )}
+                            {fullReport.financials.price_per_m2_zone != null && (
+                              <Row label={tr("Area price/m²", "Precio zona/m²")} value={`€${fullReport.financials.price_per_m2_zone?.toLocaleString()}`} />
+                            )}
+                            {fullReport.financials.price_per_m2_ai_estimate != null && (
+                              <Row label={tr("AI-estimated price/m²", "Precio estimado IA/m²")} value={`€${fullReport.financials.price_per_m2_ai_estimate?.toLocaleString()}`} />
+                            )}
+                            {fullReport.financials.valuation_confidence_score != null && (
+                              <Row label={tr("Valuation confidence score", "Confianza de valoracion")} value={`${fullReport.financials.valuation_confidence_score}/100`} />
+                            )}
+                          </div>
+                        </Section>
+                      )}
+                      {fullReport.urbanism && (
+                        <Section icon={<Home className="h-4 w-4" />} title={tr("Urbanism", "Urbanismo")}>
+                          <div className="space-y-1">
+                            {fullReport.urbanism.comment && (
+                              <p className="report-secondary report-aux-mobile mb-3">{fullReport.urbanism.comment}</p>
+                            )}
+                            <Row label={tr("Registered area", "Superficie registrada")} value={fullReport.urbanism.registered_built_m2 ? `${fullReport.urbanism.registered_built_m2} m²` : null} />
+                            <Row label={tr("Estimated area", "Superficie estimada")} value={fullReport.urbanism.estimated_built_m2 ? `${fullReport.urbanism.estimated_built_m2} m²` : null} />
+                            <Row label={tr("Discrepancy", "Discrepancia")} value={fullReport.urbanism.discrepancy_percent ? `${fullReport.urbanism.discrepancy_percent}%` : null} />
+                            {fullReport.urbanism.suspected_illegal_works && (
+                              <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400 font-medium">
+                                ⚠ {tr("Potential unauthorized works detected", "Posibles obras no autorizadas detectadas")}
+                              </div>
+                            )}
+                          </div>
+                        </Section>
+                      )}
+                      {fullReport.neighborhood && (
+                        <Section icon={<Users className="h-4 w-4" />} title={tr("Neighborhood analysis", "Analisis del barrio")}>
+                          <div className="grid grid-cols-2 gap-4">
+                            {fullReport.neighborhood.pros?.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">{tr("Pros", "Ventajas")}</p>
+                                <BulletList items={fullReport.neighborhood.pros} variant="check" />
+                              </div>
+                            )}
+                            {fullReport.neighborhood.cons?.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Cons", "Desventajas")}</p>
+                                <BulletList items={fullReport.neighborhood.cons} variant="warning" />
+                              </div>
+                            )}
+                          </div>
+                        </Section>
+                      )}
+                    </div>
+                  ),
+                },
+              ] satisfies TabsProps["items"]
+            }
+          />
+        ) : (
+          <>
+            {cadastral && (
+              <Section icon={<VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />} title={tr("Catastro data", "Datos de Catastro")}>
+                {cadastral.referenciaCatastral && (
+                  <div className="report-inset-panel px-3 py-2 mb-3 border-l-[3px] !border-l-muted-foreground/40">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tr("Reference", "Referencia")}</p>
+                    <p className="text-sm font-semibold text-foreground font-mono">{cadastral.referenciaCatastral}</p>
+                  </div>
+                )}
+                <Row label={tr("Address", "Direccion")} value={cadastral.address} />
+                <Row label={tr("Municipality", "Municipio")} value={cadastral.municipio} />
+                <Row label={tr("Province", "Provincia")} value={cadastral.provincia} />
+                <Row label={tr("Area", "Superficie")} value={cadastral.superficie ? `${cadastral.superficie} m²` : null} />
+                <Row label={tr("Use", "Uso")} value={cadastral.uso} />
+                <Row label={tr("Construction year", "Ano de construccion")} value={cadastral.anoConstruccion} />
+              </Section>
+            )}
+            {financial && Object.keys(financial).length > 0 && (
+              <Section icon={<TrendingUp className="h-4 w-4" />} title={tr("Financial analysis", "Analisis financiero")}>
+                <div className="grid grid-cols-2 gap-x-6">
+                  {financial.grossYield != null && <Row label={tr("Gross yield", "Rentabilidad bruta")} value={`${parseFloat(String(financial.grossYield)).toFixed(2)}%`} highlight />}
+                  {financial.netYield != null && <Row label={tr("Net yield", "Rentabilidad neta")} value={`${parseFloat(String(financial.netYield)).toFixed(2)}%`} highlight />}
+                  {financial.roi != null && <Row label="ROI" value={`${parseFloat(String(financial.roi)).toFixed(2)}%`} highlight />}
+                  {financial.opportunityScore != null && <Row label={tr("Opportunity score", "Puntuacion de oportunidad")} value={`${financial.opportunityScore}/100`} highlight />}
+                  {financial.pricePerSqm != null && <Row label={tr("Price/m²", "Precio/m²")} value={`€${parseFloat(String(financial.pricePerSqm)).toLocaleString()}`} />}
+                  {financial.estimatedValue != null && <Row label={tr("Estimated value", "Valor estimado")} value={`€${parseFloat(String(financial.estimatedValue)).toLocaleString()}`} />}
+                  {financial.monthlyRent != null && <Row label={tr("Monthly rent", "Alquiler mensual")} value={`€${parseFloat(String(financial.monthlyRent)).toLocaleString()}`} />}
                 </div>
-              </>
+              </Section>
             )}
-            <Divider />
-            <div className="space-y-1">
-              <Row label={tr("Safety score", "Puntuacion de seguridad")} value={zoneAnalysis.safety_liquidity?.safety_score != null ? `${zoneAnalysis.safety_liquidity.safety_score}/100` : null} />
-              <Row label={tr("Liquidity score", "Puntuacion de liquidez")} value={zoneAnalysis.safety_liquidity?.liquidity_score != null ? `${zoneAnalysis.safety_liquidity.liquidity_score}/100` : null} />
-              <Row label={tr("Risk level", "Nivel de riesgo")} value={zoneAnalysis.safety_liquidity?.risk_level} />
-              <Row label={tr("Final opportunity score", "Puntuacion final de oportunidad")} value={zoneAnalysis.final_opportunity?.score != null ? `${zoneAnalysis.final_opportunity.score}/100` : null} highlight />
-              {zoneAnalysis.safety_liquidity?.summary && (
-                <p className="report-secondary text-xs pt-1">{zoneAnalysis.safety_liquidity.summary}</p>
-              )}
-            </div>
-            {Array.isArray(zoneAnalysis.poi_attractiveness?.highlights) && zoneAnalysis.poi_attractiveness.highlights.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">{tr("Area highlights", "Fortalezas de la zona")}</p>
-                <BulletList
-                  items={zoneAnalysis.poi_attractiveness.highlights}
-                  variant="check"
-                  openStreetMapUrl={zoneOpenStreetMapUrl}
-                />
-              </div>
-            )}
-            {Array.isArray(zoneAnalysis.poi_attractiveness?.cautions) && zoneAnalysis.poi_attractiveness.cautions.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Notes", "Observaciones")}</p>
-                <BulletList
-                  items={zoneAnalysis.poi_attractiveness.cautions}
-                  variant="warning"
-                  openStreetMapUrl={zoneOpenStreetMapUrl}
-                />
-              </div>
-            )}
-          </div>
-        </Section>
-      )}
-
-      {/* ── Nota Simple structured data ─────────────────────────────────────── */}
-      {!isLoading && notaSimple && (
-        <Section
-          icon={<Scale className="h-4 w-4" />}
-          title={tr("Data extracted from land registry summary", "Datos extraídos de la Nota Simple")}
-        >
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="report-inset-panel p-3">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Owner", "Titular")}</p>
-                <Row
-                  label={tr("Holder", "Titular")}
-                  value={
-                    notaSimple?.structured?.owner?.names?.length
-                      ? notaSimple.structured.owner.names.join(", ")
-                      : notaSimple?.titular
-                  }
-                />
-                <Row label={tr("Ownership type", "Tipo de titularidad")} value={notaSimple?.structured?.owner?.ownership_type} />
-                <Row label={tr("Ownership share", "Cuota")} value={notaSimple?.structured?.owner?.ownership_share} />
-              </div>
-              <div className="report-inset-panel p-3">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Property details", "Datos del inmueble")}</p>
-                <Row label={tr("Address", "Direccion")} value={notaSimple?.structured?.property?.address || notaSimple?.direccion} />
-                <Row label={tr("Property type", "Tipo de inmueble")} value={notaSimple?.structured?.property?.property_type} />
-                <Row label="IDUFIR/CRU" value={notaSimple?.structured?.property?.idufir_cru} />
-                <Row label={tr("Registry reference", "Referencia registral")} value={notaSimple?.structured?.property?.registry_reference} />
-                <Row label={tr("Cadastral reference", "Referencia catastral")} value={notaSimple?.structured?.property?.cadastral_reference} />
-                <Row label={tr("Built area", "Superficie construida")} value={notaSimple?.structured?.property?.built_area_m2 ? `${notaSimple.structured.property.built_area_m2} m²` : null} />
-                <Row label={tr("Usable area", "Superficie util")} value={notaSimple?.structured?.property?.usable_area_m2 ? `${notaSimple.structured.property.usable_area_m2} m²` : null} />
-              </div>
-            </div>
-
-            <div className="report-inset-panel p-3">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Debts and encumbrances", "Deudas y cargas")}</p>
-              <Row label={tr("Summary", "Resumen")} value={notaSimple?.cargas} />
-              <Row label={tr("Encumbrance expiry", "Caducidad de cargas")} value={notaSimple?.caducidad_cargas} />
-              <Row
-                label={tr("Known total", "Total conocido")}
-                value={formatEuroMaybe(notaSimple?.structured?.debts?.total_known_amount_eur, locale)}
-              />
-              <Row
-                label={tr("Has active debts", "Tiene deudas activas")}
-                value={
-                  typeof notaSimple?.structured?.debts?.has_active_debts === "boolean"
-                    ? (notaSimple.structured.debts.has_active_debts
-                        ? tr("Yes", "Sí")
-                        : tr("No", "No"))
-                    : null
-                }
-              />
-              {Array.isArray(notaSimple?.structured?.debts?.items) &&
-                notaSimple.structured.debts.items.length > 0 && (
-                  <div className="space-y-2 mt-2">
-                    {notaSimple.structured.debts.items.map((item: any, idx: number) => (
-                      <div key={idx} className="report-inset-panel px-3 py-2 text-xs">
-                        <p className="font-semibold text-foreground">
-                          {(item.type || tr("Encumbrance", "Carga")).toString().toUpperCase()}
+            {zoneAnalysis && (
+              <Section icon={<MapPin className="h-4 w-4" />} title={tr("Zone analysis (MVP)", "Analisis de zona (MVP)")}>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Row label={tr("City", "Ciudad")} value={zoneAnalysis.snapshot?.city} />
+                    <Row label={tr("District", "Distrito")} value={zoneAnalysis.snapshot?.district} />
+                    <Row label={tr("Area price band", "Rango de precios zona")} value={zoneAnalysis.snapshot?.price_band} />
+                    <Row
+                      label={tr("Average area price / m²", "Precio medio zona / m²")}
+                      value={
+                        zoneAnalysis.snapshot?.market_price_per_m2 != null
+                          ? `€${Number(zoneAnalysis.snapshot.market_price_per_m2).toLocaleString()}`
+                          : null
+                      }
+                    />
+                  </div>
+                  <Divider />
+                  <div className="space-y-1">
+                    <Row label={tr("Nearby schools", "Escuelas cercanas")} value={zoneAnalysis.nearby_essentials?.schools_nearby} />
+                    <Row label={tr("Nearby hospitals/clinics", "Hospitales/clinicas cercanas")} value={zoneAnalysis.nearby_essentials?.hospitals_nearby} />
+                    <Row label={tr("Nearby police", "Policia cercana")} value={zoneAnalysis.nearby_essentials?.police_nearby} />
+                    <Row label={tr("Nearby transit stops", "Paradas de transporte cercanas")} value={zoneAnalysis.nearby_essentials?.transit_stops_nearby} />
+                    <Row label={tr("Points of interest", "Puntos de interes")} value={zoneAnalysis.nearby_essentials?.attractions_nearby} />
+                  </div>
+                  {Array.isArray(zoneAnalysis.named_attractions) && zoneAnalysis.named_attractions.length > 0 && (
+                    <>
+                      <Divider />
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                          {tr("Named attractions nearby", "Atracciones con nombre cercanas")}
                         </p>
-                        <p className="text-muted-foreground">
-                          {[item.creditor, formatEuroMaybe(item.amount_eur, locale), item.rank].filter(Boolean).join(" · ")}
-                        </p>
-                        {item.maturity_or_expiry_date && (
-                          <p className="text-muted-foreground">{tr("Maturity/expiry", "Vencimiento/caducidad")}: {item.maturity_or_expiry_date}</p>
-                        )}
-                        {item.notes && <p className="text-muted-foreground">{item.notes}</p>}
+                        {zoneAnalysis.named_attractions.map((a: { name?: string; kind?: string; distance_m?: number }, idx: number) => (
+                          <Row
+                            key={`${a.name ?? idx}-${idx}`}
+                            label={a.name ?? "—"}
+                            value={a.distance_m != null ? `~${a.distance_m} m${a.kind ? ` · ${a.kind}` : ""}` : a.kind ?? null}
+                          />
+                        ))}
                       </div>
-                    ))}
+                    </>
+                  )}
+                  <Divider />
+                  <div className="space-y-1">
+                    <Row label={tr("Safety score", "Puntuacion de seguridad")} value={zoneAnalysis.safety_liquidity?.safety_score != null ? `${zoneAnalysis.safety_liquidity.safety_score}/100` : null} />
+                    <Row label={tr("Liquidity score", "Puntuacion de liquidez")} value={zoneAnalysis.safety_liquidity?.liquidity_score != null ? `${zoneAnalysis.safety_liquidity.liquidity_score}/100` : null} />
+                    <Row label={tr("Risk level", "Nivel de riesgo")} value={zoneAnalysis.safety_liquidity?.risk_level} />
+                    <Row label={tr("Final opportunity score", "Puntuacion final de oportunidad")} value={zoneAnalysis.final_opportunity?.score != null ? `${zoneAnalysis.final_opportunity.score}/100` : null} highlight />
+                    {zoneAnalysis.safety_liquidity?.summary && (
+                      <p className="report-secondary text-xs pt-1">{zoneAnalysis.safety_liquidity.summary}</p>
+                    )}
                   </div>
-                )}
-            </div>
+                  {Array.isArray(zoneAnalysis.poi_attractiveness?.highlights) && zoneAnalysis.poi_attractiveness.highlights.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">{tr("Area highlights", "Fortalezas de la zona")}</p>
+                      <BulletList
+                        items={zoneAnalysis.poi_attractiveness.highlights}
+                        variant="check"
+                        openStreetMapUrl={zoneOpenStreetMapUrl}
+                      />
+                    </div>
+                  )}
+                  {Array.isArray(zoneAnalysis.poi_attractiveness?.cautions) && zoneAnalysis.poi_attractiveness.cautions.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Notes", "Observaciones")}</p>
+                      <BulletList
+                        items={zoneAnalysis.poi_attractiveness.cautions}
+                        variant="warning"
+                        openStreetMapUrl={zoneOpenStreetMapUrl}
+                      />
+                    </div>
+                  )}
+                </div>
+              </Section>
+            )}
+            {notaSimple && (
+              <Section
+                icon={<Scale className="h-4 w-4" />}
+                title={tr("Data extracted from land registry summary", "Datos extraídos de la Nota Simple")}
+              >
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="report-inset-panel p-3">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Owner", "Titular")}</p>
+                      <Row
+                        label={tr("Holder", "Titular")}
+                        value={
+                          notaSimple?.structured?.owner?.names?.length
+                            ? notaSimple.structured.owner.names.join(", ")
+                            : notaSimple?.titular
+                        }
+                      />
+                      <Row label={tr("Ownership type", "Tipo de titularidad")} value={notaSimple?.structured?.owner?.ownership_type} />
+                      <Row label={tr("Ownership share", "Cuota")} value={notaSimple?.structured?.owner?.ownership_share} />
+                    </div>
+                    <div className="report-inset-panel p-3">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Property details", "Datos del inmueble")}</p>
+                      <Row label={tr("Address", "Direccion")} value={notaSimple?.structured?.property?.address || notaSimple?.direccion} />
+                      <Row label={tr("Property type", "Tipo de inmueble")} value={notaSimple?.structured?.property?.property_type} />
+                      <Row label="IDUFIR/CRU" value={notaSimple?.structured?.property?.idufir_cru} />
+                      <Row label={tr("Registry reference", "Referencia registral")} value={notaSimple?.structured?.property?.registry_reference} />
+                      <Row label={tr("Cadastral reference", "Referencia catastral")} value={notaSimple?.structured?.property?.cadastral_reference} />
+                      <Row label={tr("Built area", "Superficie construida")} value={notaSimple?.structured?.property?.built_area_m2 ? `${notaSimple.structured.property.built_area_m2} m²` : null} />
+                      <Row label={tr("Usable area", "Superficie util")} value={notaSimple?.structured?.property?.usable_area_m2 ? `${notaSimple.structured.property.usable_area_m2} m²` : null} />
+                    </div>
+                  </div>
 
-            <div className="report-inset-panel p-3">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Legal risk", "Riesgo legal")}</p>
-              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                <span className="text-xs text-muted-foreground">{tr("Risk level", "Nivel de riesgo")}</span>
-                <LegalRiskBadge level={notaSimple?.structured?.risk?.legal_risk_level} locale={locale} />
-              </div>
-              {Array.isArray(notaSimple?.structured?.risk?.legal_risk_reasons) &&
-                notaSimple.structured.risk.legal_risk_reasons.length > 0 && (
-                  <BulletList items={notaSimple.structured.risk.legal_risk_reasons} variant="warning" />
-                )}
-              {notaSimple?.embargo_caducado && (
-                <p className="text-xs text-amber-400 mt-2">{tr("Expired embargo detected: legal verification required.", "Embargo caducado detectado: se requiere revision legal.")}</p>
-              )}
-              {notaSimple?.manual_check && (
-                <p className="text-xs text-amber-400 mt-1">{tr("Document requires manual verification (low-confidence OCR).", "El documento requiere revision manual (OCR de baja confianza).")}</p>
-              )}
-            </div>
-          </div>
-        </Section>
-      )}
+                  <div className="report-inset-panel p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Debts and encumbrances", "Deudas y cargas")}</p>
+                    <Row label={tr("Summary", "Resumen")} value={notaSimple?.cargas} />
+                    <Row label={tr("Encumbrance expiry", "Caducidad de cargas")} value={notaSimple?.caducidad_cargas} />
+                    <Row
+                      label={tr("Known total", "Total conocido")}
+                      value={formatEuroMaybe(notaSimple?.structured?.debts?.total_known_amount_eur, locale)}
+                    />
+                    <Row
+                      label={tr("Has active debts", "Tiene deudas activas")}
+                      value={
+                        typeof notaSimple?.structured?.debts?.has_active_debts === "boolean"
+                          ? (notaSimple.structured.debts.has_active_debts
+                              ? tr("Yes", "Sí")
+                              : tr("No", "No"))
+                          : null
+                      }
+                    />
+                    {Array.isArray(notaSimple?.structured?.debts?.items) &&
+                      notaSimple.structured.debts.items.length > 0 && (
+                        <div className="space-y-2 mt-2">
+                          {notaSimple.structured.debts.items.map((item: any, idx: number) => (
+                            <div key={idx} className="report-inset-panel px-3 py-2 text-xs">
+                              <p className="font-semibold text-foreground">
+                                {(item.type || tr("Encumbrance", "Carga")).toString().toUpperCase()}
+                              </p>
+                              <p className="text-muted-foreground">
+                                {[item.creditor, formatEuroMaybe(item.amount_eur, locale), item.rank].filter(Boolean).join(" · ")}
+                              </p>
+                              {item.maturity_or_expiry_date && (
+                                <p className="text-muted-foreground">{tr("Maturity/expiry", "Vencimiento/caducidad")}: {item.maturity_or_expiry_date}</p>
+                              )}
+                              {item.notes && <p className="text-muted-foreground">{item.notes}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                  </div>
 
-      {/* ── Full AI Report sections ────────────────────────────────────────── */}
-      {fullReport && (
-        <>
-          {/* Executive Summary */}
-          {fullReport.executive_summary && (
-            <Section icon={<FileText className="h-4 w-4" />} title={tr("Executive summary", "Resumen ejecutivo")}>
-              <p className="report-secondary report-aux-mobile">{fullReport.executive_summary}</p>
-            </Section>
-          )}
-
-          {/* Risk */}
-          {fullReport.risk && (
-            <Section icon={<ShieldAlert className="h-4 w-4" />} title={tr("Investment risk", "Riesgo de inversion")} accent="!border-l-amber-700/40">
-              <div className="space-y-3">
-                <RiskScore score={fullReport.risk.score} level={fullReport.risk.level} locale={locale} />
-                {fullReport.risk.drivers?.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2 font-medium">{tr("Risk drivers", "Factores de riesgo")}</p>
-                    <BulletList items={fullReport.risk.drivers} variant="warning" />
+                  <div className="report-inset-panel p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">{tr("Legal risk", "Riesgo legal")}</p>
+                    <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                      <span className="text-xs text-muted-foreground">{tr("Risk level", "Nivel de riesgo")}</span>
+                      <LegalRiskBadge level={notaSimple?.structured?.risk?.legal_risk_level} locale={locale} />
+                    </div>
+                    {Array.isArray(notaSimple?.structured?.risk?.legal_risk_reasons) &&
+                      notaSimple.structured.risk.legal_risk_reasons.length > 0 && (
+                        <BulletList items={notaSimple.structured.risk.legal_risk_reasons} variant="warning" />
+                      )}
+                    {notaSimple?.embargo_caducado && (
+                      <p className="text-xs text-amber-400 mt-2">{tr("Expired embargo detected: legal verification required.", "Embargo caducado detectado: se requiere revision legal.")}</p>
+                    )}
+                    {notaSimple?.manual_check && (
+                      <p className="text-xs text-amber-400 mt-1">{tr("Document requires manual verification (low-confidence OCR).", "El documento requiere revision manual (OCR de baja confianza).")}</p>
+                    )}
                   </div>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* Legal / Nota Simple */}
-          {fullReport.legal && (
-            <Section
-              icon={<Scale className="h-4 w-4" />}
-              title={tr("Legal situation — land registry summary", "Situación legal — Nota Simple")}
-            >
-              <div className="space-y-4">
-                {fullReport.legal.summary && (
-                  <p className="report-secondary report-aux-mobile">{fullReport.legal.summary}</p>
-                )}
-                {fullReport.legal.active_mortgages?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{tr("Active mortgages", "Hipotecas activas")}</p>
-                    <BulletList items={fullReport.legal.active_mortgages} variant="warning" />
-                  </div>
-                )}
-                {fullReport.legal.encumbrances?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{tr("Encumbrances", "Cargas")}</p>
-                    <BulletList items={fullReport.legal.encumbrances} variant="warning" />
-                  </div>
-                )}
-                {fullReport.legal.red_flags?.length > 0 && (
-                  <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3">
-                    <p className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-2">⚠ {tr("Legal alerts", "Alertas legales")}</p>
-                    <BulletList items={fullReport.legal.red_flags} variant="warning" />
-                  </div>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* Financials from AI */}
-          {fullReport.financials && (
-            <Section icon={<BarChart3 className="h-4 w-4" />} title={tr("AI financial evaluation", "Evaluacion financiera IA")}>
-              <div className="space-y-1">
-                {fullReport.financials.market_value_min != null && fullReport.financials.market_value_max != null && (
-                  <Row label={tr("Market value", "Valor de mercado")} value={`€${fullReport.financials.market_value_min?.toLocaleString()} – €${fullReport.financials.market_value_max?.toLocaleString()}`} highlight />
-                )}
-                {fullReport.financials.expected_rent_min != null && (
-                  <Row label={tr("Expected rent", "Alquiler esperado")} value={`€${fullReport.financials.expected_rent_min?.toLocaleString()} – €${fullReport.financials.expected_rent_max?.toLocaleString()}${tr("/month", "/mes")}`} />
-                )}
-                {fullReport.financials.gross_yield_percent != null && (
-                  <Row label={tr("Gross yield", "Rentabilidad bruta")} value={`${fullReport.financials.gross_yield_percent}%`} highlight />
-                )}
-                {fullReport.financials.roi_5_years_percent != null && (
-                  <Row label={tr("5-year ROI", "ROI a 5 anos")} value={`${fullReport.financials.roi_5_years_percent}%`} highlight />
-                )}
-                {fullReport.financials.price_per_m2_zone != null && (
-                  <Row label={tr("Area price/m²", "Precio zona/m²")} value={`€${fullReport.financials.price_per_m2_zone?.toLocaleString()}`} />
-                )}
-                {fullReport.financials.price_per_m2_ai_estimate != null && (
-                  <Row label={tr("AI-estimated price/m²", "Precio estimado IA/m²")} value={`€${fullReport.financials.price_per_m2_ai_estimate?.toLocaleString()}`} />
-                )}
-                {fullReport.financials.valuation_confidence_score != null && (
-                  <Row label={tr("Valuation confidence score", "Confianza de valoracion")} value={`${fullReport.financials.valuation_confidence_score}/100`} />
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* Urbanism */}
-          {fullReport.urbanism && (
-            <Section icon={<Home className="h-4 w-4" />} title={tr("Urbanism", "Urbanismo")}>
-              <div className="space-y-1">
-                {fullReport.urbanism.comment && (
-                  <p className="report-secondary report-aux-mobile mb-3">{fullReport.urbanism.comment}</p>
-                )}
-                <Row label={tr("Registered area", "Superficie registrada")} value={fullReport.urbanism.registered_built_m2 ? `${fullReport.urbanism.registered_built_m2} m²` : null} />
-                <Row label={tr("Estimated area", "Superficie estimada")} value={fullReport.urbanism.estimated_built_m2 ? `${fullReport.urbanism.estimated_built_m2} m²` : null} />
-                <Row label={tr("Discrepancy", "Discrepancia")} value={fullReport.urbanism.discrepancy_percent ? `${fullReport.urbanism.discrepancy_percent}%` : null} />
-                {fullReport.urbanism.suspected_illegal_works && (
-                  <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400 font-medium">
-                    ⚠ {tr("Potential unauthorized works detected", "Posibles obras no autorizadas detectadas")}
-                  </div>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* Neighborhood */}
-          {fullReport.neighborhood && (
-            <Section icon={<Users className="h-4 w-4" />} title={tr("Neighborhood analysis", "Analisis del barrio")}>
-              <div className="grid grid-cols-2 gap-4">
-                {fullReport.neighborhood.pros?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">{tr("Pros", "Ventajas")}</p>
-                    <BulletList items={fullReport.neighborhood.pros} variant="check" />
-                  </div>
-                )}
-                {fullReport.neighborhood.cons?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">{tr("Cons", "Desventajas")}</p>
-                    <BulletList items={fullReport.neighborhood.cons} variant="warning" />
-                  </div>
-                )}
-              </div>
-            </Section>
-          )}
-        </>
+                </div>
+              </Section>
+            )}
+          </>
+        )
       )}
 
       {/* Share actions */}
