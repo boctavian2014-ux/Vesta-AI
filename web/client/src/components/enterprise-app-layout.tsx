@@ -83,6 +83,13 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
           demoReadyDesc:
             "Consulta demostrativa registrada. Acceda a Informes para revisar el contenido.",
           demoReportsLabel: "Consultas demostrativas",
+          demoReportsCollapsedTitle: "Demostración",
+          demoReportsHint:
+            "Genere un informe de muestra sin cargo; se abre en Informes para revisar el formato.",
+          demoAnalysisTitle: "Paquete de análisis",
+          demoAnalysisMeta: "Modelo · 15 €",
+          demoExpertTitle: "Expediente experto",
+          demoExpertMeta: "Modelo · 50 €",
           logOut: "Cerrar sesión",
         }
       : {
@@ -106,6 +113,13 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
           demoReadyDesc:
             "A demonstration entry has been filed. Open Reports to review the contents.",
           demoReportsLabel: "Demonstration requests",
+          demoReportsCollapsedTitle: "Demos",
+          demoReportsHint:
+            "Generate a no-fee sample report; opens in Reports so you can review the layout.",
+          demoAnalysisTitle: "Analysis package",
+          demoAnalysisMeta: "Template · €15",
+          demoExpertTitle: "Expert file",
+          demoExpertMeta: "Template · €50",
           logOut: "Log out",
         };
 
@@ -241,6 +255,43 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
             onClick={onMenuClick}
             className="min-h-0 flex-1 border-e-0 bg-transparent overflow-y-auto"
           />
+          {collapsed && (
+            <div className="flex shrink-0 flex-col items-center gap-1.5 border-b border-sidebar-border/60 px-1.5 py-2">
+              <Tooltip title={t.demoReportsLabel}>
+                <Text
+                  type="secondary"
+                  className="cursor-default text-center text-[9px] font-semibold uppercase leading-none tracking-wide text-sidebar-foreground/55"
+                >
+                  {t.demoReportsCollapsedTitle}
+                </Text>
+              </Tooltip>
+              <Tooltip title={t.demoAnalysis}>
+                <Button
+                  type="primary"
+                  size="small"
+                  className="!flex !h-9 !w-9 !items-center !justify-center !p-0"
+                  loading={demoBusy === "analysis"}
+                  disabled={demoBusy === "expert"}
+                  data-testid="nav-demo-analysis-collapsed"
+                  icon={<FileTextOutlined />}
+                  aria-label={t.demoAnalysis}
+                  onClick={() => void runDemo("analysis_pack")}
+                />
+              </Tooltip>
+              <Tooltip title={t.demoExpert}>
+                <Button
+                  size="small"
+                  className="!flex !h-9 !w-9 !items-center !justify-center !border-sidebar-border/80 !bg-sidebar-accent/50 !p-0 !text-sidebar-foreground hover:!bg-sidebar-accent"
+                  loading={demoBusy === "expert"}
+                  disabled={demoBusy === "analysis"}
+                  data-testid="nav-demo-expert-collapsed"
+                  icon={<BookOutlined />}
+                  aria-label={t.demoExpert}
+                  onClick={() => void runDemo("expert_report")}
+                />
+              </Tooltip>
+            </div>
+          )}
           <div className={`shrink-0 space-y-0 ${collapsed ? "px-1.5 pb-4 pt-1" : "px-3 pb-5 pt-2"}`}>
             {!collapsed && (
               <div className="mb-3 space-y-3">
@@ -273,20 +324,28 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
                   </Text>
                 </div>
                 <Divider className="!my-0 border-sidebar-border/80" />
-                <div>
-                  <Text type="secondary" className="mb-2 block text-[10px] font-medium uppercase tracking-wide">
+                <div className="rounded-[var(--vesta-radius-page)] border border-sidebar-border/70 bg-sidebar-accent/30 px-3 py-3 shadow-sm">
+                  <Text className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-sidebar-foreground/85">
                     {t.demoReportsLabel}
                   </Text>
-                  <Space direction="vertical" size={6} className="w-full">
+                  <Text type="secondary" className="mb-3 block text-[10px] leading-snug text-sidebar-foreground/55">
+                    {t.demoReportsHint}
+                  </Text>
+                  <div className="flex flex-col gap-2">
                     <Button
                       size="small"
+                      type="primary"
                       block
                       loading={demoBusy === "analysis"}
                       disabled={demoBusy === "expert"}
                       data-testid="nav-demo-analysis"
+                      className="!h-auto !py-2 !leading-tight"
                       onClick={() => void runDemo("analysis_pack")}
                     >
-                      {t.demoAnalysis}
+                      <span className="flex w-full flex-col items-stretch gap-0.5 text-left">
+                        <span className="text-xs font-semibold">{t.demoAnalysisTitle}</span>
+                        <span className="text-[10px] font-normal opacity-90">{t.demoAnalysisMeta}</span>
+                      </span>
                     </Button>
                     <Button
                       size="small"
@@ -294,11 +353,15 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
                       loading={demoBusy === "expert"}
                       disabled={demoBusy === "analysis"}
                       data-testid="nav-demo-expert"
+                      className="!h-auto !border-sidebar-border/80 !bg-sidebar-accent/50 !py-2 !text-sidebar-foreground !leading-tight hover:!bg-sidebar-accent"
                       onClick={() => void runDemo("expert_report")}
                     >
-                      {t.demoExpert}
+                      <span className="flex w-full flex-col items-stretch gap-0.5 text-left">
+                        <span className="text-xs font-semibold">{t.demoExpertTitle}</span>
+                        <span className="text-[10px] font-normal opacity-80">{t.demoExpertMeta}</span>
+                      </span>
                     </Button>
-                  </Space>
+                  </div>
                 </div>
                 <Space size={8} wrap className="gap-y-1">
                   <Link href="/legal/terms">
