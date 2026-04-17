@@ -2,14 +2,23 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Report } from "@shared/schema";
 import { getQueryFn } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
+import { showVestaMessage } from "@/lib/vesta-message";
+import {
+  App,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Divider,
+  Input,
+  Row,
+  Select,
+  Space,
+  Tag,
+  Typography,
+} from "antd";
+
+const { Title, Text, Paragraph } = Typography;
 
 type ReportStatusEvent = {
   id: number;
@@ -58,9 +67,9 @@ function manualNoteLine(action: string): string {
 }
 
 export default function AdminOrders() {
+  const { message } = App.useApp();
   const ADMIN_NOTA_TYPE = "expert_report";
   const qc = useQueryClient();
-  const { toast } = useToast();
   const [selectedFiles, setSelectedFiles] = useState<Record<number, File | null>>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [pdfUrlByReport, setPdfUrlByReport] = useState<Record<number, string>>({});
@@ -97,7 +106,9 @@ export default function AdminOrders() {
         r.stripeSessionId || "",
         (r as any).providerOrderId || "",
         (r as any).providerStatus || "",
-      ].join(" ").toLowerCase();
+      ]
+        .join(" ")
+        .toLowerCase();
       return hay.includes(q);
     });
   }, [rows, search, statusFilter, actionableOnly]);
@@ -122,10 +133,10 @@ export default function AdminOrders() {
     onSuccess: async () => {
       await refresh();
       setAuditByReport({});
-      toast({ title: "Status updated" });
+      showVestaMessage(message, { title: "Status updated", variant: "success" });
     },
     onError: (err: any) => {
-      toast({ title: "Status update failed", description: err?.message || "Unknown error", variant: "destructive" });
+      message.error(err?.message || "Status update failed");
     },
   });
 
@@ -145,10 +156,10 @@ export default function AdminOrders() {
     onSuccess: async () => {
       await refresh();
       setAuditByReport({});
-      toast({ title: "PDF link saved" });
+      showVestaMessage(message, { title: "PDF link saved", variant: "success" });
     },
     onError: (err: any) => {
-      toast({ title: "Save failed", description: err?.message || "Unknown error", variant: "destructive" });
+      message.error(err?.message || "Save failed");
     },
   });
 
@@ -176,12 +187,13 @@ export default function AdminOrders() {
     onSuccess: async (_, vars) => {
       await refresh();
       setAuditByReport({});
-      toast({
+      showVestaMessage(message, {
         title: vars.complete ? "Nota JSON saved — order completed" : "Nota JSON saved (draft)",
+        variant: vars.complete ? "success" : "warning",
       });
     },
     onError: (err: any) => {
-      toast({ title: "Save failed", description: err?.message || "Unknown error", variant: "destructive" });
+      message.error(err?.message || "Save failed");
     },
   });
 
@@ -202,10 +214,13 @@ export default function AdminOrders() {
     onSuccess: async () => {
       await refresh();
       setAuditByReport({});
-      toast({ title: "PDF uploaded and OCR processed" });
+      showVestaMessage(message, {
+        title: "PDF uploaded and OCR processed",
+        variant: "success",
+      });
     },
     onError: (err: any) => {
-      toast({ title: "Upload failed", description: err?.message || "Unknown error", variant: "destructive" });
+      message.error(err?.message || "Upload failed");
     },
   });
 
@@ -219,106 +234,120 @@ export default function AdminOrders() {
       const auditRows = (await res.json()) as ReportStatusEvent[];
       setAuditByReport((prev) => ({ ...prev, [reportId]: auditRows }));
     } catch (err: any) {
-      toast({ title: "Audit load failed", description: err?.message || "Unknown error", variant: "destructive" });
+      message.error(err?.message || "Audit load failed");
     } finally {
       setLoadingAuditFor(null);
     }
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Admin — Nota Simple (manual)</h1>
-          <p className="text-sm text-muted-foreground">
-            Cerere către colaborator / registru: marchezi pașii aici; când primești PDF-ul, încarci pentru OCR sau lipești JSON.
-            Status <code className="text-xs">waiting_partner</code> înseamnă „aștept documentul Nota”, nu un API automat.
-          </p>
-        </div>
-        <Button variant="outline" onClick={refresh}>Refresh</Button>
-      </div>
+    <div style={{ padding: 24, maxWidth: 1024, margin: "0 auto" }}>
+      <Row justify="space-between" align="top" gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col flex="1 1 280px">
+          <Title level={3} style={{ marginBottom: 8 }}>
+            Admin — Nota Simple (manual)
+          </Title>
+          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            Cerere către colaborator / registru: marchezi pașii aici; când primești PDF-ul, încarci pentru OCR sau
+            lipești JSON. Status <Text code>waiting_partner</Text> înseamnă „aștept documentul Nota”, nu un API automat.
+          </Paragraph>
+        </Col>
+        <Col>
+          <Button onClick={refresh}>Refresh</Button>
+        </Col>
+      </Row>
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle>Orders ({filteredRows.length} / {rows.length})</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {FILTER_CHIPS.map((chip) => {
-              const count = chip === "all" ? rows.length : (counts[chip] ?? 0);
-              const isActive = statusFilter === chip;
-              const label = chip === "all" ? "all" : (STATUS_LABEL[chip] ?? chip);
-              return (
-                <Button
-                  key={chip}
-                  size="sm"
-                  variant={isActive ? "default" : "outline"}
-                  onClick={() => setStatusFilter(chip)}
-                >
-                  {label} ({count})
-                </Button>
-              );
-            })}
-            <Button
-              size="sm"
-              variant={actionableOnly ? "default" : "outline"}
-              onClick={() => setActionableOnly((v) => !v)}
-            >
-              Actionable only
-            </Button>
-          </div>
+      <Card title={`Orders (${filteredRows.length} / ${rows.length})`} variant="borderless" className="glass-panel">
+        <Space wrap size={[8, 8]} style={{ marginBottom: 16 }}>
+          {FILTER_CHIPS.map((chip) => {
+            const count = chip === "all" ? rows.length : (counts[chip] ?? 0);
+            const isActive = statusFilter === chip;
+            const label = chip === "all" ? "all" : (STATUS_LABEL[chip] ?? chip);
+            return (
+              <Button
+                key={chip}
+                size="small"
+                type={isActive ? "primary" : "default"}
+                onClick={() => setStatusFilter(chip)}
+              >
+                {label} ({count})
+              </Button>
+            );
+          })}
+          <Button
+            size="small"
+            type={actionableOnly ? "primary" : "default"}
+            onClick={() => setActionableOnly((v) => !v)}
+          >
+            Actionable only
+          </Button>
+        </Space>
 
-          <div className="max-w-md">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by ID, address, catastral ref, Stripe PI..."
-            />
-          </div>
+        <Input
+          allowClear
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by ID, address, catastral ref, Stripe PI..."
+          style={{ maxWidth: 400, marginBottom: 16 }}
+        />
 
-          {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-          {!isLoading && filteredRows.length === 0 && (
-            <p className="text-sm text-muted-foreground">No expert_report orders found.</p>
-          )}
-          {!isLoading && filteredRows.map((report) => (
-            <div key={report.id} className="rounded-lg glass-panel p-3 space-y-4">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="space-y-0.5">
-                  <p className="text-sm font-semibold">Order #{report.id}</p>
-                  <p className="text-xs text-muted-foreground">{shortDate(report.createdAt)}</p>
-                </div>
-                <Badge variant="outline">{STATUS_LABEL[report.status] ?? report.status}</Badge>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Address:</span> {report.address || "-"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Ref catastral:</span> {report.referenciaCatastral || "-"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Type:</span> {report.type}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Stripe PI:</span> {report.stripeSessionId || "-"}
-                </div>
-                {(report as any).providerOrderId ? (
-                  <div className="md:col-span-2 text-xs text-muted-foreground">
-                    Legacy provider ref: {(report as any).providerName || "-"} / {(report as any).providerOrderId}
+        {isLoading && <Text type="secondary">Loading...</Text>}
+        {!isLoading && filteredRows.length === 0 && (
+          <Text type="secondary">No expert_report orders found.</Text>
+        )}
+        {!isLoading &&
+          filteredRows.map((report) => (
+            <Card key={report.id} size="small" style={{ marginBottom: 16 }} className="glass-panel">
+              <Row justify="space-between" align="middle" wrap gutter={[8, 8]}>
+                <Col>
+                  <Text strong>Order #{report.id}</Text>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {shortDate(report.createdAt)}
+                    </Text>
                   </div>
-                ) : null}
-              </div>
+                </Col>
+                <Col>
+                  <Tag color="blue">{STATUS_LABEL[report.status] ?? report.status}</Tag>
+                </Col>
+              </Row>
 
-              <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
-                <p className="text-xs font-semibold text-foreground">1. Cerere manuală Nota Simple</p>
-                <p className="text-xs text-muted-foreground">
-                  După ce trimiți cererea către colaborator sau registru, marchează starea și lasă o notă în audit (ex. canal, referință).
-                </p>
-                <div className="flex flex-wrap gap-2">
+              <Divider style={{ margin: "12px 0" }} />
+
+              <Row gutter={[8, 8]}>
+                <Col xs={24} md={12}>
+                  <Text type="secondary">Address: </Text>
+                  <Text>{report.address || "-"}</Text>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Text type="secondary">Ref catastral: </Text>
+                  <Text>{report.referenciaCatastral || "-"}</Text>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Text type="secondary">Type: </Text>
+                  <Text>{report.type}</Text>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Text type="secondary">Stripe PI: </Text>
+                  <Text>{report.stripeSessionId || "-"}</Text>
+                </Col>
+                {(report as any).providerOrderId ? (
+                  <Col span={24}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Legacy provider ref: {(report as any).providerName || "-"} / {(report as any).providerOrderId}
+                    </Text>
+                  </Col>
+                ) : null}
+              </Row>
+
+              <Card size="small" type="inner" title="1. Cerere manuală Nota Simple" style={{ marginTop: 16 }}>
+                <Paragraph type="secondary" style={{ fontSize: 12 }}>
+                  După ce trimiți cererea către colaborator sau registru, marchează starea și lasă o notă în audit (ex.
+                  canal, referință).
+                </Paragraph>
+                <Space wrap>
                   <Button
-                    size="sm"
-                    variant="outline"
+                    size="small"
                     onClick={() => {
                       const line = manualNoteLine("Nota Simple request sent to collaborator");
                       setNotes((prev) => ({ ...prev, [report.id]: line }));
@@ -333,8 +362,7 @@ export default function AdminOrders() {
                     Marchează: cerere trimisă
                   </Button>
                   <Button
-                    size="sm"
-                    variant="outline"
+                    size="small"
                     onClick={() => {
                       const line = manualNoteLine("Waiting for Nota Simple PDF from collaborator");
                       setNotes((prev) => ({ ...prev, [report.id]: line }));
@@ -348,146 +376,147 @@ export default function AdminOrders() {
                   >
                     Marchează: aștept PDF Nota
                   </Button>
-                </div>
-              </div>
+                </Space>
+              </Card>
 
-              <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
-                <p className="text-xs font-semibold text-foreground">2. Livrare către client (Informes)</p>
-                <div className="space-y-2">
-                  <Label htmlFor={`pdf-url-${report.id}`}>Link PDF Nota (opțional)</Label>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <Input
-                      id={`pdf-url-${report.id}`}
-                      className="max-w-xl flex-1 min-w-[200px]"
-                      placeholder="https://..."
-                      value={
-                        pdfUrlByReport[report.id] !== undefined
-                          ? pdfUrlByReport[report.id]
-                          : (report.pdfUrl ?? "")
-                      }
-                      onChange={(e) =>
-                        setPdfUrlByReport((prev) => ({ ...prev, [report.id]: e.target.value }))
-                      }
-                    />
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        const u = (
+              <Card size="small" type="inner" title="2. Livrare către client (Informes)" style={{ marginTop: 12 }}>
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                  <div>
+                    <Text type="secondary">Link PDF Nota (opțional)</Text>
+                    <Space.Compact style={{ width: "100%", maxWidth: 560, marginTop: 6 }}>
+                      <Input
+                        placeholder="https://..."
+                        value={
                           pdfUrlByReport[report.id] !== undefined
                             ? pdfUrlByReport[report.id]
                             : (report.pdfUrl ?? "")
-                        ).trim();
-                        if (!u) {
-                          toast({ title: "Introdu un URL", variant: "destructive" });
-                          return;
                         }
-                        savePdfUrl.mutate({ id: report.id, pdfUrl: u });
-                      }}
-                      disabled={savePdfUrl.isPending}
-                    >
-                      Salvează link
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="space-y-1 min-w-[220px]">
-                    <Label htmlFor={`pdf-${report.id}`}>Încarcă PDF Nota Simple</Label>
-                    <Input
-                      id={`pdf-${report.id}`}
-                      type="file"
-                      accept="application/pdf"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] ?? null;
-                        setSelectedFiles((prev) => ({ ...prev, [report.id]: file }));
-                      }}
-                    />
-                  </div>
-                  <Button
-                    onClick={() => {
-                      const file = selectedFiles[report.id];
-                      if (!file) {
-                        toast({ title: "Selectează un PDF", variant: "destructive" });
-                        return;
-                      }
-                      uploadPdf.mutate({ id: report.id, file });
-                    }}
-                    disabled={uploadPdf.isPending}
-                  >
-                    Upload + OCR
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`nota-json-${report.id}`}>Lipește JSON Nota (fără OCR)</Label>
-                  <Textarea
-                    id={`nota-json-${report.id}`}
-                    className="font-mono text-xs min-h-[100px]"
-                    placeholder='{"structured": {...}}'
-                    value={notaJsonByReport[report.id] ?? ""}
-                    onChange={(e) =>
-                      setNotaJsonByReport((prev) => ({ ...prev, [report.id]: e.target.value }))
-                    }
-                  />
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id={`complete-json-${report.id}`}
-                        checked={completePastedJson[report.id] !== false}
-                        onCheckedChange={(c) =>
-                          setCompletePastedJson((prev) => ({
-                            ...prev,
-                            [report.id]: c === true,
-                          }))
+                        onChange={(e) =>
+                          setPdfUrlByReport((prev) => ({ ...prev, [report.id]: e.target.value }))
                         }
                       />
-                      <Label htmlFor={`complete-json-${report.id}`} className="text-xs font-normal cursor-pointer">
-                        Finalizează comanda și notifică clientul (email)
-                      </Label>
+                      <Button
+                        onClick={() => {
+                          const u = (
+                            pdfUrlByReport[report.id] !== undefined
+                              ? pdfUrlByReport[report.id]
+                              : (report.pdfUrl ?? "")
+                          ).trim();
+                          if (!u) {
+                            message.error("Introdu un URL");
+                            return;
+                          }
+                          savePdfUrl.mutate({ id: report.id, pdfUrl: u });
+                        }}
+                        disabled={savePdfUrl.isPending}
+                      >
+                        Salvează link
+                      </Button>
+                    </Space.Compact>
+                  </div>
+                  <Space align="end" wrap>
+                    <div>
+                      <Text type="secondary">Încarcă PDF Nota Simple</Text>
+                      <div style={{ marginTop: 6 }}>
+                        <input
+                          id={`pdf-${report.id}`}
+                          type="file"
+                          accept="application/pdf"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] ?? null;
+                            setSelectedFiles((prev) => ({ ...prev, [report.id]: file }));
+                          }}
+                        />
+                      </div>
                     </div>
                     <Button
-                      size="sm"
-                      variant="secondary"
                       onClick={() => {
-                        const raw = (notaJsonByReport[report.id] ?? "").trim();
-                        if (!raw) {
-                          toast({ title: "Lipește JSON valid", variant: "destructive" });
+                        const file = selectedFiles[report.id];
+                        if (!file) {
+                          message.error("Selectează un PDF");
                           return;
                         }
-                        saveNotaJson.mutate({
-                          id: report.id,
-                          raw,
-                          complete: completePastedJson[report.id] !== false,
-                        });
+                        uploadPdf.mutate({ id: report.id, file });
                       }}
-                      disabled={saveNotaJson.isPending}
+                      disabled={uploadPdf.isPending}
                     >
-                      Salvează JSON
+                      Upload + OCR
                     </Button>
+                  </Space>
+                  <div>
+                    <Text type="secondary">Lipește JSON Nota (fără OCR)</Text>
+                    <Input.TextArea
+                      id={`nota-json-${report.id}`}
+                      style={{ marginTop: 6, fontFamily: "monospace", fontSize: 12 }}
+                      rows={4}
+                      placeholder='{"structured": {...}}'
+                      value={notaJsonByReport[report.id] ?? ""}
+                      onChange={(e) =>
+                        setNotaJsonByReport((prev) => ({ ...prev, [report.id]: e.target.value }))
+                      }
+                    />
+                    <Space style={{ marginTop: 8 }} wrap>
+                      <Checkbox
+                        checked={completePastedJson[report.id] !== false}
+                        onChange={(e) =>
+                          setCompletePastedJson((prev) => ({
+                            ...prev,
+                            [report.id]: e.target.checked,
+                          }))
+                        }
+                      >
+                        Finalizează comanda și notifică clientul (email)
+                      </Checkbox>
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          const raw = (notaJsonByReport[report.id] ?? "").trim();
+                          if (!raw) {
+                            message.error("Lipește JSON valid");
+                            return;
+                          }
+                          saveNotaJson.mutate({
+                            id: report.id,
+                            raw,
+                            complete: completePastedJson[report.id] !== false,
+                          });
+                        }}
+                        disabled={saveNotaJson.isPending}
+                      >
+                        Salvează JSON
+                      </Button>
+                    </Space>
                   </div>
-                </div>
-              </div>
+                </Space>
+              </Card>
 
-              <div className="flex items-end gap-2 flex-wrap border-t border-border/40 pt-3">
-                <div className="space-y-1">
-                  <Label htmlFor={`status-${report.id}`}>Set status</Label>
-                  <select
+              <Divider />
+              <Space wrap align="end" size="middle">
+                <div>
+                  <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
+                    Set status
+                  </Text>
+                  <Select
                     id={`status-${report.id}`}
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
                     defaultValue={report.status}
-                    onChange={(e) => patchStatus.mutate({
-                      id: report.id,
-                      status: e.target.value,
-                      note: notes[report.id]?.trim() || undefined,
-                    })}
-                  >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
-                    ))}
-                  </select>
+                    style={{ minWidth: 200 }}
+                    options={STATUS_OPTIONS.map((s) => ({
+                      value: s,
+                      label: STATUS_LABEL[s] ?? s,
+                    }))}
+                    onChange={(value) =>
+                      patchStatus.mutate({
+                        id: report.id,
+                        status: value,
+                        note: notes[report.id]?.trim() || undefined,
+                      })
+                    }
+                  />
                 </div>
-
-                <div className="space-y-1 min-w-[260px]">
-                  <Label htmlFor={`note-${report.id}`}>Notă internă (audit)</Label>
+                <div>
+                  <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
+                    Notă internă (audit)
+                  </Text>
                   <Input
                     id={`note-${report.id}`}
                     value={notes[report.id] ?? ""}
@@ -496,36 +525,35 @@ export default function AdminOrders() {
                       setNotes((prev) => ({ ...prev, [report.id]: value }));
                     }}
                     placeholder="ex: trimis pe email la colaborator X"
+                    style={{ minWidth: 260 }}
                   />
                 </div>
-
-                <Button
-                  variant="outline"
-                  onClick={() => loadAuditTrail(report.id)}
-                  disabled={loadingAuditFor === report.id}
-                >
+                <Button onClick={() => loadAuditTrail(report.id)} disabled={loadingAuditFor === report.id}>
                   {loadingAuditFor === report.id ? "Loading..." : "Load audit"}
                 </Button>
-              </div>
+              </Space>
 
               {auditByReport[report.id]?.length ? (
-                <div className="rounded-md glass-panel p-2 space-y-1">
-                  <p className="text-xs font-medium text-foreground">Audit trail</p>
+                <Card size="small" className="glass-panel" style={{ marginTop: 12 }}>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Audit trail
+                  </Text>
                   {auditByReport[report.id].map((ev) => (
-                    <div key={ev.id} className="text-xs text-muted-foreground">
-                      <span className="text-foreground">{shortDate(ev.createdAt)}</span>
-                      {" — "}
-                      {(ev.fromStatus || "none")} → {ev.toStatus}
-                      {" by "}
-                      <span className="text-foreground">{ev.actorName || ev.actorEmail || "system"}</span>
-                      {ev.note ? ` (${ev.note})` : ""}
+                    <div key={ev.id} style={{ fontSize: 12, marginTop: 6 }}>
+                      <Text>{shortDate(ev.createdAt)}</Text>
+                      <Text type="secondary">
+                        {" — "}
+                        {(ev.fromStatus || "none")} → {ev.toStatus}
+                        {" by "}
+                      </Text>
+                      <Text>{ev.actorName || ev.actorEmail || "system"}</Text>
+                      {ev.note ? <Text type="secondary"> ({ev.note})</Text> : null}
                     </div>
                   ))}
-                </div>
+                </Card>
               ) : null}
-            </div>
+            </Card>
           ))}
-        </CardContent>
       </Card>
     </div>
   );

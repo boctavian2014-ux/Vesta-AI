@@ -1,15 +1,12 @@
-import { useState, FormEvent } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Alert, Button, Card, Form, Input, Space, Tabs, Typography } from "antd";
+import { AlertCircle } from "lucide-react";
 import { VestaBrandLogoAuth } from "@/components/vesta-brand-logo";
 import { useUiLocale } from "@/lib/ui-locale";
+
+const { Title, Text } = Typography;
 
 export default function AuthPage() {
   const [, navigate] = useLocation();
@@ -27,8 +24,7 @@ export default function AuthPage() {
   const [regError, setRegError] = useState("");
   const [regLoading, setRegLoading] = useState(false);
 
-  const handleLogin = async (e: FormEvent) => {
-    e.preventDefault();
+  const runLogin = async () => {
     setLoginError("");
     setLoginLoading(true);
     try {
@@ -41,8 +37,7 @@ export default function AuthPage() {
     }
   };
 
-  const handleRegister = async (e: FormEvent) => {
-    e.preventDefault();
+  const runRegister = async () => {
     setRegError("");
     setRegLoading(true);
     try {
@@ -59,191 +54,136 @@ export default function AuthPage() {
     <div className="relative z-10 min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="mb-2 flex justify-end">
-          <div
-            className="flex items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5"
-            role="group"
-            aria-label={locale === "es" ? "Idioma" : "Language"}
-          >
-            <button
-              type="button"
-              onClick={() => setLocale("en")}
-              className={`rounded px-2 py-1 text-xs font-medium ${locale === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
+          <Space.Compact size="small">
+            <Button type={locale === "en" ? "primary" : "default"} onClick={() => setLocale("en")}>
               EN
-            </button>
-            <button
-              type="button"
-              onClick={() => setLocale("es")}
-              className={`rounded px-2 py-1 text-xs font-medium ${locale === "es" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
+            </Button>
+            <Button type={locale === "es" ? "primary" : "default"} onClick={() => setLocale("es")}>
               ES
-            </button>
-          </div>
+            </Button>
+          </Space.Compact>
         </div>
         <VestaBrandLogoAuth />
 
         <Card className="glass-card-strong border-border shadow-lg">
-          <Tabs defaultValue="login">
-            <CardHeader className="pb-2">
-              <TabsList className="w-full" data-testid="auth-tabs">
-                <TabsTrigger value="login" className="flex-1" data-testid="tab-login">
-                  Login
-                </TabsTrigger>
-                <TabsTrigger value="register" className="flex-1" data-testid="tab-register">
-                  Register
-                </TabsTrigger>
-              </TabsList>
-            </CardHeader>
-
-            <CardContent className="pt-4">
-              {/* Login Tab */}
-              <TabsContent value="login" className="mt-0">
-                <div className="mb-4">
-                  <CardTitle className="text-lg">Welcome back</CardTitle>
-                  <CardDescription className="text-sm mt-1">
-                    Sign in to your Vesta AI account
-                  </CardDescription>
-                </div>
-
-                {loginError && (
-                  <Alert variant="destructive" className="mb-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{loginError}</AlertDescription>
-                  </Alert>
-                )}
-
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="login-email">Email</Label>
-                    <Input
-                      id="login-email"
-                      type="email"
-                      placeholder="you@example.com"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      required
-                      data-testid="login-email"
-                    />
+          <Tabs
+            defaultActiveKey="login"
+            data-testid="auth-tabs"
+            items={[
+              {
+                key: "login",
+                label: <span data-testid="tab-login">Login</span>,
+                children: (
+                  <div className="pt-2">
+                    <Title level={4} style={{ marginBottom: 4 }}>
+                      Welcome back
+                    </Title>
+                    <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
+                      Sign in to your Vesta AI account
+                    </Text>
+                    {loginError ? (
+                      <Alert
+                        type="error"
+                        showIcon
+                        icon={<AlertCircle className="h-4 w-4" />}
+                        message={loginError}
+                        className="mb-4"
+                      />
+                    ) : null}
+                    <Form layout="vertical" onFinish={() => void runLogin()}>
+                      <Form.Item label="Email" name="email" rules={[{ required: true, message: "Email required" }]}>
+                        <Input
+                          id="login-email"
+                          type="email"
+                          placeholder="you@example.com"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          data-testid="login-email"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Password" name="password" rules={[{ required: true, message: "Password required" }]}>
+                        <Input.Password
+                          id="login-password"
+                          placeholder="••••••••"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          data-testid="login-password"
+                        />
+                      </Form.Item>
+                      <Button type="primary" htmlType="submit" block loading={loginLoading} data-testid="login-submit">
+                        Sign in
+                      </Button>
+                    </Form>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="login-password">Password</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      required
-                      data-testid="login-password"
-                    />
+                ),
+              },
+              {
+                key: "register",
+                label: <span data-testid="tab-register">Register</span>,
+                children: (
+                  <div className="pt-2">
+                    <Title level={4} style={{ marginBottom: 4 }}>
+                      Create account
+                    </Title>
+                    <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
+                      Start analyzing Spanish real estate
+                    </Text>
+                    {regError ? (
+                      <Alert
+                        type="error"
+                        showIcon
+                        icon={<AlertCircle className="h-4 w-4" />}
+                        message={regError}
+                        className="mb-4"
+                      />
+                    ) : null}
+                    <Form layout="vertical" onFinish={() => void runRegister()}>
+                      <Form.Item label="Username" name="username" rules={[{ required: true, min: 2 }]}>
+                        <Input
+                          id="reg-username"
+                          placeholder="johndoe"
+                          value={regUsername}
+                          onChange={(e) => setRegUsername(e.target.value)}
+                          data-testid="reg-username"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Email" name="email" rules={[{ required: true, type: "email" }]}>
+                        <Input
+                          id="reg-email"
+                          type="email"
+                          placeholder="you@example.com"
+                          value={regEmail}
+                          onChange={(e) => setRegEmail(e.target.value)}
+                          data-testid="reg-email"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Password" name="password" rules={[{ required: true, min: 6 }]}>
+                        <Input.Password
+                          id="reg-password"
+                          placeholder="Min. 6 characters"
+                          value={regPassword}
+                          onChange={(e) => setRegPassword(e.target.value)}
+                          data-testid="reg-password"
+                        />
+                      </Form.Item>
+                      <Button type="primary" htmlType="submit" block loading={regLoading} data-testid="register-submit">
+                        Create account
+                      </Button>
+                    </Form>
                   </div>
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={loginLoading}
-                    data-testid="login-submit"
-                  >
-                    {loginLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Signing in…
-                      </>
-                    ) : (
-                      "Sign in"
-                    )}
-                  </Button>
-                </form>
-              </TabsContent>
-
-              {/* Register Tab */}
-              <TabsContent value="register" className="mt-0">
-                <div className="mb-4">
-                  <CardTitle className="text-lg">Create account</CardTitle>
-                  <CardDescription className="text-sm mt-1">
-                    Start analyzing Spanish real estate
-                  </CardDescription>
-                </div>
-
-                {regError && (
-                  <Alert variant="destructive" className="mb-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{regError}</AlertDescription>
-                  </Alert>
-                )}
-
-                <form onSubmit={handleRegister} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reg-username">Username</Label>
-                    <Input
-                      id="reg-username"
-                      type="text"
-                      placeholder="johndoe"
-                      value={regUsername}
-                      onChange={(e) => setRegUsername(e.target.value)}
-                      required
-                      minLength={2}
-                      data-testid="reg-username"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reg-email">Email</Label>
-                    <Input
-                      id="reg-email"
-                      type="email"
-                      placeholder="you@example.com"
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
-                      required
-                      data-testid="reg-email"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reg-password">Password</Label>
-                    <Input
-                      id="reg-password"
-                      type="password"
-                      placeholder="Min. 6 characters"
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      required
-                      minLength={6}
-                      data-testid="reg-password"
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={regLoading}
-                    data-testid="register-submit"
-                  >
-                    {regLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating account…
-                      </>
-                    ) : (
-                      "Create account"
-                    )}
-                  </Button>
-                </form>
-              </TabsContent>
-            </CardContent>
-          </Tabs>
+                ),
+              },
+            ]}
+          />
         </Card>
 
         <p className="text-center text-xs text-muted-foreground mt-6 leading-relaxed">
           {locale === "es" ? "Al continuar, confirmas que has leído " : "By continuing, you confirm you have read "}
-          <Link
-            href="/legal/terms"
-            className="text-primary underline underline-offset-2 hover:text-primary/90"
-          >
+          <Link href="/legal/terms" className="text-primary underline underline-offset-2 hover:text-primary/90">
             {locale === "es" ? "Términos y condiciones" : "Terms and conditions"}
           </Link>{" "}
           {locale === "es" ? "y " : "and "}
-          <Link
-            href="/legal/privacy"
-            className="text-primary underline underline-offset-2 hover:text-primary/90"
-          >
+          <Link href="/legal/privacy" className="text-primary underline underline-offset-2 hover:text-primary/90">
             {locale === "es" ? "Política de privacidad" : "Privacy policy"}
           </Link>
           .

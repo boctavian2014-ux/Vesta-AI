@@ -1,29 +1,29 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Switch, Route, Router, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { Spin } from "antd";
 import { queryClient } from "./lib/queryClient";
 import { UiLocaleProvider } from "@/lib/ui-locale";
-import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { AppSidebar } from "@/components/app-sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AntDesignRoot } from "@/lib/antd-provider";
+import { EnterpriseAppLayout } from "@/components/enterprise-app-layout";
 import { AmbientBackground } from "@/components/ambient-background";
 
 import AuthPage from "@/pages/auth";
 import Dashboard from "@/pages/dashboard";
-import MapPage from "@/pages/map-page";
 import MarketTrends from "@/pages/market-trends";
 import SavedProperties from "@/pages/saved-properties";
 import Reports from "@/pages/reports";
-import ReportDetail from "@/pages/report-detail";
-import AdminOrders from "@/pages/admin-orders";
 import LegalTermsPage from "@/pages/legal-terms";
 import LegalPrivacyPage from "@/pages/legal-privacy";
 import TutorialPage from "@/pages/tutorial";
-import PropertySearchChatPage from "@/pages/property-search-chat";
 import NotFound from "@/pages/not-found";
+
+const MapPage = lazy(() => import("@/pages/map-page"));
+const ReportDetail = lazy(() => import("@/pages/report-detail"));
+const AdminOrders = lazy(() => import("@/pages/admin-orders"));
+const PropertySearchChatPage = lazy(() => import("@/pages/property-search-chat"));
 import { VESTA_BRAND_ASSET_QUERY } from "@/components/vesta-brand-logo";
 
 // Apply dark mode by default
@@ -85,33 +85,30 @@ function AppRouter() {
   }
 
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset className="min-h-0">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
-          <SidebarTrigger data-testid="sidebar-trigger" className="-ml-1" />
-          <div className="ml-auto">
-            <ThemeToggle />
+    <EnterpriseAppLayout>
+      <Suspense
+        fallback={
+          <div className="flex min-h-[50vh] items-center justify-center">
+            <Spin size="large" />
           </div>
-        </header>
-        <main className="min-h-0 flex-1 overflow-auto">
-          <Switch>
-            <Route path="/" component={Dashboard} />
-            <Route path="/map" component={MapPage} />
-            <Route path="/property-search" component={PropertySearchChatPage} />
-            <Route path="/trends" component={MarketTrends} />
-            <Route path="/properties" component={SavedProperties} />
-            <Route path="/reports/:id" component={ReportDetail} />
-            <Route path="/reports" component={Reports} />
-            <Route path="/tutorial" component={TutorialPage} />
-            {user?.isAdmin && <Route path="/admin/orders" component={AdminOrders} />}
-            <Route path="/legal/terms" component={LegalTermsPage} />
-            <Route path="/legal/privacy" component={LegalPrivacyPage} />
-            <Route component={NotFound} />
-          </Switch>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        }
+      >
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/map" component={MapPage} />
+          <Route path="/property-search" component={PropertySearchChatPage} />
+          <Route path="/trends" component={MarketTrends} />
+          <Route path="/properties" component={SavedProperties} />
+          <Route path="/reports/:id" component={ReportDetail} />
+          <Route path="/reports" component={Reports} />
+          <Route path="/tutorial" component={TutorialPage} />
+          {user?.isAdmin && <Route path="/admin/orders" component={AdminOrders} />}
+          <Route path="/legal/terms" component={LegalTermsPage} />
+          <Route path="/legal/privacy" component={LegalPrivacyPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
+    </EnterpriseAppLayout>
   );
 }
 
@@ -124,17 +121,18 @@ function App() {
     <div className="relative min-h-svh">
       <QueryClientProvider client={queryClient}>
         <UiLocaleProvider>
-          <AmbientBackground />
-          <div className="relative z-10 min-h-svh">
-            <AuthProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Router>
-                  <AppRouter />
-                </Router>
-              </TooltipProvider>
-            </AuthProvider>
-          </div>
+          <AntDesignRoot>
+            <AmbientBackground />
+            <div className="relative z-10 min-h-svh">
+              <AuthProvider>
+                <TooltipProvider>
+                  <Router>
+                    <AppRouter />
+                  </Router>
+                </TooltipProvider>
+              </AuthProvider>
+            </div>
+          </AntDesignRoot>
         </UiLocaleProvider>
       </QueryClientProvider>
     </div>

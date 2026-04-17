@@ -2,11 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useUiLocale } from "@/lib/ui-locale";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Card, CardContent } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
+import { App, Alert, Button, Card, Input } from "antd";
 import { AlertTriangle, ExternalLink, Info, Loader2, MapPin, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +31,7 @@ type ChatMessage = {
 export default function PropertySearchChatPage() {
   const { locale } = useUiLocale();
   const [, navigate] = useLocation();
-  const { toast } = useToast();
+  const { message } = App.useApp();
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const pendingRef = useRef(false);
@@ -198,7 +194,7 @@ export default function PropertySearchChatPage() {
             : e instanceof Error
               ? e.message
               : t.networkError;
-        toast({ title: t.errorTitle, description: msg, variant: "destructive" });
+        message.error(`${t.errorTitle}: ${msg}`);
         setMessages((prev) => [
           ...prev,
           {
@@ -215,7 +211,7 @@ export default function PropertySearchChatPage() {
         setPending(false);
       }
     },
-    [locale, t, toast],
+    [locale, t, message],
   );
 
   const onSubmit = (e: React.FormEvent) => {
@@ -231,25 +227,34 @@ export default function PropertySearchChatPage() {
       >
         <div className="mx-auto max-w-3xl space-y-4 pb-4">
           {aiStatus && !aiStatus.openaiConfigured && (
-            <Alert variant="destructive" className="border-destructive/40 bg-destructive/10">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>{t.openaiMissingTitle}</AlertTitle>
-              <AlertDescription>{t.openaiMissingDesc}</AlertDescription>
-            </Alert>
+            <Alert
+              type="error"
+              showIcon
+              icon={<AlertTriangle className="h-4 w-4" />}
+              message={t.openaiMissingTitle}
+              description={t.openaiMissingDesc}
+              className="border-destructive/40 bg-destructive/10"
+            />
           )}
           {aiStatus?.openaiConfigured && (
-            <Alert className="border-border bg-muted/40">
-              <Info className="h-4 w-4" />
-              <AlertTitle>{t.mapInfoTitle}</AlertTitle>
-              <AlertDescription className="text-muted-foreground">{t.mapInfoDesc}</AlertDescription>
-            </Alert>
+            <Alert
+              type="info"
+              showIcon
+              icon={<Info className="h-4 w-4" />}
+              message={t.mapInfoTitle}
+              description={t.mapInfoDesc}
+              className="border-border bg-muted/40"
+            />
           )}
           {aiStatus?.openaiConfigured && aiStatus.searchConfigured !== true && (
-            <Alert variant="default" className="border-amber-500/40 bg-amber-500/10">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              <AlertTitle>{t.searchMissingTitle}</AlertTitle>
-              <AlertDescription>{t.searchMissingDesc}</AlertDescription>
-            </Alert>
+            <Alert
+              type="warning"
+              showIcon
+              icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
+              message={t.searchMissingTitle}
+              description={t.searchMissingDesc}
+              className="border-amber-500/40 bg-amber-500/10"
+            />
           )}
           {messages.map((m, i) => (
             <div
@@ -283,8 +288,8 @@ export default function PropertySearchChatPage() {
                         Number.isFinite(c.lon);
                       const areaCenter = c.mapHint === "area_center";
                       return (
-                        <Card key={`${c.sourceUrl}-${idx}`} className="bg-background/60">
-                          <CardContent className="p-3 space-y-2">
+                        <Card key={`${c.sourceUrl}-${idx}`} className="bg-background/60" size="small" styles={{ body: { padding: 12 } }}>
+                          <div className="space-y-2">
                             <p className="text-sm font-medium leading-snug text-foreground">
                               {c.title}
                             </p>
@@ -318,22 +323,21 @@ export default function PropertySearchChatPage() {
                             ) : null}
                             <div className="flex flex-wrap gap-2">
                               <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                className="gap-1.5"
+                                htmlType="button"
+                                size="small"
+                                icon={<ExternalLink className="h-3.5 w-3.5" />}
                                 onClick={() => {
                                   window.open(c.sourceUrl, "_blank", "noopener,noreferrer");
                                 }}
                               >
-                                <ExternalLink className="h-3.5 w-3.5" />
                                 {t.viewListing}
                               </Button>
                               {hasCoords ? (
                                 <Button
-                                  type="button"
-                                  size="sm"
-                                  className="gap-1.5"
+                                  htmlType="button"
+                                  type="primary"
+                                  size="small"
+                                  icon={<MapPin className="h-3.5 w-3.5" />}
                                   onClick={() => {
                                     const q =
                                       areaCenter
@@ -342,7 +346,6 @@ export default function PropertySearchChatPage() {
                                     navigate(`/map?${q}`);
                                   }}
                                 >
-                                  <MapPin className="h-3.5 w-3.5" />
                                   {areaCenter ? t.openAreaOnMap : t.openOnMap}
                                 </Button>
                               ) : (
@@ -351,7 +354,7 @@ export default function PropertySearchChatPage() {
                                 </span>
                               )}
                             </div>
-                          </CardContent>
+                          </div>
                         </Card>
                       );
                     })}
@@ -387,7 +390,7 @@ export default function PropertySearchChatPage() {
             ))}
           </div>
           <form onSubmit={onSubmit} className="flex gap-2 items-end">
-            <Textarea
+            <Input.TextArea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={t.placeholder}
@@ -402,7 +405,7 @@ export default function PropertySearchChatPage() {
               }}
               aria-label={t.placeholder}
             />
-            <Button type="submit" disabled={pending || !input.trim()} className="shrink-0 h-10">
+            <Button htmlType="submit" type="primary" disabled={pending || !input.trim()} className="shrink-0 h-10">
               {pending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

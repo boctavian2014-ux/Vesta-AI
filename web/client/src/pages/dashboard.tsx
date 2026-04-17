@@ -2,9 +2,7 @@ import type { ReactNode } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useUiLocale } from "@/lib/ui-locale";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button, Card, Col, Row, Space, Tag, Typography } from "antd";
 import {
   AreaChart,
   Area,
@@ -15,9 +13,22 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { TrendingUp, BarChart3, FileText, Map, ArrowRight, MessageSquare } from "lucide-react";
+
+function QuickActionContent({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <span style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        {icon}
+        {label}
+      </span>
+      <ArrowRight className="h-4 w-4 shrink-0 opacity-60" />
+    </span>
+  );
+}
 import { VestaBrandLogoMark } from "@/components/vesta-brand-logo";
 
-// Mock trend data for mini-chart
+const { Title, Text } = Typography;
+
 const TREND_DATA = [
   { month: "Oct", ipv: 168 },
   { month: "Nov", ipv: 171 },
@@ -72,9 +83,7 @@ function CustomTooltip({ active, payload, label }: any) {
     return (
       <div className="rounded-lg glass-panel px-3 py-2">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-semibold text-foreground">
-          IPV {payload[0].value}
-        </p>
+        <p className="text-sm font-semibold text-foreground">IPV {payload[0].value}</p>
       </div>
     );
   }
@@ -85,74 +94,76 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { locale } = useUiLocale();
   const [, navigate] = useLocation();
-  const t = locale === "es"
-    ? {
-        goodMorning: "Buenos días",
-        goodAfternoon: "Buenas tardes",
-        goodEvening: "Buenas noches",
-        hello: "hola",
-        overview: "Aquí tienes tu resumen de inteligencia inmobiliaria",
-        marketBadge: "Mercado España",
-        chartTitle: "Índice de Precio de Vivienda — Tendencia reciente",
-        chartDesc: "IPV últimos 7 meses",
-        quickActions: "Acciones rápidas",
-        quickActionsDesc: "Ir a funciones clave",
-        analyzeProperty: "Analizar propiedad",
-        propertySearchAi: "Búsqueda de vivienda (IA)",
-        viewTrends: "Ver tendencias",
-        savedProperties: "Propiedades guardadas",
-        reports: "Informes",
-      }
-    : {
-        goodMorning: "Good morning",
-        goodAfternoon: "Good afternoon",
-        goodEvening: "Good evening",
-        hello: "there",
-        overview: "Here's your real estate intelligence overview",
-        marketBadge: "Spain Market",
-        chartTitle: "Housing Price Index — Recent Trend",
-        chartDesc: "IPV last 7 months",
-        quickActions: "Quick Actions",
-        quickActionsDesc: "Jump to key features",
-        analyzeProperty: "Analyze Property",
-        propertySearchAi: "Property search (AI)",
-        viewTrends: "View Trends",
-        savedProperties: "Saved Properties",
-        reports: "Reports",
-      };
+  const t =
+    locale === "es"
+      ? {
+          goodMorning: "Buenos días",
+          goodAfternoon: "Buenas tardes",
+          goodEvening: "Buenas noches",
+          hello: "hola",
+          overview: "Aquí tienes tu resumen de inteligencia inmobiliaria",
+          marketBadge: "Mercado España",
+          chartTitle: "Índice de Precio de Vivienda — Tendencia reciente",
+          chartDesc: "IPV últimos 7 meses",
+          quickActions: "Acciones rápidas",
+          quickActionsDesc: "Ir a funciones clave",
+          analyzeProperty: "Analizar propiedad",
+          propertySearchAi: "Búsqueda de vivienda (IA)",
+          viewTrends: "Ver tendencias",
+          savedProperties: "Propiedades guardadas",
+          reports: "Informes",
+        }
+      : {
+          goodMorning: "Good morning",
+          goodAfternoon: "Good afternoon",
+          goodEvening: "Good evening",
+          hello: "there",
+          overview: "Here's your real estate intelligence overview",
+          marketBadge: "Spain Market",
+          chartTitle: "Housing Price Index — Recent Trend",
+          chartDesc: "IPV last 7 months",
+          quickActions: "Quick Actions",
+          quickActionsDesc: "Jump to key features",
+          analyzeProperty: "Analyze Property",
+          propertySearchAi: "Property search (AI)",
+          viewTrends: "View Trends",
+          savedProperties: "Saved Properties",
+          reports: "Reports",
+        };
 
-  const kpiCards: KpiCardDef[] = locale === "es"
-    ? [
-        {
-          label: "Propiedades analizadas",
-          value: "47",
-          icon: <VestaBrandLogoMark imgClassName="h-3.5 w-auto max-h-3.5" />,
-          description: "Total de propiedades revisadas",
-          badge: "+3 esta semana",
-        },
-        {
-          label: "Rentabilidad bruta media",
-          value: "6.2%",
-          icon: <TrendingUp className="h-3.5 w-3.5 text-primary" />,
-          description: "Promedio en propiedades guardadas",
-          badge: "Por encima del mercado",
-        },
-        {
-          label: "Puntuación de mercado",
-          value: "72/100",
-          icon: <BarChart3 className="h-3.5 w-3.5 text-primary" />,
-          description: "Salud del mercado inmobiliario español",
-          badge: "Estable",
-        },
-        {
-          label: "Informes generados",
-          value: "12",
-          icon: <FileText className="h-3.5 w-3.5 text-primary" />,
-          description: "Informes detallados de propiedades",
-          badge: "2 pendientes",
-        },
-      ]
-    : KPI_CARDS;
+  const kpiCards: KpiCardDef[] =
+    locale === "es"
+      ? [
+          {
+            label: "Propiedades analizadas",
+            value: "47",
+            icon: <VestaBrandLogoMark imgClassName="h-3.5 w-auto max-h-3.5" />,
+            description: "Total de propiedades revisadas",
+            badge: "+3 esta semana",
+          },
+          {
+            label: "Rentabilidad bruta media",
+            value: "6.2%",
+            icon: <TrendingUp className="h-3.5 w-3.5 text-primary" />,
+            description: "Promedio en propiedades guardadas",
+            badge: "Por encima del mercado",
+          },
+          {
+            label: "Puntuación de mercado",
+            value: "72/100",
+            icon: <BarChart3 className="h-3.5 w-3.5 text-primary" />,
+            description: "Salud del mercado inmobiliario español",
+            badge: "Estable",
+          },
+          {
+            label: "Informes generados",
+            value: "12",
+            icon: <FileText className="h-3.5 w-3.5 text-primary" />,
+            description: "Informes detallados de propiedades",
+            badge: "2 pendientes",
+          },
+        ]
+      : KPI_CARDS;
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -162,174 +173,113 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">
-            {greeting()}, {user?.username ?? t.hello}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t.overview}
-          </p>
+    <div style={{ padding: 24, maxWidth: 1152, margin: "0 auto" }}>
+      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <Title level={3} style={{ marginBottom: 4 }}>
+              {greeting()}, {user?.username ?? t.hello}
+            </Title>
+            <Text type="secondary">{t.overview}</Text>
+          </div>
+          <Tag color="gold">{t.marketBadge}</Tag>
         </div>
-        <Badge variant="secondary" className="mt-1">
-          {t.marketBadge}
-        </Badge>
-      </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiCards.map((card) => (
-          <Card key={card.label} className="border-border">
-            <CardHeader className="pb-2 pt-4 px-4">
-              <div className="flex items-center justify-between">
-                <CardDescription className="text-xs font-medium uppercase tracking-wide">
-                  {card.label}
-                </CardDescription>
-                <div className="p-1.5 rounded-md bg-primary/10 flex items-center justify-center min-w-[1.75rem] min-h-[1.75rem]">
-                  {card.icon}
-                </div>
+        <Row gutter={[16, 16]}>
+          {kpiCards.map((card) => (
+            <Col xs={24} sm={12} lg={6} key={card.label}>
+              <Card size="small" className="border-border h-full">
+                <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" }}>
+                      {card.label}
+                    </Text>
+                    <div className="flex items-center justify-center rounded-md bg-primary/10 p-1.5 min-w-[1.75rem] min-h-[1.75rem]">
+                      {card.icon}
+                    </div>
+                  </div>
+                  <Title level={3} style={{ margin: "4px 0 0" }}>
+                    {card.value}
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {card.description}
+                  </Text>
+                  <Tag style={{ marginTop: 4 }}>{card.badge}</Tag>
+                </Space>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+
+        <Row gutter={[16, 16]}>
+          <Col xs={24} lg={16}>
+            <Card size="small" title={t.chartTitle} className="border-border">
+              <Text type="secondary" style={{ display: "block", marginBottom: 12, fontSize: 12 }}>
+                {t.chartDesc}
+              </Text>
+              <div className="h-44" data-testid="trend-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={TREND_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="dashGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(38 65% 55%)" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="hsl(38 65% 55%)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                      axisLine={false}
+                      tickLine={false}
+                      domain={["auto", "auto"]}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area
+                      type="monotone"
+                      dataKey="ipv"
+                      stroke="hsl(38 65% 55%)"
+                      strokeWidth={2}
+                      fill="url(#dashGradient)"
+                      dot={false}
+                      activeDot={{ r: 4, fill: "hsl(38 65% 55%)" }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-2xl font-bold text-foreground mb-1">{card.value}</div>
-              <p className="text-xs text-muted-foreground">{card.description}</p>
-              <Badge
-                variant="outline"
-                className="mt-2 text-xs border-primary/20 text-primary"
-              >
-                {card.badge}
-              </Badge>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Chart + Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Mini Chart */}
-        <Card className="lg:col-span-2 border-border">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold">{t.chartTitle}</CardTitle>
-            <CardDescription className="text-xs">
-              {t.chartDesc}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="h-44" data-testid="trend-chart">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={TREND_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="dashGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(38 65% 55%)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="hsl(38 65% 55%)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                    axisLine={false}
-                    tickLine={false}
-                    domain={["auto", "auto"]}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area
-                    type="monotone"
-                    dataKey="ipv"
-                    stroke="hsl(38 65% 55%)"
-                    strokeWidth={2}
-                    fill="url(#dashGradient)"
-                    dot={false}
-                    activeDot={{ r: 4, fill: "hsl(38 65% 55%)" }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
-        <Card className="border-border">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold">{t.quickActions}</CardTitle>
-            <CardDescription className="text-xs">
-              {t.quickActionsDesc}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-3">
-            <Button
-              className="w-full justify-between"
-              onClick={() => navigate("/map")}
-              data-testid="quick-action-map"
-            >
-              <span className="flex items-center gap-2">
-                <Map className="h-4 w-4" />
-                {t.analyzeProperty}
-              </span>
-              <ArrowRight className="h-4 w-4 opacity-60" />
-            </Button>
-
-            <Button
-              variant="secondary"
-              className="w-full justify-between"
-              onClick={() => navigate("/property-search")}
-              data-testid="quick-action-property-search"
-            >
-              <span className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                {t.propertySearchAi}
-              </span>
-              <ArrowRight className="h-4 w-4 opacity-60" />
-            </Button>
-
-            <Button
-              variant="secondary"
-              className="w-full justify-between"
-              onClick={() => navigate("/trends")}
-              data-testid="quick-action-trends"
-            >
-              <span className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
-                {t.viewTrends}
-              </span>
-              <ArrowRight className="h-4 w-4 opacity-60" />
-            </Button>
-
-            <Button
-              variant="outline"
-              className="w-full justify-between"
-              onClick={() => navigate("/properties")}
-              data-testid="quick-action-properties"
-            >
-              <span className="flex items-center gap-2">
-                <VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />
-                {t.savedProperties}
-              </span>
-              <ArrowRight className="h-4 w-4 opacity-60" />
-            </Button>
-
-            <Button
-              variant="outline"
-              className="w-full justify-between"
-              onClick={() => navigate("/reports")}
-              data-testid="quick-action-reports"
-            >
-              <span className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                {t.reports}
-              </span>
-              <ArrowRight className="h-4 w-4 opacity-60" />
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card size="small" title={t.quickActions} className="border-border h-full">
+              <Text type="secondary" style={{ display: "block", marginBottom: 12, fontSize: 12 }}>
+                {t.quickActionsDesc}
+              </Text>
+              <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                <Button block type="primary" onClick={() => navigate("/map")} data-testid="quick-action-map">
+                  <QuickActionContent icon={<Map className="h-4 w-4" />} label={t.analyzeProperty} />
+                </Button>
+                <Button block onClick={() => navigate("/property-search")} data-testid="quick-action-property-search">
+                  <QuickActionContent icon={<MessageSquare className="h-4 w-4" />} label={t.propertySearchAi} />
+                </Button>
+                <Button block onClick={() => navigate("/trends")} data-testid="quick-action-trends">
+                  <QuickActionContent icon={<TrendingUp className="h-4 w-4" />} label={t.viewTrends} />
+                </Button>
+                <Button block onClick={() => navigate("/properties")} data-testid="quick-action-properties">
+                  <QuickActionContent icon={<VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />} label={t.savedProperties} />
+                </Button>
+                <Button block onClick={() => navigate("/reports")} data-testid="quick-action-reports">
+                  <QuickActionContent icon={<FileText className="h-4 w-4" />} label={t.reports} />
+                </Button>
+              </Space>
+            </Card>
+          </Col>
+        </Row>
+      </Space>
     </div>
   );
 }

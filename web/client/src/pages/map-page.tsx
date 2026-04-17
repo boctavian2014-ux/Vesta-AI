@@ -10,12 +10,8 @@ import { useUiLocale, type UiLocale } from "@/lib/ui-locale";
 import { useLocation } from "wouter";
 import { identifyProperty } from "@/lib/propertyApi";
 import { getGoogleMapsBrowserKey, loadGoogleMapsJs } from "@/lib/googleMapsLoader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
+import { App, Button, Card, Divider, Modal, Skeleton } from "antd";
+import { showVestaMessage } from "@/lib/vesta-message";
 import {
   TrendingUp, Bookmark, FileText, X, Loader2,
   AlertCircle, CheckCircle2,
@@ -449,11 +445,13 @@ function PaymentModalStripeForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement onReady={() => setPaymentElementReady(true)} />
       <Button
-        type="submit"
+        htmlType="submit"
+        type="primary"
+        block
         className="w-full gap-2"
         disabled={!stripe || busy}
+        icon={busy ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : undefined}
       >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : null}
         {submitLabel}
       </Button>
     </form>
@@ -473,8 +471,11 @@ function PaymentModal({
   uiLocale: UiLocale;
   initialTier: ProductTier;
 }) {
-  const tr = uiLocale === "es"
-    ? {
+  const { message } = App.useApp();
+  const tr = useMemo(
+    () =>
+      (uiLocale === "es"
+        ? {
         missingCoords: "Faltan coordenadas",
         reselect: "Selecciona de nuevo el inmueble en el mapa.",
         payError: "Error de pago",
@@ -595,9 +596,10 @@ function PaymentModal({
         loginRequiredPayment: "Sign in to pay and file the report under Reports.",
         creatingDemo: "Generating demonstration file...",
         previewDemoFailed: "Could not generate the demonstration file. Please try again.",
-      };
+      }),
+    [uiLocale],
+  );
 
-  const { toast } = useToast();
   const [step, setStep] = useState<"confirm" | "paying" | "payment" | "processing" | "done">("confirm");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
@@ -626,11 +628,11 @@ function PaymentModal({
   /** Creates Stripe PaymentIntent via Python proxy; requires auth + publishable key. */
   const startRealPayment = async () => {
     if (!resolvedCoords) {
-      toast({ title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
+      showVestaMessage(message, { title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
       return;
     }
     if (!stripePromise || !stripePublishableKey) {
-      toast({ title: tr.payError, description: tr.missingStripePk, variant: "destructive" });
+      showVestaMessage(message, { title: tr.payError, description: tr.missingStripePk, variant: "destructive" });
       return;
     }
     setStep("paying");
@@ -667,7 +669,7 @@ function PaymentModal({
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : String(e);
       const is401 = /^401\b/.test(raw);
-      toast({
+      showVestaMessage(message, {
         title: tr.payError,
         description: is401 ? tr.loginRequiredPayment : raw,
         variant: "destructive",
@@ -682,7 +684,7 @@ function PaymentModal({
 
   const confirmAndProcess = async (productTier: ProductTier, pi: string | null) => {
     if (!pi) {
-      toast({
+      showVestaMessage(message, {
         title: tr.incompletePayment,
         description: tr.missingPaymentId,
         variant: "destructive",
@@ -716,14 +718,14 @@ function PaymentModal({
         address: propertyInfo?.address ?? "",
       });
     } catch (err: any) {
-      toast({ title: tr.generationError, description: err.message, variant: "destructive" });
+      showVestaMessage(message, { title: tr.generationError, description: err.message, variant: "destructive" });
       setStep("confirm");
     }
   };
 
   const startDemoPreview = async () => {
     if (!resolvedCoords) {
-      toast({ title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
+      showVestaMessage(message, { title: tr.missingCoords, description: tr.reselect, variant: "destructive" });
       return;
     }
     setStep("paying");
@@ -735,11 +737,15 @@ function PaymentModal({
         financialData: financialData ?? {},
       });
       qc.invalidateQueries({ queryKey: ["/api/reports"] });
-      toast({ title: tr.creatingDemo, description: tr.previewDemoHint });
+      showVestaMessage(message, {
+        title: tr.creatingDemo,
+        description: tr.previewDemoHint,
+        variant: "success",
+      });
       setStep("done");
       onSuccess(report.id);
     } catch (err: any) {
-      toast({ title: tr.payError, description: err?.message ?? tr.previewDemoFailed, variant: "destructive" });
+      showVestaMessage(message, { title: tr.payError, description: err?.message ?? tr.previewDemoFailed, variant: "destructive" });
       setStep("confirm");
     }
   };
@@ -777,7 +783,7 @@ function PaymentModal({
             clearInterval(interval);
             pollTimerRef.current = null;
             await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
-            toast({
+            showVestaMessage(message, {
               title: tr.timeout,
               description: tr.timeoutDescription,
               variant: "destructive",
@@ -791,7 +797,7 @@ function PaymentModal({
             clearInterval(interval);
             pollTimerRef.current = null;
             await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
-            toast({ title: tr.reportFailed, description: tr.retry, variant: "destructive" });
+            showVestaMessage(message, { title: tr.reportFailed, description: tr.retry, variant: "destructive" });
             onClose();
             return;
           }
@@ -842,12 +848,26 @@ function PaymentModal({
             qc.invalidateQueries({ queryKey: ["/api/reports"] });
             qc.invalidateQueries({ queryKey: ["/api/reports", rid] });
             setStep("done");
+            if (zoneCtx.productTier === "analysis_pack") {
+              showVestaMessage(message, {
+                title: tr.analysisDelivered,
+                variant: "success",
+                duration: 5500,
+              });
+            } else {
+              showVestaMessage(message, {
+                title: tr.expertFlow5,
+                description: tr.notaDelivered,
+                variant: "success",
+                duration: 7500,
+              });
+            }
             onSuccess(rid);
           } else if (attempts >= maxAttempts) {
             clearInterval(interval);
             pollTimerRef.current = null;
             await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" });
-            toast({ title: tr.reportTimeout, description: tr.retry, variant: "destructive" });
+            showVestaMessage(message, { title: tr.reportTimeout, description: tr.retry, variant: "destructive" });
             onClose();
           }
         } catch {
@@ -855,7 +875,7 @@ function PaymentModal({
             clearInterval(interval);
             pollTimerRef.current = null;
             await apiRequest("PATCH", `/api/reports/${rid}`, { status: "failed" }).catch(() => {});
-            toast({ title: tr.networkError, variant: "destructive" });
+            showVestaMessage(message, { title: tr.networkError, variant: "destructive" });
             onClose();
           }
         } finally {
@@ -898,18 +918,22 @@ function PaymentModal({
               : 0;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className={step === "payment" ? "sm:max-w-lg" : "sm:max-w-md"}>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <Modal
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={step === "payment" ? 520 : 448}
+      destroyOnClose
+      title={
+        <div>
+          <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
-            {tr.orderDocs}
-          </DialogTitle>
-          <DialogDescription>
-            {tr.twoPacks}
-          </DialogDescription>
-        </DialogHeader>
-
+            <span>{tr.orderDocs}</span>
+          </div>
+          <p className="text-sm font-normal text-muted-foreground mt-1 mb-0 pr-8">{tr.twoPacks}</p>
+        </div>
+      }
+    >
         <div className="space-y-4 py-2">
           {propertyInfo?.referenciaCatastral && (
             <div className="rounded-lg glass-panel px-3 py-2.5 space-y-1">
@@ -990,13 +1014,13 @@ function PaymentModal({
                   submitLabel={`${tr.securePay} · ${priceForTier} €`}
                   onPaid={() => void confirmAndProcess(tier, paymentIntentId)}
                   onError={(msg) => {
-                    toast({ title: tr.payError, description: msg, variant: "destructive" });
+                    showVestaMessage(message, { title: tr.payError, description: msg, variant: "destructive" });
                   }}
                 />
               </Elements>
               <Button
-                variant="outline"
-                type="button"
+                htmlType="button"
+                variant="outlined"
                 className="w-full"
                 onClick={() => {
                   setStep("confirm");
@@ -1077,15 +1101,17 @@ function PaymentModal({
         {step === "confirm" && (
           <div className="space-y-2 pt-2">
             <div className="flex gap-2">
-              <Button variant="outline" onClick={onClose} className="flex-1">{tr.cancel}</Button>
-              <Button onClick={startPayment} className="flex-1 gap-2">
+              <Button htmlType="button" variant="outlined" onClick={onClose} className="flex-1">
+                {tr.cancel}
+              </Button>
+              <Button htmlType="button" type="primary" onClick={startPayment} className="flex-1 gap-2">
                 <CreditCard className="h-4 w-4" />
                 {tr.payNow} {priceForTier} €
               </Button>
             </div>
             <Button
-              type="button"
-              variant="ghost"
+              htmlType="button"
+              type="text"
               className="w-full text-xs text-muted-foreground"
               onClick={() => void startDemoPreview()}
             >
@@ -1095,8 +1121,7 @@ function PaymentModal({
           </div>
         )}
 
-      </DialogContent>
-    </Dialog>
+    </Modal>
   );
 }
 
@@ -1106,7 +1131,7 @@ export default function MapPage() {
   const googleMapContainerRef = useRef<HTMLDivElement | null>(null);
   const googleMapRef = useRef<any>(null);
   const googleMarkerRef = useRef<any>(null);
-  const { toast } = useToast();
+  const { message } = App.useApp();
   const qc = useQueryClient();
   const { user: authUser } = useAuth();
   const [, navigate] = useLocation();
@@ -1295,13 +1320,13 @@ export default function MapPage() {
 
   const openStreetView = useCallback(() => {
     if (!selectedCoords) {
-      toast({ title: t.streetViewSelectPointFirst, variant: "destructive" });
+      showVestaMessage(message, { title: t.streetViewSelectPointFirst, variant: "warning" });
       return;
     }
     setStreetViewLat(selectedCoords.lat);
     setStreetViewLng(selectedCoords.lon);
     setStreetViewOpen(true);
-  }, [selectedCoords, t.streetViewSelectPointFirst, toast]);
+  }, [selectedCoords, t.streetViewSelectPointFirst, message]);
 
   // ── mutations ──────────────────────────────────────────────────────────
 
@@ -1311,7 +1336,7 @@ export default function MapPage() {
       return res.json() as FinancialAnalysis;
     },
     onSuccess: (data) => setFinancialData(data),
-    onError: (err: any) => toast({ title: t.analysisFailed, description: err.message, variant: "destructive" }),
+    onError: (err: any) => showVestaMessage(message, { title: t.analysisFailed, description: err.message, variant: "destructive" }),
   });
 
   const mapZoneSidebarQuery = useQuery({
@@ -1421,9 +1446,9 @@ export default function MapPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/properties"] });
-      toast({ title: t.propertySaved });
+      showVestaMessage(message, { title: t.propertySaved, variant: "success" });
     },
-    onError: (err: any) => toast({ title: t.genericError, description: err.message, variant: "destructive" }),
+    onError: (err: any) => showVestaMessage(message, { title: t.genericError, description: err.message, variant: "destructive" }),
   });
 
   // ── Google Maps — satellite only + Street View modal ─────────────────────
@@ -1492,9 +1517,10 @@ export default function MapPage() {
           queueMicrotask(() => {
             beginPropertySelectionRef.current(deep.lat, deep.lon);
             if (deep.approxArea) {
-              toast({
+              showVestaMessage(message, {
                 title: t.areaMapToastTitle,
                 description: t.areaMapToastDesc,
+                variant: "warning",
                 duration: 9000,
               });
             }
@@ -1535,7 +1561,7 @@ export default function MapPage() {
     t.areaMapToastTitle,
     t.mapInitFailed,
     t.missingMapKey,
-    toast,
+    message,
   ]);
 
   const closePanel = useCallback(() => {
@@ -1555,13 +1581,13 @@ export default function MapPage() {
   const runSearch = useCallback(async () => {
     const query = searchQuery.trim();
     if (!query) {
-      toast({ title: t.searchEmpty, variant: "destructive" });
+      showVestaMessage(message, { title: t.searchEmpty, variant: "warning" });
       return;
     }
     const g = (window as any).google?.maps;
     const gm = googleMapRef.current;
     if (!g || !gm) {
-      toast({ title: t.mapInitFailed, variant: "destructive" });
+      showVestaMessage(message, { title: t.mapInitFailed, variant: "destructive" });
       return;
     }
 
@@ -1584,7 +1610,7 @@ export default function MapPage() {
         if (reverse.status === "OK" && reverse.results?.length) {
           const inSpain = isSpainGeocodeResult(reverse.results[0]);
           if (inSpain === false) {
-            toast({ title: t.outsideSpainWarning });
+            showVestaMessage(message, { title: t.outsideSpainWarning, variant: "warning" });
           }
         }
         return;
@@ -1624,9 +1650,9 @@ export default function MapPage() {
 
       if (geocodeResult.status !== "OK" || !geocodeResult.results?.length) {
         if (geocodeResult.status === "ZERO_RESULTS") {
-          toast({ title: t.searchNoResult, variant: "destructive" });
+          showVestaMessage(message, { title: t.searchNoResult, variant: "warning" });
         } else {
-          toast({ title: t.searchError, variant: "destructive" });
+          showVestaMessage(message, { title: t.searchError, variant: "destructive" });
         }
         return;
       }
@@ -1634,14 +1660,14 @@ export default function MapPage() {
       const first = geocodeResult.results[0];
       const coords = getLatLonFromGeocodeResult(first);
       if (!coords) {
-        toast({ title: t.searchError, variant: "destructive" });
+        showVestaMessage(message, { title: t.searchError, variant: "destructive" });
         return;
       }
       const { lat, lon } = coords;
 
       const inSpain = isSpainGeocodeResult(first);
       if (inSpain === false) {
-        toast({ title: t.outsideSpainWarning });
+        showVestaMessage(message, { title: t.outsideSpainWarning, variant: "warning" });
       }
 
       const queryLooksLikeAddress = isAddressLikeQuery(query);
@@ -1666,7 +1692,7 @@ export default function MapPage() {
               searchedCity &&
               currentCity.localeCompare(searchedCity, undefined, { sensitivity: "base" }) !== 0
             ) {
-              toast({ title: t.addressOtherCity, variant: "destructive" });
+              showVestaMessage(message, { title: t.addressOtherCity, variant: "warning" });
               return;
             }
           }
@@ -1688,7 +1714,7 @@ export default function MapPage() {
         gm.setZoom(looksLikeAddressQuery ? MAP_STREET_ZOOM : 14);
       }
     } catch {
-      toast({ title: t.searchError, variant: "destructive" });
+      showVestaMessage(message, { title: t.searchError, variant: "destructive" });
     } finally {
       setSearchBusy(false);
     }
@@ -1700,7 +1726,7 @@ export default function MapPage() {
     t.searchError,
     t.addressOtherCity,
     t.outsideSpainWarning,
-    toast,
+    message,
   ]);
 
   return (
@@ -1726,7 +1752,7 @@ export default function MapPage() {
             <p className="mt-2 text-sm text-sidebar-foreground/70">{mapInitError}</p>
             <Button
               className="mt-4"
-              variant="secondary"
+              type="default"
               onClick={() => {
                 setMapInitError(null);
                 setMapReloadToken((v) => v + 1);
@@ -1755,8 +1781,9 @@ export default function MapPage() {
             aria-label={t.searchPlaceholder}
           />
           <Button
-            type="submit"
-            size="sm"
+            htmlType="submit"
+            type="primary"
+            size="small"
             className="h-7 rounded-full px-3 text-xs"
             disabled={searchBusy}
           >
@@ -1800,8 +1827,20 @@ export default function MapPage() {
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="absolute right-0 top-0 bottom-0 z-20 w-full max-w-[380px] flex flex-col"
           >
-            <Card className="h-full rounded-none border-l border-y-0 border-r-0 border-sidebar-border/70 bg-sidebar text-sidebar-foreground overflow-hidden flex flex-col">
-              <CardHeader className="shrink-0 space-y-0 border-b border-sidebar-border/50 bg-sidebar-accent/20 px-4 pb-4 pt-4">
+            <Card
+              className="h-full rounded-none border-l border-y-0 border-r-0 border-sidebar-border/70 bg-sidebar text-sidebar-foreground overflow-hidden flex flex-col"
+              styles={{
+                body: {
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  padding: 0,
+                  overflow: "hidden",
+                  minHeight: 0,
+                },
+              }}
+            >
+              <div className="shrink-0 space-y-0 border-b border-sidebar-border/50 bg-sidebar-accent/20 px-4 pb-4 pt-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-1 items-start gap-3">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-sm backdrop-blur-sm">
@@ -1813,9 +1852,9 @@ export default function MapPage() {
                       />
                     </div>
                     <div className="min-w-0 flex-1 pr-1 pt-0.5">
-                      <CardTitle className="text-balance text-sidebar-foreground text-[1.05rem] font-semibold leading-snug tracking-tight sm:text-[1.125rem]">
+                      <div className="text-balance text-sidebar-foreground text-[1.05rem] font-semibold leading-snug tracking-tight sm:text-[1.125rem]">
                         {t.propertyAnalysis}
-                      </CardTitle>
+                      </div>
                       {selectedCoords && (
                         <p className="mt-2 font-mono text-[11px] leading-relaxed text-sidebar-foreground/45">
                           {selectedCoords.lat.toFixed(5)}, {selectedCoords.lon.toFixed(5)}
@@ -1824,18 +1863,17 @@ export default function MapPage() {
                     </div>
                   </div>
                   <Button
-                    variant="ghost"
-                    size="icon"
+                    type="text"
+                    shape="circle"
+                    icon={<X className="h-4 w-4" />}
                     onClick={closePanel}
                     className="h-8 w-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     aria-label="Close panel"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                  />
                 </div>
-              </CardHeader>
+              </div>
 
-              <CardContent className="text-sidebar-foreground flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <div className="text-sidebar-foreground flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
                 {/* Identifying */}
                 {isIdentifying && (
                   <div className="space-y-3">
@@ -1843,7 +1881,7 @@ export default function MapPage() {
                       <Loader2 className="h-4 w-4 text-sidebar-primary animate-spin" />
                       <span className="text-sm text-sidebar-foreground/80">{t.queryingCatastro}</span>
                     </div>
-                    {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-4 w-full bg-sidebar-accent" />)}
+                        <Skeleton active title={false} paragraph={{ rows: 5 }} className="bg-sidebar-accent" />
                   </div>
                 )}
 
@@ -1884,7 +1922,7 @@ export default function MapPage() {
                       {propertyInfo.anoConstruccion && <MetricRow label={t.yearBuilt} value={propertyInfo.anoConstruccion} />}
                     </div>
 
-                    <Separator className="bg-sidebar-border" />
+                    <Divider className="bg-sidebar-border my-2" />
 
                     {/* Financial */}
                     {financialMutation.isPending && !financialData && (
@@ -1893,7 +1931,7 @@ export default function MapPage() {
                           <Loader2 className="h-4 w-4 text-sidebar-primary animate-spin" />
                           <span className="text-sm text-sidebar-foreground/80">{t.calculatingYield}</span>
                         </div>
-                        {[1,2,3,4].map(i => <Skeleton key={i} className="h-4 w-full bg-sidebar-accent" />)}
+                        <Skeleton active title={false} paragraph={{ rows: 4 }} className="bg-sidebar-accent" />
                       </div>
                     )}
 
@@ -1901,12 +1939,13 @@ export default function MapPage() {
                       <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 space-y-2">
                         <p className="text-sm font-medium text-destructive">{t.analysisFailed}</p>
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
+                          variant="outlined"
+                          size="small"
+                          block
+                          icon={<TrendingUp className="h-4 w-4" />}
                           onClick={() => financialMutation.mutate(propertyInfo)}
                         >
-                          <TrendingUp className="mr-2 h-4 w-4" /> {t.retryAnalysis}
+                          {t.retryAnalysis}
                         </Button>
                       </div>
                     )}
@@ -1914,10 +1953,15 @@ export default function MapPage() {
                     {!financialData && !financialMutation.isPending && !financialMutation.isError && (
                       <div className="text-center py-2 space-y-3">
                         <p className="text-sm text-sidebar-foreground/80">{t.aiFinancial}</p>
-                        <Button className="w-full" onClick={() => {
+                        <Button
+                          type="primary"
+                          block
+                          className="w-full"
+                          onClick={() => {
                             setPaymentModalTier("analysis_pack");
                             setPaymentModalOpen(true);
-                          }}>
+                          }}
+                        >
                           {t.financialAnalysis} — {PRET_ANALYSIS_PACK_EUR} €
                         </Button>
                       </div>
@@ -2032,8 +2076,9 @@ export default function MapPage() {
                           </div>
                         )}
                         <Button
-                          variant="ghost"
-                          size="sm"
+                          type="text"
+                          size="small"
+                          block
                           className="w-full text-sm font-medium text-foreground/80 hover:text-foreground"
                           onClick={() => financialMutation.mutate(propertyInfo)}
                           disabled={financialMutation.isPending}
@@ -2051,13 +2096,26 @@ export default function MapPage() {
                     )}
 
                     {/* Actions */}
-                    <Separator className="bg-sidebar-border" />
+                    <Divider className="bg-sidebar-border my-2" />
                     <div className="space-y-2 pb-2">
-                      <Button variant="secondary" className="w-full" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-                        {saveMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bookmark className="mr-2 h-4 w-4" />}
+                      <Button
+                        block
+                        className="w-full"
+                        onClick={() => saveMutation.mutate()}
+                        disabled={saveMutation.isPending}
+                        icon={
+                          saveMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Bookmark className="h-4 w-4" />
+                          )
+                        }
+                      >
                         {t.saveProperty}
                       </Button>
                       <Button
+                        type="primary"
+                        block
                         className="w-full font-semibold"
                         onClick={() => {
                           setPaymentModalTier("expert_report");
@@ -2070,7 +2128,7 @@ export default function MapPage() {
                     </div>
                   </div>
                 )}
-              </CardContent>
+              </div>
             </Card>
           </motion.div>
         )}

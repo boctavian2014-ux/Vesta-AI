@@ -1,12 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { useToast } from "@/hooks/use-toast";
+import { App, Button, Card, Divider, Skeleton, Tag, Typography } from "antd";
+import { showVestaMessage } from "@/lib/vesta-message";
 import type { SavedProperty } from "@shared/schema";
 import {
   MapPin,
@@ -19,21 +15,18 @@ import {
 } from "lucide-react";
 import { VestaBrandLogoMark } from "@/components/vesta-brand-logo";
 
+const { Title, Text } = Typography;
+
 function PropertyCardSkeleton() {
   return (
-    <Card className="border-border">
-      <CardContent className="p-4">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-3 w-1/2" />
-          <Separator className="my-3" />
-          <div className="grid grid-cols-3 gap-3">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        </div>
-      </CardContent>
+    <Card className="border-border" size="small">
+      <Skeleton active title={{ width: "66%" }} paragraph={{ rows: 2 }} />
+      <Divider className="my-3" />
+      <div className="grid grid-cols-3 gap-3">
+        <Skeleton.Button active block />
+        <Skeleton.Button active block />
+        <Skeleton.Button active block />
+      </div>
     </Card>
   );
 }
@@ -67,82 +60,58 @@ function PropertyCard({
   isDeleting: boolean;
 }) {
   return (
-    <Card className="border-border hover:border-primary/30 transition-colors">
-      <CardHeader className="pb-2 pt-4 px-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />
-              <CardTitle className="text-sm font-semibold truncate">
-                {property.address || "Unknown address"}
-              </CardTitle>
-            </div>
-            {property.referenciaCatastral && (
-              <p className="text-xs text-muted-foreground font-mono">
-                Ref: {property.referenciaCatastral}
-              </p>
-            )}
+    <Card className="border-border hover:border-primary/30 transition-colors" size="small">
+      <div className="flex items-start justify-between gap-2 pb-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <VestaBrandLogoMark imgClassName="h-4 w-auto max-h-4" />
+            <Title level={5} className="!mb-0 !text-sm font-semibold truncate">
+              {property.address || "Unknown address"}
+            </Title>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-            onClick={() => onDelete(property.id)}
-            disabled={isDeleting}
-            data-testid={`delete-property-${property.id}`}
-          >
-            {isDeleting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-          </Button>
+          {property.referenciaCatastral && (
+            <Text type="secondary" className="text-xs font-mono block">
+              Ref: {property.referenciaCatastral}
+            </Text>
+          )}
         </div>
-      </CardHeader>
+        <Button
+          type="text"
+          danger
+          shape="circle"
+          icon={isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          onClick={() => onDelete(property.id)}
+          disabled={isDeleting}
+          data-testid={`delete-property-${property.id}`}
+        />
+      </div>
 
-      <CardContent className="px-4 pb-4 space-y-3">
-        {/* Location */}
+      <div className="px-0 pb-0 pt-1 space-y-3">
         {(property.lat || property.lon) && (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <MapPin className="h-3 w-3" />
             <span>
-              {parseFloat(property.lat ?? "0").toFixed(4)},{" "}
-              {parseFloat(property.lon ?? "0").toFixed(4)}
+              {parseFloat(property.lat ?? "0").toFixed(4)}, {parseFloat(property.lon ?? "0").toFixed(4)}
             </span>
           </div>
         )}
 
-        <Separator />
+        <Divider className="my-2" />
 
-        {/* Key metrics */}
         <div className="grid grid-cols-3 gap-2">
           <MetricBadge
             label="Gross Yield"
             value={
-              property.grossYield
-                ? `${parseFloat(property.grossYield).toFixed(1)}%`
-                : property.grossYield
+              property.grossYield ? `${parseFloat(property.grossYield).toFixed(1)}%` : property.grossYield
             }
           />
           <MetricBadge
             label="Net Yield"
-            value={
-              property.netYield
-                ? `${parseFloat(property.netYield).toFixed(1)}%`
-                : property.netYield
-            }
+            value={property.netYield ? `${parseFloat(property.netYield).toFixed(1)}%` : property.netYield}
           />
-          <MetricBadge
-            label="ROI"
-            value={
-              property.roi
-                ? `${parseFloat(property.roi).toFixed(1)}%`
-                : property.roi
-            }
-          />
+          <MetricBadge label="ROI" value={property.roi ? `${parseFloat(property.roi).toFixed(1)}%` : property.roi} />
         </div>
 
-        {/* Opportunity score */}
         {property.opportunityScore && (
           <div className="flex items-center gap-2">
             <TrendingUp className="h-3.5 w-3.5 text-primary" />
@@ -155,14 +124,13 @@ function PropertyCard({
           </div>
         )}
 
-        {/* Saved date */}
         {property.savedAt && (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3" />
             <span>Saved {formatDate(property.savedAt)}</span>
           </div>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }
@@ -175,21 +143,14 @@ function EmptyState() {
         <VestaBrandLogoMark imgClassName="h-8 w-auto max-h-8 opacity-80" />
       </div>
       <div>
-        <h3 className="text-base font-semibold text-foreground mb-1">
-          No saved properties yet
-        </h3>
-        <p className="text-sm text-muted-foreground max-w-xs">
+        <Title level={5}>No saved properties yet</Title>
+        <Text type="secondary" className="block max-w-xs">
           Start by analyzing a property on the map to save it here.
-        </p>
+        </Text>
       </div>
-      <Button
-        onClick={() => navigate("/map")}
-        className="gap-2"
-        data-testid="go-to-map"
-      >
-        <Map className="h-4 w-4" />
+      <Button type="primary" onClick={() => navigate("/map")} data-testid="go-to-map" icon={<Map className="h-4 w-4" />}>
         Go to Map
-        <ArrowRight className="h-4 w-4" />
+        <ArrowRight className="h-4 w-4 ml-2" />
       </Button>
     </div>
   );
@@ -197,28 +158,30 @@ function EmptyState() {
 
 export default function SavedProperties() {
   const qc = useQueryClient();
-  const { toast } = useToast();
+  const { message } = App.useApp();
 
   const { data: properties, isLoading } = useQuery<SavedProperty[]>({
     queryKey: ["/api/properties"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
-  const deletingIds = new Set<number>();
-
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/properties/${id}`);
       return id;
     },
-    onSuccess: (id) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/properties"] });
-      toast({ title: "Property removed", description: "Deleted from saved properties." });
+      showVestaMessage(message, {
+        title: "Property removed",
+        description: "Deleted from saved properties.",
+        variant: "success",
+      });
     },
     onError: (err: any) => {
-      toast({
+      showVestaMessage(message, {
         title: "Could not delete",
-        description: err.message,
+        description: err?.message,
         variant: "destructive",
       });
     },
@@ -230,22 +193,20 @@ export default function SavedProperties() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">Saved Properties</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <Title level={3} style={{ marginBottom: 4 }}>
+            Saved Properties
+          </Title>
+          <Text type="secondary">
             {!isLoading && properties
               ? `${properties.length} propert${properties.length !== 1 ? "ies" : "y"} saved`
               : "Your analyzed properties"}
-          </p>
+          </Text>
         </div>
-        {properties && properties.length > 0 && (
-          <Badge variant="secondary">{properties.length} total</Badge>
-        )}
+        {properties && properties.length > 0 && <Tag>{properties.length} total</Tag>}
       </div>
 
-      {/* Loading state */}
       {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
@@ -254,23 +215,16 @@ export default function SavedProperties() {
         </div>
       )}
 
-      {/* Empty state */}
       {!isLoading && (!properties || properties.length === 0) && <EmptyState />}
 
-      {/* Property grid */}
       {!isLoading && properties && properties.length > 0 && (
-        <div
-          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-          data-testid="properties-grid"
-        >
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="properties-grid">
           {properties.map((property) => (
             <PropertyCard
               key={property.id}
               property={property}
               onDelete={handleDelete}
-              isDeleting={
-                deleteMutation.isPending && deleteMutation.variables === property.id
-              }
+              isDeleting={deleteMutation.isPending && deleteMutation.variables === property.id}
             />
           ))}
         </div>

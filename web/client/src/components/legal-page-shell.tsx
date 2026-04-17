@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { Button } from "antd";
+import { ArrowLeftOutlined } from "@ant-design/icons";
 import { useUiLocale } from "@/lib/ui-locale";
 
 export function LegalPageShell({
@@ -17,13 +17,7 @@ export function LegalPageShell({
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-border bg-background/95 backdrop-blur px-4 py-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-2 text-muted-foreground"
-          onClick={() => navigate("/")}
-        >
-          <ArrowLeft className="h-4 w-4" />
+        <Button type="text" size="small" icon={<ArrowLeftOutlined />} onClick={() => navigate("/")}>
           {locale === "es" ? "Volver" : "Back"}
         </Button>
         <div className="flex items-center gap-1 rounded-md border border-border bg-muted/30 p-0.5" role="group" aria-label={locale === "es" ? "Idioma" : "Language"}>

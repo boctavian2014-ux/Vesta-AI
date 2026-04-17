@@ -4,12 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { useUiLocale } from "@/lib/ui-locale";
 import { getReportsStrings, isReportDemoPreview } from "@/lib/reports-i18n";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast";
+import { showVestaMessage } from "@/lib/vesta-message";
+import { App, Button, Card, Divider, Skeleton, Tag, Typography } from "antd";
 import type { Report } from "@shared/schema";
 import {
   ArrowLeft, TrendingUp, Loader2, CheckCircle2,
@@ -52,19 +48,21 @@ function StatusPill({ status, locale }: { status: string; locale: "en" | "es" })
   );
 }
 
+const { Title: AntTitle } = Typography;
+
 function Section({ icon, title, children, accent }: {
   icon: React.ReactNode; title: string; children: React.ReactNode; accent?: string;
 }) {
   return (
     <Card className={`border border-border bg-card shadow-sm border-l-[3px] border-l-border ${accent ?? ""}`}>
-      <CardHeader className="pb-4 pt-5 px-6">
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">{icon}</span>
-          <CardTitle className="report-title text-[15px]">{title}</CardTitle>
-        </div>
-      </CardHeader>
-      <Separator />
-      <CardContent className="report-card-spacing pt-4">{children}</CardContent>
+      <div className="flex items-center gap-2 px-1 pb-4 pt-1">
+        <span className="text-muted-foreground">{icon}</span>
+        <AntTitle level={5} className="report-title !mb-0 !text-[15px]" style={{ margin: 0 }}>
+          {title}
+        </AntTitle>
+      </div>
+      <Divider style={{ margin: "0 0 16px" }} />
+      <div className="report-card-spacing pt-0">{children}</div>
     </Card>
   );
 }
@@ -182,7 +180,7 @@ export default function ReportDetail() {
   const [, params] = useRoute("/reports/:id");
   const [, navigate] = useLocation();
   const reportId = params ? parseInt(params.id) : null;
-  const { toast } = useToast();
+  const { message } = App.useApp();
   const qc = useQueryClient();
 
   const [pollEnabled, setPollEnabled] = useState(false);
@@ -373,9 +371,13 @@ export default function ReportDetail() {
   const handleNativeShare = async () => {
     if (!reportShareUrl) return;
     if (typeof navigator === "undefined" || !navigator.share) {
-      toast({
+      showVestaMessage(message, {
         title: tr("Share not available", "Compartir no disponible"),
-        description: tr("Your browser does not support native share.", "Tu navegador no soporta compartir de forma nativa."),
+        description: tr(
+          "Your browser does not support native share.",
+          "Tu navegador no soporta compartir de forma nativa.",
+        ),
+        variant: "warning",
       });
       return;
     }
@@ -387,9 +389,12 @@ export default function ReportDetail() {
       });
     } catch (err: any) {
       if (err?.name === "AbortError") return;
-      toast({
+      showVestaMessage(message, {
         title: tr("Share failed", "Error al compartir"),
-        description: tr("Could not open the share dialog.", "No se pudo abrir el dialogo de compartir."),
+        description: tr(
+          "Could not open the share dialog.",
+          "No se pudo abrir el dialogo de compartir.",
+        ),
         variant: "destructive",
       });
     }
@@ -401,17 +406,19 @@ export default function ReportDetail() {
     <div className="p-6 space-y-5 max-w-3xl mx-auto font-report">
       {/* Header */}
       <div className="flex items-start gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/reports")} className="shrink-0 mt-0.5">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        <Button
+          type="text"
+          shape="circle"
+          icon={<ArrowLeft className="h-4 w-4" />}
+          onClick={() => navigate("/reports")}
+          className="shrink-0 mt-0.5"
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="report-heading text-2xl md:text-[2rem] text-foreground">{reportTypeLabel}</h1>
             {report && <StatusPill status={report.status} locale={locale} />}
             {report && isReportDemoPreview(report) ? (
-              <Badge variant="secondary" className="text-[11px] font-normal rounded-sm text-muted-foreground border-border">
-                {reportListStrings.reportDemoBadge}
-              </Badge>
+              <Tag className="text-[11px] font-normal">{reportListStrings.reportDemoBadge}</Tag>
             ) : null}
           </div>
           <div className="report-aux-stack-mobile mt-1">
@@ -423,9 +430,13 @@ export default function ReportDetail() {
             )}
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => refetch()} title={tr("Refresh", "Actualizar")}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+        <Button
+          type="text"
+          shape="circle"
+          icon={<RefreshCw className="h-4 w-4" />}
+          onClick={() => refetch()}
+          title={tr("Refresh", "Actualizar")}
+        />
       </div>
 
       {report && !isLoading && (
@@ -447,10 +458,8 @@ export default function ReportDetail() {
       {isLoading && (
         <div className="space-y-4">
           {[1,2,3].map(i => (
-            <Card key={i} className="report-card-spacing space-y-3">
-              <Skeleton className="h-4 w-1/3" />
-              <Skeleton className="h-3 w-full" />
-              <Skeleton className="h-3 w-4/5" />
+            <Card key={i} className="report-card-spacing">
+              <Skeleton active paragraph={{ rows: 3 }} title={{ width: "33%" }} />
             </Card>
           ))}
         </div>
@@ -459,7 +468,7 @@ export default function ReportDetail() {
       {/* Processing */}
       {!isLoading && isProcessing && (
         <Card className="border border-border bg-card shadow-sm">
-          <CardContent className="p-8 flex flex-col items-center gap-5 text-center">
+          <div className="p-8 flex flex-col items-center gap-5 text-center">
             <div className="w-16 h-16 rounded-md border border-border bg-muted/30 flex items-center justify-center">
               <Loader2 className="h-8 w-8 text-primary animate-spin" />
             </div>
@@ -499,20 +508,20 @@ export default function ReportDetail() {
                 {Math.floor(elapsed / 60) > 0 ? `${Math.floor(elapsed / 60)}m ` : ""}{elapsed % 60}s
               </p>
             </div>
-          </CardContent>
+          </div>
         </Card>
       )}
 
       {/* Failed */}
       {!isLoading && isFailed && (
         <Card className="border-red-500/20 bg-red-500/5">
-          <CardContent className="p-6 flex flex-col items-center gap-3 text-center">
+          <div className="p-6 flex flex-col items-center gap-3 text-center">
             <AlertCircle className="h-8 w-8 text-red-400" />
             <p className="text-sm font-semibold text-foreground">{tr("Generation failed", "Generacion fallida")}</p>
-            <Button variant="outline" onClick={() => navigate("/map")} className="gap-2">
-              <MapPin className="h-4 w-4" /> {tr("Back to map", "Volver al mapa")}
+            <Button icon={<MapPin className="h-4 w-4" />} onClick={() => navigate("/map")}>
+              {tr("Back to map", "Volver al mapa")}
             </Button>
-          </CardContent>
+          </div>
         </Card>
       )}
 
@@ -621,7 +630,7 @@ export default function ReportDetail() {
                 }
               />
             </div>
-            <Separator />
+            <Divider />
             <div className="space-y-1">
               <Row label={tr("Nearby schools", "Escuelas cercanas")} value={zoneAnalysis.nearby_essentials?.schools_nearby} />
               <Row label={tr("Nearby hospitals/clinics", "Hospitales/clinicas cercanas")} value={zoneAnalysis.nearby_essentials?.hospitals_nearby} />
@@ -631,7 +640,7 @@ export default function ReportDetail() {
             </div>
             {Array.isArray(zoneAnalysis.named_attractions) && zoneAnalysis.named_attractions.length > 0 && (
               <>
-                <Separator />
+                <Divider />
                 <div className="space-y-1">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                     {tr("Named attractions nearby", "Atracciones con nombre cercanas")}
@@ -646,7 +655,7 @@ export default function ReportDetail() {
                 </div>
               </>
             )}
-            <Separator />
+            <Divider />
             <div className="space-y-1">
               <Row label={tr("Safety score", "Puntuacion de seguridad")} value={zoneAnalysis.safety_liquidity?.safety_score != null ? `${zoneAnalysis.safety_liquidity.safety_score}/100` : null} />
               <Row label={tr("Liquidity score", "Puntuacion de liquidez")} value={zoneAnalysis.safety_liquidity?.liquidity_score != null ? `${zoneAnalysis.safety_liquidity.liquidity_score}/100` : null} />
@@ -911,8 +920,7 @@ export default function ReportDetail() {
               )}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button className="gap-2" onClick={handleNativeShare}>
-                <Share2 className="h-4 w-4" />
+              <Button icon={<Share2 className="h-4 w-4" />} onClick={handleNativeShare}>
                 {tr("Share", "Compartir")}
               </Button>
             </div>

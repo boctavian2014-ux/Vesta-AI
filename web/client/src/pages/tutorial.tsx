@@ -1,8 +1,9 @@
 import { useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, BookOpen } from "lucide-react";
+import { Button, Card, Typography } from "antd";
+import { ArrowLeftOutlined, BookOutlined } from "@ant-design/icons";
 import { useUiLocale } from "@/lib/ui-locale";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+const { Title, Paragraph } = Typography;
 
 export default function TutorialPage() {
   const [, navigate] = useLocation();
@@ -80,59 +81,47 @@ export default function TutorialPage() {
     <div className="min-h-screen px-4 py-6">
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={() => navigate("/")}>
-            <ArrowLeft className="h-4 w-4" />
+          <Button type="text" size="small" icon={<ArrowLeftOutlined />} onClick={() => navigate("/")}>
             {t.back}
           </Button>
         </div>
 
         <div className="rounded-xl glass-card-strong border border-border p-6">
           <div className="flex items-start gap-3">
-            <BookOpen className="h-8 w-8 shrink-0 text-primary" />
+            <BookOutlined className="text-3xl shrink-0 text-primary" />
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">{t.title}</h1>
-              <p className="mt-2 text-sm text-muted-foreground">{t.intro}</p>
+              <Title level={2} style={{ marginBottom: 8 }}>
+                {t.title}
+              </Title>
+              <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                {t.intro}
+              </Paragraph>
             </div>
           </div>
         </div>
 
-        <Card className="glass-card-strong border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">{t.freeTitle}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
-              {t.freeItems.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </CardContent>
+        <Card className="glass-card-strong border-border" title={t.freeTitle}>
+          <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
+            {t.freeItems.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         </Card>
 
-        <Card className="glass-card-strong border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">{t.pack15Title}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
-              {t.pack15Items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </CardContent>
+        <Card className="glass-card-strong border-border" title={t.pack15Title}>
+          <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
+            {t.pack15Items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         </Card>
 
-        <Card className="glass-card-strong border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">{t.pack50Title}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
-              {t.pack50Items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </CardContent>
+        <Card className="glass-card-strong border-border" title={t.pack50Title}>
+          <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
+            {t.pack50Items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         </Card>
 
         <p className="text-xs text-muted-foreground border-l-2 border-primary/40 pl-3 py-1">{t.demoNote}</p>

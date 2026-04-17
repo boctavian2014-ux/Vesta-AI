@@ -1,11 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, Card, Select, Skeleton, Tag, Typography } from "antd";
 import { AlertCircle, TrendingUp } from "lucide-react";
 import {
   AreaChart,
@@ -16,6 +12,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+
+const { Title, Text } = Typography;
 
 interface TrendDataPoint {
   date?: string;
@@ -72,9 +70,8 @@ function CustomTooltip({ active, payload, label }: any) {
 function ChartSkeleton() {
   return (
     <div className="space-y-3">
-      <Skeleton className="h-5 w-1/3" />
-      <Skeleton className="h-3 w-1/4" />
-      <Skeleton className="h-80 w-full mt-4" />
+      <Skeleton active title={{ width: "33%" }} paragraph={{ rows: 1, width: ["25%"] }} />
+      <Skeleton active paragraph={false} title={false} style={{ height: 320 }} />
     </div>
   );
 }
@@ -89,12 +86,16 @@ function StatCard({
   sub: string;
 }) {
   return (
-    <Card className="border-border">
-      <CardContent className="p-4">
-        <p className="text-xs text-muted-foreground mb-1">{label}</p>
-        <p className="text-xl font-bold text-foreground">{value}</p>
-        <p className="text-xs text-muted-foreground mt-1">{sub}</p>
-      </CardContent>
+    <Card className="border-border" size="small">
+      <Text type="secondary" className="text-xs block mb-1">
+        {label}
+      </Text>
+      <Title level={4} style={{ margin: 0 }}>
+        {value}
+      </Title>
+      <Text type="secondary" className="text-xs block mt-1">
+        {sub}
+      </Text>
     </Card>
   );
 }
@@ -114,7 +115,7 @@ export default function MarketTrends() {
 
   const allData = useMemo(
     () => normalizeTrendData(Array.isArray(rawResponse?.data) ? rawResponse.data : []),
-    [rawResponse]
+    [rawResponse],
   );
 
   const filteredData = useMemo(() => {
@@ -124,11 +125,7 @@ export default function MarketTrends() {
 
   const yearOptions = useMemo(() => {
     const years = Array.from(
-      new Set(
-        allData
-          .map((d) => d.date.split("-")[0])
-          .filter((y) => /^\d{4}$/.test(y))
-      )
+      new Set(allData.map((d) => d.date.split("-")[0]).filter((y) => /^\d{4}$/.test(y))),
     ).sort((a, b) => a.localeCompare(b));
     return ["All", ...years];
   }, [allData]);
@@ -139,73 +136,63 @@ export default function MarketTrends() {
     }
   }, [yearFilter, yearOptions]);
 
-  // Stats
   const latestValue = filteredData[filteredData.length - 1]?.value;
   const firstValue = filteredData[0]?.value;
-  const changeAbs = latestValue !== undefined && firstValue !== undefined
-    ? (latestValue - firstValue).toFixed(1)
-    : "—";
-  const changePct = latestValue !== undefined && firstValue !== undefined && firstValue !== 0
-    ? (((latestValue - firstValue) / firstValue) * 100).toFixed(1)
-    : "—";
+  const changeAbs =
+    latestValue !== undefined && firstValue !== undefined ? (latestValue - firstValue).toFixed(1) : "—";
+  const changePct =
+    latestValue !== undefined && firstValue !== undefined && firstValue !== 0
+      ? (((latestValue - firstValue) / firstValue) * 100).toFixed(1)
+      : "—";
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="h-5 w-5 text-primary" />
-            Market Trends
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Housing Price Index (IPV) — Spain
-          </p>
+            <Title level={3} style={{ margin: 0 }}>
+              Market Trends
+            </Title>
+          </div>
+          <Text type="secondary">Housing Price Index (IPV) — Spain</Text>
         </div>
         <Select
           value={yearFilter}
-          onValueChange={setYearFilter}
+          onChange={setYearFilter}
+          className="w-36"
           data-testid="year-filter"
-        >
-          <SelectTrigger className="w-36" data-testid="year-filter-trigger">
-            <SelectValue placeholder="Filter by year" />
-          </SelectTrigger>
-          <SelectContent>
-            {yearOptions.map((y) => (
-              <SelectItem key={y} value={y} data-testid={`year-option-${y}`}>
-                {y === "All" ? "All years" : y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          options={yearOptions.map((y) => ({
+            value: y,
+            label: y === "All" ? "All years" : y,
+          }))}
+        />
       </div>
 
-      {/* Fallback notice */}
       {(isError || (!isLoading && allData.length === 0)) && (
-        <Alert variant={isError ? "destructive" : "default"}>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            {isError ? (
+        <Alert
+          type={isError ? "error" : "warning"}
+          showIcon
+          icon={<AlertCircle className="h-4 w-4" />}
+          message={
+            isError ? (
               <>
                 The chart could not load. The app could not reach the Python API (check{" "}
                 <code className="text-xs">VEST_PYTHON_API_URL</code> on the web service and redeploy{" "}
                 <code className="text-xs">vesta-api</code>
-                ).{" "}
-                {error instanceof Error ? `(${error.message})` : null}
+                ). {error instanceof Error ? `(${error.message})` : null}
               </>
             ) : (
               <>
-                INE did not return any index points (temporary outage or network block). This page
-                retries every two minutes. If it persists, redeploy the latest{" "}
-                <code className="text-xs">vesta-api</code> (IPv769 + IPV1 fallback in{" "}
-                <code className="text-xs">market_data.py</code>).
+                INE did not return any index points (temporary outage or network block). This page retries every two
+                minutes. If it persists, redeploy the latest <code className="text-xs">vesta-api</code> (IPv769 + IPV1
+                fallback in <code className="text-xs">market_data.py</code>).
               </>
-            )}
-          </AlertDescription>
-        </Alert>
+            )
+          }
+        />
       )}
 
-      {/* Stats row */}
       {!isLoading && allData.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
@@ -231,90 +218,70 @@ export default function MarketTrends() {
         </div>
       )}
 
-      {/* Chart */}
-      <Card className="border-border">
-        <CardHeader className="pb-2 pt-5 px-6">
-          <CardTitle className="text-sm font-semibold">
-            Housing Price Index (IPV) — Spain
-          </CardTitle>
-          <CardDescription className="text-xs">
-            {yearFilter === "All"
-              ? "Full historical data"
-              : `Filtered to year ${yearFilter}`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-6 pb-6">
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : filteredData.length === 0 ? (
-            <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-              No live IPV points available for this filter.
-            </div>
-          ) : (
-            <div className="h-80" data-testid="ipv-chart">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={filteredData}
-                  margin={{ top: 8, right: 16, left: -10, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="ipvGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(38 65% 55%)" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="hsl(38 65% 55%)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={formatDate}
-                    tick={{
-                      fontSize: 11,
-                      fill: "hsl(var(--muted-foreground))",
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    tick={{
-                      fontSize: 11,
-                      fill: "hsl(var(--muted-foreground))",
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                    domain={["auto", "auto"]}
-                    tickFormatter={(v) => v.toFixed(0)}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="hsl(38 65% 55%)"
-                    strokeWidth={2.5}
-                    fill="url(#ipvGradient)"
-                    dot={false}
-                    activeDot={{ r: 5, fill: "hsl(38 65% 55%)" }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </CardContent>
+      <Card className="border-border" title="Housing Price Index (IPV) — Spain">
+        <Text type="secondary" className="text-xs block mb-4">
+          {yearFilter === "All" ? "Full historical data" : `Filtered to year ${yearFilter}`}
+        </Text>
+        {isLoading ? (
+          <ChartSkeleton />
+        ) : filteredData.length === 0 ? (
+          <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
+            No live IPV points available for this filter.
+          </div>
+        ) : (
+          <div className="h-80" data-testid="ipv-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={filteredData} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="ipvGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(38 65% 55%)" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="hsl(38 65% 55%)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={formatDate}
+                  tick={{
+                    fontSize: 11,
+                    fill: "hsl(var(--muted-foreground))",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{
+                    fontSize: 11,
+                    fill: "hsl(var(--muted-foreground))",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={["auto", "auto"]}
+                  tickFormatter={(v) => v.toFixed(0)}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="hsl(38 65% 55%)"
+                  strokeWidth={2.5}
+                  fill="url(#ipvGradient)"
+                  dot={false}
+                  activeDot={{ r: 5, fill: "hsl(38 65% 55%)" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
 
-      {/* Legend / info */}
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-0.5 bg-[hsl(38_65%_55%)]" />
           <span>IPV — official INE series (Spain, national)</span>
         </div>
-        <Badge variant="outline" className="text-xs">
-          Ministerio de Vivienda — Spain
-        </Badge>
+        <Tag>Ministerio de Vivienda — Spain</Tag>
       </div>
     </div>
   );
