@@ -12,8 +12,9 @@ import {
   BookOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  LogoutOutlined,
 } from "@ant-design/icons";
-import { App, Layout, Menu, Button, Space, Typography, Avatar, Divider } from "antd";
+import { App, Layout, Menu, Button, Space, Typography, Avatar, Divider, Tooltip } from "antd";
 import type { MenuProps } from "antd";
 import { useAuth } from "@/hooks/use-auth";
 import { VestaBrandLogoSidebar } from "@/components/vesta-brand-logo";
@@ -24,6 +25,7 @@ import {
   defaultDemoPropertyInfo,
 } from "@/lib/create-demo-report";
 import { showVestaMessage } from "@/lib/vesta-message";
+import { prefetchAppRoute } from "@/lib/route-prefetch";
 import { Link } from "wouter";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -112,18 +114,37 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
     : NAV_ITEMS;
 
   const menuItems: MenuProps["items"] = [
-    ...navItems.map((item) => ({
-      key: item.href,
-      icon: NAV_ICON[item.key] ?? <FileTextOutlined />,
-      label: (
-        <span data-testid={`nav-${item.key}`}>{t[item.key as keyof typeof t] ?? item.key}</span>
-      ),
-    })),
+    ...navItems.map((item) => {
+      const labelText = t[item.key as keyof typeof t] ?? item.key;
+      return {
+        key: item.href,
+        icon: NAV_ICON[item.key] ?? <FileTextOutlined />,
+        title: labelText,
+        label: (
+          <span
+            data-testid={`nav-${item.key}`}
+            onMouseEnter={() => prefetchAppRoute(item.href)}
+            onFocus={() => prefetchAppRoute(item.href)}
+          >
+            {labelText}
+          </span>
+        ),
+      };
+    }),
     { type: "divider" as const },
     {
       key: "/tutorial",
       icon: <BookOutlined />,
-      label: <span data-testid="nav-tutorial">{t.tutorial}</span>,
+      title: t.tutorial,
+      label: (
+        <span
+          data-testid="nav-tutorial"
+          onMouseEnter={() => prefetchAppRoute("/tutorial")}
+          onFocus={() => prefetchAppRoute("/tutorial")}
+        >
+          {t.tutorial}
+        </span>
+      ),
     },
   ];
 
@@ -325,9 +346,17 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
               )}
             </Space>
             {collapsed && (
-              <Button size="small" block style={{ marginTop: 8 }} data-testid="logout-button" onClick={logout}>
-                {t.logOut}
-              </Button>
+              <Tooltip title={t.logOut}>
+                <Button
+                  size="small"
+                  block
+                  style={{ marginTop: 8 }}
+                  data-testid="logout-button"
+                  icon={<LogoutOutlined />}
+                  aria-label={t.logOut}
+                  onClick={logout}
+                />
+              </Tooltip>
             )}
           </div>
         </div>
@@ -345,13 +374,15 @@ export function EnterpriseAppLayout({ children }: { children: ReactNode }) {
             backdropFilter: "blur(8px)",
           }}
         >
-          <Button
-            type="text"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            data-testid="sidebar-trigger"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed((c) => !c)}
-          />
+          <Tooltip title={collapsed ? (locale === "es" ? "Expandir menú" : "Expand menu") : locale === "es" ? "Contraer menú" : "Collapse menu"}>
+            <Button
+              type="text"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              data-testid="sidebar-trigger"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed((c) => !c)}
+            />
+          </Tooltip>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
             <ThemeToggle />
           </div>

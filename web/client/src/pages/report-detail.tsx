@@ -55,7 +55,7 @@ function Section({ icon, title, children, accent }: {
 }) {
   return (
     <Card className={`border border-border bg-card shadow-sm border-l-[3px] border-l-border ${accent ?? ""}`}>
-      <div className="flex items-center gap-2 px-1 pb-4 pt-1">
+      <div className="flex items-center gap-2 px-5 pb-4 pt-1 md:px-6">
         <span className="text-muted-foreground">{icon}</span>
         <AntTitle level={5} className="report-title !mb-0 !text-[15px]" style={{ margin: 0 }}>
           {title}
@@ -467,8 +467,8 @@ export default function ReportDetail() {
 
       {/* Processing */}
       {!isLoading && isProcessing && (
-        <Card className="border border-border bg-card shadow-sm">
-          <div className="p-8 flex flex-col items-center gap-5 text-center">
+        <Card className="border border-border bg-card shadow-sm" styles={{ body: { padding: 0 } }}>
+          <div className="report-card-spacing flex flex-col items-center gap-5 text-center">
             <div className="w-16 h-16 rounded-md border border-border bg-muted/30 flex items-center justify-center">
               <Loader2 className="h-8 w-8 text-primary animate-spin" />
             </div>
@@ -514,8 +514,8 @@ export default function ReportDetail() {
 
       {/* Failed */}
       {!isLoading && isFailed && (
-        <Card className="border-red-500/20 bg-red-500/5">
-          <div className="p-6 flex flex-col items-center gap-3 text-center">
+        <Card className="border-red-500/20 bg-red-500/5" styles={{ body: { padding: 0 } }}>
+          <div className="report-card-spacing flex flex-col items-center gap-3 text-center">
             <AlertCircle className="h-8 w-8 text-red-400" />
             <p className="text-sm font-semibold text-foreground">{tr("Generation failed", "Generacion fallida")}</p>
             <Button icon={<MapPin className="h-4 w-4" />} onClick={() => navigate("/map")}>

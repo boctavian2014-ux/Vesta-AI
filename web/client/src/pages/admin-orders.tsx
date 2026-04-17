@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Report } from "@shared/schema";
 import { getQueryFn } from "@/lib/queryClient";
 import { showVestaMessage } from "@/lib/vesta-message";
+import { InboxOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
@@ -10,6 +11,7 @@ import {
   Checkbox,
   Col,
   Divider,
+  Empty,
   Input,
   Row,
   Select,
@@ -293,7 +295,20 @@ export default function AdminOrders() {
 
         {isLoading && <Text type="secondary">Loading...</Text>}
         {!isLoading && filteredRows.length === 0 && (
-          <Text type="secondary">No expert_report orders found.</Text>
+          <Empty
+            image={<InboxOutlined style={{ fontSize: 40, color: "hsl(var(--muted-foreground))" }} />}
+            styles={{ image: { height: 48 } }}
+            description={
+              <span>
+                <Text type="secondary" strong style={{ display: "block", marginBottom: 4 }}>
+                  No orders match this filter
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Try &quot;all&quot; or clear search — only <Text code>expert_report</Text> rows are listed here.
+                </Text>
+              </span>
+            }
+          />
         )}
         {!isLoading &&
           filteredRows.map((report) => (

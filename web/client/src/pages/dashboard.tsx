@@ -78,12 +78,14 @@ const KPI_CARDS: KpiCardDef[] = [
   },
 ];
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label, ipvLabel }: any) {
   if (active && payload && payload.length) {
     return (
       <div className="rounded-lg glass-panel px-3 py-2">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-semibold text-foreground">IPV {payload[0].value}</p>
+        <p className="text-sm font-semibold text-foreground">
+          {ipvLabel} {payload[0].value}
+        </p>
       </div>
     );
   }
@@ -112,6 +114,7 @@ export default function Dashboard() {
           viewTrends: "Ver tendencias",
           savedProperties: "Propiedades guardadas",
           reports: "Informes",
+          chartTooltipIpv: "IPV",
         }
       : {
           goodMorning: "Good morning",
@@ -129,6 +132,7 @@ export default function Dashboard() {
           viewTrends: "View Trends",
           savedProperties: "Saved Properties",
           reports: "Reports",
+          chartTooltipIpv: "HPI",
         };
 
   const kpiCards: KpiCardDef[] =
@@ -239,7 +243,7 @@ export default function Dashboard() {
                       tickLine={false}
                       domain={["auto", "auto"]}
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip ipvLabel={t.chartTooltipIpv} />} />
                     <Area
                       type="monotone"
                       dataKey="ipv"

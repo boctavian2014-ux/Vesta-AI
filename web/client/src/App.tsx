@@ -4,7 +4,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Spin } from "antd";
 import { queryClient } from "./lib/queryClient";
 import { UiLocaleProvider } from "@/lib/ui-locale";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { AntDesignRoot } from "@/lib/antd-provider";
 import { EnterpriseAppLayout } from "@/components/enterprise-app-layout";
@@ -25,6 +24,25 @@ const ReportDetail = lazy(() => import("@/pages/report-detail"));
 const AdminOrders = lazy(() => import("@/pages/admin-orders"));
 const PropertySearchChatPage = lazy(() => import("@/pages/property-search-chat"));
 import { VESTA_BRAND_ASSET_QUERY } from "@/components/vesta-brand-logo";
+
+function RouteLoadingFallback() {
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-4">
+      <div className="rounded-3xl glass-card px-6 py-4">
+        <img
+          src={`/vesta-logo.png${VESTA_BRAND_ASSET_QUERY}`}
+          alt="Vesta AI"
+          width={320}
+          height={110}
+          className="h-auto w-full max-w-[320px] object-contain opacity-90"
+          decoding="async"
+        />
+      </div>
+      <Spin size="large" />
+      <p className="text-sm text-muted-foreground">Loading…</p>
+    </div>
+  );
+}
 
 // Apply dark mode by default
 function applyDefaultTheme() {
@@ -86,13 +104,7 @@ function AppRouter() {
 
   return (
     <EnterpriseAppLayout>
-      <Suspense
-        fallback={
-          <div className="flex min-h-[50vh] items-center justify-center">
-            <Spin size="large" />
-          </div>
-        }
-      >
+      <Suspense fallback={<RouteLoadingFallback />}>
         <Switch>
           <Route path="/" component={Dashboard} />
           <Route path="/map" component={MapPage} />
@@ -125,11 +137,9 @@ function App() {
             <AmbientBackground />
             <div className="relative z-10 min-h-svh">
               <AuthProvider>
-                <TooltipProvider>
-                  <Router>
-                    <AppRouter />
-                  </Router>
-                </TooltipProvider>
+                <Router>
+                  <AppRouter />
+                </Router>
               </AuthProvider>
             </div>
           </AntDesignRoot>

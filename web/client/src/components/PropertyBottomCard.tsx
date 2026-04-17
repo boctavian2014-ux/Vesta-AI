@@ -1,5 +1,5 @@
-import { Eye, MapPin, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { EyeOutlined, CloseOutlined, EnvironmentOutlined } from "@ant-design/icons";
+import { Button, Space } from "antd";
 import type { PropertyPin, StreetViewMetadataResult } from "@/types/property";
 
 type PropertyBottomCardProps = {
@@ -21,23 +21,24 @@ export function PropertyBottomCard({
   onClose,
   onKeepSatellite,
 }: PropertyBottomCardProps) {
-  const t = locale === "es"
-    ? {
-        selectedProperty: "Inmueble seleccionado",
-        coordinates: "Coordenadas",
-        streetView: "Street View",
-        checkingStreetView: "Verificando Street View...",
-        streetViewUnavailable: "Street View no disponible",
-        keepSatellite: "Solo mapa",
-      }
-    : {
-        selectedProperty: "Selected property",
-        coordinates: "Coordinates",
-        streetView: "Street View",
-        checkingStreetView: "Checking Street View...",
-        streetViewUnavailable: "Street View unavailable",
-        keepSatellite: "Map only",
-      };
+  const t =
+    locale === "es"
+      ? {
+          selectedProperty: "Inmueble seleccionado",
+          coordinates: "Coordenadas",
+          streetView: "Street View",
+          checkingStreetView: "Verificando Street View...",
+          streetViewUnavailable: "Street View no disponible",
+          keepSatellite: "Solo mapa",
+        }
+      : {
+          selectedProperty: "Selected property",
+          coordinates: "Coordinates",
+          streetView: "Street View",
+          checkingStreetView: "Checking Street View...",
+          streetViewUnavailable: "Street View unavailable",
+          keepSatellite: "Map only",
+        };
 
   const streetViewAvailable = !checkingStreetView && streetViewMeta?.status === "OK";
 
@@ -49,39 +50,34 @@ export function PropertyBottomCard({
             <p className="text-[11px] uppercase tracking-wider text-sidebar-foreground/70">{t.selectedProperty}</p>
             <p className="truncate text-sm font-semibold">{property.title}</p>
             <p className="mt-0.5 text-xs text-sidebar-foreground/70">
-              <MapPin className="mr-1 inline h-3 w-3" />
+              <EnvironmentOutlined className="mr-1" />
               {t.coordinates}: {property.lat.toFixed(5)}, {property.lng.toFixed(5)}
             </p>
           </div>
           <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 shrink-0 rounded-full text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            type="text"
+            icon={<CloseOutlined />}
+            className="!h-7 !w-7 shrink-0 text-sidebar-foreground/70 hover:!bg-sidebar-accent hover:!text-sidebar-foreground"
             onClick={onClose}
             aria-label="Close selected property card"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          />
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          <Button
-            size="sm"
-            className="h-8 gap-1.5"
-            onClick={onOpenStreetView}
-            disabled={!streetViewAvailable}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            {t.streetView}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-8"
-            onClick={onKeepSatellite}
-          >
-            {t.keepSatellite}
-          </Button>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Space wrap size={8}>
+            <Button
+              size="small"
+              type="primary"
+              icon={<EyeOutlined />}
+              onClick={onOpenStreetView}
+              disabled={!streetViewAvailable}
+            >
+              {t.streetView}
+            </Button>
+            <Button size="small" type="default" onClick={onKeepSatellite}>
+              {t.keepSatellite}
+            </Button>
+          </Space>
           {checkingStreetView && (
             <span className="ml-auto text-[11px] text-sidebar-foreground/70">{t.checkingStreetView}</span>
           )}

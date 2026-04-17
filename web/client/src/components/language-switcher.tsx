@@ -1,27 +1,27 @@
 import { useUiLocale } from "@/lib/ui-locale";
-import { Button } from "@/components/ui/button";
+import { Button, Space } from "antd";
 
 export function LanguageSwitcher() {
   const { locale, setLocale } = useUiLocale();
 
   return (
-    <div className="inline-flex items-center rounded-md border border-border bg-background p-0.5">
+    <Space.Compact className="rounded-md border border-border bg-background p-0.5">
       <Button
-        variant={locale === "en" ? "default" : "ghost"}
-        size="sm"
-        className="h-7 px-2 text-xs"
+        type={locale === "en" ? "primary" : "default"}
+        size="small"
+        className="!h-7 !min-w-[2.25rem] !px-2 !text-xs"
         onClick={() => setLocale("en")}
       >
         EN
       </Button>
       <Button
-        variant={locale === "es" ? "default" : "ghost"}
-        size="sm"
-        className="h-7 px-2 text-xs"
+        type={locale === "es" ? "primary" : "default"}
+        size="small"
+        className="!h-7 !min-w-[2.25rem] !px-2 !text-xs"
         onClick={() => setLocale("es")}
       >
         ES
       </Button>
-    </div>
+    </Space.Compact>
   );
 }

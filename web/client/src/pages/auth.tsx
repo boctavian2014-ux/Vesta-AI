@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, Button, Card, Form, Input, Space, Tabs, Typography } from "antd";
@@ -13,38 +13,81 @@ export default function AuthPage() {
   const { login, register } = useAuth();
   const { locale, setLocale } = useUiLocale();
 
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
 
-  const [regUsername, setRegUsername] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regPassword, setRegPassword] = useState("");
   const [regError, setRegError] = useState("");
   const [regLoading, setRegLoading] = useState(false);
 
-  const runLogin = async () => {
+  const t = useMemo(
+    () =>
+      locale === "es"
+        ? {
+            tabLogin: "Entrar",
+            tabRegister: "Registrarse",
+            welcomeBack: "Bienvenido de nuevo",
+            signInSubtitle: "Accede a tu cuenta Vesta AI",
+            createTitle: "Crear cuenta",
+            createSubtitle: "Empieza a analizar el mercado inmobiliario en España",
+            emailLabel: "Correo",
+            passwordLabel: "Contraseña",
+            usernameLabel: "Usuario",
+            emailPh: "tu@correo.com",
+            passwordPh: "••••••••",
+            usernamePh: "usuario",
+            passwordMinPh: "Mín. 6 caracteres",
+            signIn: "Entrar",
+            createAccount: "Crear cuenta",
+            emailRequired: "Correo obligatorio",
+            passwordRequired: "Contraseña obligatoria",
+            loginFailed: "Error al iniciar sesión. Comprueba tus datos.",
+            registerFailed: "Error al registrarse. Inténtalo de nuevo.",
+          }
+        : {
+            tabLogin: "Login",
+            tabRegister: "Register",
+            welcomeBack: "Welcome back",
+            signInSubtitle: "Sign in to your Vesta AI account",
+            createTitle: "Create account",
+            createSubtitle: "Start analyzing Spanish real estate",
+            emailLabel: "Email",
+            passwordLabel: "Password",
+            usernameLabel: "Username",
+            emailPh: "you@example.com",
+            passwordPh: "••••••••",
+            usernamePh: "johndoe",
+            passwordMinPh: "Min. 6 characters",
+            signIn: "Sign in",
+            createAccount: "Create account",
+            emailRequired: "Email required",
+            passwordRequired: "Password required",
+            loginFailed: "Login failed. Check your credentials.",
+            registerFailed: "Registration failed. Try again.",
+          },
+    [locale],
+  );
+
+  const runLogin = async (values: { email: string; password: string }) => {
     setLoginError("");
     setLoginLoading(true);
     try {
-      await login(loginEmail, loginPassword);
+      await login(values.email, values.password);
       navigate("/");
     } catch (err: any) {
-      setLoginError(err.message || "Login failed. Check your credentials.");
+      setLoginError(err.message || t.loginFailed);
     } finally {
       setLoginLoading(false);
     }
   };
 
-  const runRegister = async () => {
+  const runRegister = async (values: { username: string; email: string; password: string }) => {
     setRegError("");
     setRegLoading(true);
     try {
-      await register(regUsername, regEmail, regPassword);
+      await register(values.username, values.email, values.password);
       navigate("/");
     } catch (err: any) {
-      setRegError(err.message || "Registration failed. Try again.");
+      setRegError(err.message || t.registerFailed);
     } finally {
       setRegLoading(false);
     }
@@ -72,14 +115,14 @@ export default function AuthPage() {
             items={[
               {
                 key: "login",
-                label: <span data-testid="tab-login">Login</span>,
+                label: <span data-testid="tab-login">{t.tabLogin}</span>,
                 children: (
                   <div className="pt-2">
                     <Title level={4} style={{ marginBottom: 4 }}>
-                      Welcome back
+                      {t.welcomeBack}
                     </Title>
                     <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
-                      Sign in to your Vesta AI account
+                      {t.signInSubtitle}
                     </Text>
                     {loginError ? (
                       <Alert
@@ -90,28 +133,30 @@ export default function AuthPage() {
                         className="mb-4"
                       />
                     ) : null}
-                    <Form layout="vertical" onFinish={() => void runLogin()}>
-                      <Form.Item label="Email" name="email" rules={[{ required: true, message: "Email required" }]}>
+                    <Form layout="vertical" onFinish={(v) => void runLogin(v)}>
+                      <Form.Item label={t.emailLabel} name="email" rules={[{ required: true, message: t.emailRequired }]}>
                         <Input
                           id="login-email"
                           type="email"
-                          placeholder="you@example.com"
-                          value={loginEmail}
-                          onChange={(e) => setLoginEmail(e.target.value)}
+                          placeholder={t.emailPh}
+                          autoComplete="email"
                           data-testid="login-email"
                         />
                       </Form.Item>
-                      <Form.Item label="Password" name="password" rules={[{ required: true, message: "Password required" }]}>
+                      <Form.Item
+                        label={t.passwordLabel}
+                        name="password"
+                        rules={[{ required: true, message: t.passwordRequired }]}
+                      >
                         <Input.Password
                           id="login-password"
-                          placeholder="••••••••"
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
+                          placeholder={t.passwordPh}
+                          autoComplete="current-password"
                           data-testid="login-password"
                         />
                       </Form.Item>
                       <Button type="primary" htmlType="submit" block loading={loginLoading} data-testid="login-submit">
-                        Sign in
+                        {t.signIn}
                       </Button>
                     </Form>
                   </div>
@@ -119,14 +164,14 @@ export default function AuthPage() {
               },
               {
                 key: "register",
-                label: <span data-testid="tab-register">Register</span>,
+                label: <span data-testid="tab-register">{t.tabRegister}</span>,
                 children: (
                   <div className="pt-2">
                     <Title level={4} style={{ marginBottom: 4 }}>
-                      Create account
+                      {t.createTitle}
                     </Title>
                     <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
-                      Start analyzing Spanish real estate
+                      {t.createSubtitle}
                     </Text>
                     {regError ? (
                       <Alert
@@ -137,37 +182,34 @@ export default function AuthPage() {
                         className="mb-4"
                       />
                     ) : null}
-                    <Form layout="vertical" onFinish={() => void runRegister()}>
-                      <Form.Item label="Username" name="username" rules={[{ required: true, min: 2 }]}>
+                    <Form layout="vertical" onFinish={(v) => void runRegister(v)}>
+                      <Form.Item label={t.usernameLabel} name="username" rules={[{ required: true, min: 2 }]}>
                         <Input
                           id="reg-username"
-                          placeholder="johndoe"
-                          value={regUsername}
-                          onChange={(e) => setRegUsername(e.target.value)}
+                          placeholder={t.usernamePh}
+                          autoComplete="username"
                           data-testid="reg-username"
                         />
                       </Form.Item>
-                      <Form.Item label="Email" name="email" rules={[{ required: true, type: "email" }]}>
+                      <Form.Item label={t.emailLabel} name="email" rules={[{ required: true, type: "email" }]}>
                         <Input
                           id="reg-email"
                           type="email"
-                          placeholder="you@example.com"
-                          value={regEmail}
-                          onChange={(e) => setRegEmail(e.target.value)}
+                          placeholder={t.emailPh}
+                          autoComplete="email"
                           data-testid="reg-email"
                         />
                       </Form.Item>
-                      <Form.Item label="Password" name="password" rules={[{ required: true, min: 6 }]}>
+                      <Form.Item label={t.passwordLabel} name="password" rules={[{ required: true, min: 6 }]}>
                         <Input.Password
                           id="reg-password"
-                          placeholder="Min. 6 characters"
-                          value={regPassword}
-                          onChange={(e) => setRegPassword(e.target.value)}
+                          placeholder={t.passwordMinPh}
+                          autoComplete="new-password"
                           data-testid="reg-password"
                         />
                       </Form.Item>
                       <Button type="primary" htmlType="submit" block loading={regLoading} data-testid="register-submit">
-                        Create account
+                        {t.createAccount}
                       </Button>
                     </Form>
                   </div>
