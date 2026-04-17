@@ -4,6 +4,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { getHelmetContentSecurityPolicy } from "./cspConfig";
 import { closeDatabase, initDatabase } from "./db";
+import { runProductionStartupChecks } from "./envProductionCheck";
 import { envRateLimitMax } from "./rateLimitEnv";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -170,6 +171,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  runProductionStartupChecks();
   await initDatabase();
   await registerRoutes(httpServer, app);
 
